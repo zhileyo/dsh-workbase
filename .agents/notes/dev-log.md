@@ -106,13 +106,23 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
-版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 GitHub Actions 在 push `main` 后执行（`.github/workflows/release.yml` 的 `release` job），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → `@semantic-release/github` 建 Release；随后 `mirror` job 用 `CNB_TOKEN` 把 `main` 与标签推到 CNB。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。发布凭据为仓库变量 `NPM_TRUSTED_PUBLISHING=true`（可信发布）或 secret `NPM_TOKEN`（首次自举），两者都缺时打印提示跳过，门禁与镜像照常。
+版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 GitHub Actions 在 push `main` 后执行（`.github/workflows/release.yml` 的 `release` job），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → `@semantic-release/github` 建 Release。CNB 不在 GitHub 侧推送：仓库根的 `.cnb.yml` 每 10 分钟跑一次，从 GitHub 拉取 `main` 与标签后强推对齐，因此镜像最多滞后一个周期。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。发布凭据为仓库变量 `NPM_TRUSTED_PUBLISHING=true`（可信发布）或 secret `NPM_TOKEN`（首次自举），两者都缺时打印提示跳过，门禁照常。
 
 本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
 
 ## 日志
+
+### 2026-11-08 · CNB 镜像改为定时拉取
+
+**背景**：GitHub 主库方案落地时，镜像方向是 GitHub Actions 的 `mirror` job 往 CNB 推。用户要求反过来：由 CNB 侧拉取，不要从 GitHub 推送。除了方向本身，这也去掉了「在 GitHub 存一个能写 CNB 的 token」这一项凭据。
+
+**决策**：删掉 `.github/workflows/release.yml` 的 `mirror` job，workflow 只负责发版；新增仓库根的 `.cnb.yml`，用 CNB 定时事件（`main` 分支下 `crontab: */10 * * * *`）与 `$` 兜底分支的 `web_trigger` 触发，单个 `sync` 阶段从 GitHub `fetch --force --prune` 出全部分支与标签，再以 `--force` 推回 `origin`（CNB），最后删掉 GitHub 上已不存在的分支与标签。凭据用 CNB 内置的 `CNB_TOKEN`／`CNB_TOKEN_USER_NAME`，GitHub 侧不再需要 secret。周期取 10 分钟：CNB 的 crontab 是标准五位表达式，更短没有实际收益，镜像最多滞后一个周期。没有保留「两边都推」的双保险——两个方向同时写同一组 ref 只会让冲突更难判断。
+
+**证据**：validator 三项（YAML／语义／Schema）全过；`web_trigger` 起初放在 `main` 下时有一致性警告「建议移至 `$` 兜底分支」，移到 `$` 后无警告。`node -e` 解析 workflow 得 `jobs: release`，`git status` 只剩 `.cnb.yml`、`release.yml`、README／AGENTS／dev-log 的改动。CNB 上尚无 `.cnb.yml`，定时任务不会自己出现，首次必须手动推一次 `main` 作为 bootstrap。
+
+**遗留**：cron 的实际运行尚未观察（首轮需 ≤10 分钟或手动 `web_trigger`）；GitHub 的 `CNB_TOKEN` secret 已无用，可删；CNB 侧不要直接推，下一次同步会把它覆盖回 GitHub 的状态。镜像与发版解耦后，发布完成的滞后从「同一次 run」变成「最多 10 分钟」，页面上的 tag 可能比 GitHub 晚出现。
 
 ### 2026-11-08 · 真源迁到 GitHub，CNB 退回只读镜像
 

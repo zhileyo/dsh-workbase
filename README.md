@@ -23,9 +23,9 @@ DeepSeek Harness 的工作台插件，集中管理项目、会话和待办，并
 | 平台 | 地址 | 角色 |
 | --- | --- | --- |
 | GitHub | <https://github.com/zhileyo/dsh-workbase> | 主库：提交、Actions、发版与 Release |
-| CNB | <https://cnb.cool/zhileyo/dsh-workbase> | 只读镜像：push `main` 后由 `.github/workflows/release.yml` 推送 |
+| CNB | <https://cnb.cool/zhileyo/dsh-workbase> | 只读镜像：CNB 定时任务每 10 分钟从 GitHub 拉取 `main` 与标签 |
 
-CNB 侧的分支与标签由 workflow 的 mirror 任务覆写，提交 SHA 与 GitHub 一致；改动请提到 GitHub，不要在镜像侧直接推。
+CNB 侧的分支与标签由 `.cnb.yml` 的定时任务拉取后强推对齐，提交 SHA 与 GitHub 一致（最多滞后一个周期）；改动请提到 GitHub，不要在镜像侧直接推。
 
 ## 环境要求
 
@@ -110,7 +110,8 @@ dsh web
 | `test/` | `node:test` 测试，`npm test` 全量执行 |
 | `docs/` | 需求、UI 基线、验收证据与验收脚本；不进入 npm 包 |
 | `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
-| `.github/workflows/release.yml` | GitHub Actions：push `main` 后跑类型／测试／构建门禁，交由 semantic-release 发版并建 Release，再把 `main` 与标签镜像到 CNB |
+| `.github/workflows/release.yml` | GitHub Actions：push `main` 后跑类型／测试／构建门禁，交由 semantic-release 发版并建 Release |
+| `.cnb.yml` | CNB 定时任务：每 10 分钟从 GitHub 拉取 `main` 与标签并强推对齐，不做构建 |
 
 ## 许可证
 

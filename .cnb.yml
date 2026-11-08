@@ -1,0 +1,55 @@
+# CNB 是 GitHub 的只读镜像，方向是「拉取」：本仓库不接收 GitHub 的推送，
+# 由下面的定时任务（每 10 分钟）从 GitHub 取 main 与全部标签，强推到本仓库。
+# 发布在 GitHub Actions 里完成（.github/workflows/release.yml），CNB 不做构建。
+#
+# 拉取用 GitHub 公开仓库的匿名 HTTPS，不需要额外凭据；
+# 推回本仓库用内置变量 CNB_TOKEN（用户名为固定的 cnb）。
+.mirror-job: &mirror-job
+  name: mirror-from-github
+  runner:
+    cpus: 2
+  lock:
+    key: mirror-cnb
+    wait: true
+    cancel-in-wait: true
+  stages:
+    - name: sync
+      image: node:24
+      script: |
+        set -euo pipefail
+        git config --global --add safe.directory '*'
+
+        github="https://github.com/zhileyo/dsh-workbase.git"
+        git fetch --force --prune "$github" '+refs/heads/*:refs/remotes/github/*' '+refs/tags/*:refs/tags/*'
+
+        git remote set-url origin "https://${CNB_TOKEN_USER_NAME}:${CNB_TOKEN}@cnb.cool/${CNB_REPO_SLUG}.git"
+        git push --force origin '+refs/remotes/github/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+
+        # 精确镜像：GitHub 上已不存在的分支与标签，在 CNB 侧也删掉
+        git ls-remote --heads origin | while read -r _ ref; do
+          branch="${ref#refs/heads/}"
+          [ -n "$branch" ] || continue
+          if ! git show-ref --verify --quiet "refs/remotes/github/$branch"; then
+            echo "删除多余分支 $branch"
+            git push origin ":refs/heads/$branch"
+          fi
+        done
+        git ls-remote --tags origin | while read -r _ ref; do
+          case "$ref" in *'^{}') continue ;; esac
+          tag="${ref#refs/tags/}"
+          [ -n "$tag" ] || continue
+          if ! git show-ref --verify --quiet "refs/tags/$tag"; then
+            echo "删除多余标签 $tag"
+            git push origin ":refs/tags/$tag"
+          fi
+        done
+
+        echo "已同步到 $(git rev-parse refs/remotes/github/main)"
+
+main:
+  "crontab: */10 * * * *":
+    - *mirror-job
+
+$:
+  web_trigger:
+    - *mirror-job

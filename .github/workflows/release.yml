@@ -1,10 +1,10 @@
-# 主库在 GitHub：push main 后跑三关门禁与 semantic-release，
-# 再把分支与标签镜像到 CNB（CNB 侧不再有流水线，只作为只读镜像）。
+# 主库在 GitHub：push main 后跑三关门禁与 semantic-release 并发 Release。
+# CNB 不再接收推送，由 CNB 自己的定时任务从 GitHub 拉取（见仓库根的 .cnb.yml）。
 #
 # 发布凭据二选一：
 #   1）仓库变量 NPM_TRUSTED_PUBLISHING=true —— npm 可信发布（OIDC，带 provenance），推荐；
 #   2）仓库 secret NPM_TOKEN —— 首次发布的自举通道（npm trust 要求包已存在）。
-# 两者都没有时跳过发版，门禁与镜像照常。
+# 两者都没有时跳过发版，门禁照常。
 name: release
 
 on:
@@ -61,25 +61,3 @@ jobs:
           fi
           npx semantic-release
 
-  mirror:
-    name: mirror to CNB
-    needs: release
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: 推送 main 与标签到 CNB
-        env:
-          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
-        run: |
-          if [ -z "${CNB_TOKEN}" ]; then
-            echo "未配置 CNB_TOKEN，无法镜像" >&2
-            exit 1
-          fi
-          # 拉取 release 阶段刚推上来的发版提交与标签
-          git fetch --force origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
-          git push --force --prune "https://cnb:${CNB_TOKEN}@cnb.cool/zhileyo/dsh-workbase.git" \
-            '+refs/remotes/origin/main:refs/heads/main' '+refs/tags/*:refs/tags/*'
