@@ -1,13 +1,15 @@
 /**
- * semantic-release 本地插件：把新版本号同步进文档的「当前状态」。
+ * semantic-release 本地插件：把新版本号同步进开发日志的「当前状态」。
  *
- * 三条设计约束：
+ * 四条设计约束：
  * 1. 只改现状，不改历史——开发日志的按日期条目是当时的记录，改写它们等于篡改证据，
  *    所以 `.agents/notes/dev-log.md` 只在「## 日志」分界之前替换。
  * 2. 不写死哈希：本地打包的 SHA-256 与 registry 上的 tarball 不一定逐字节相同
  *    （gzip 头含时间戳），改为指向 registry 的 integrity。
  * 3. 任一规则未命中即抛错，让整次发版中止——文档版本与 registry 不一致比不发版更糟。
  *    因此每条规则的正则都要同时匹配「首次改写」和「已改写过」两种形态。
+ * 4. README 不参与同步：安装命令用 `<版本>` 占位，版本字面量已从 README 移除，
+ *    发版只改开发日志，少一处漂移。
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -22,13 +24,6 @@ const INTEGRITY_HINT = version => `（完整性校验用 \`npm view dsh-workbase
 
 /** @returns {{file: string, scope: 'all'|'current', pattern: RegExp, replacement: string, label: string}[]} */
 const rules = version => [
-  {
-    file: 'README.md',
-    scope: 'all',
-    pattern: /dsh-workbase-\d+\.\d+\.\d+\.tgz/g,
-    replacement: `dsh-workbase-${version}.tgz`,
-    label: '安装命令里的包名',
-  },
   {
     file: '.agents/notes/dev-log.md',
     scope: 'current',
@@ -91,5 +86,5 @@ export async function prepare(_pluginConfig, { nextRelease }) {
     await writeFile(file(name), text);
   }
 
-  console.log(`[sync-docs] 已把 ${version} 写入 README.md 与 .agents/notes/dev-log.md 的当前状态`);
+  console.log(`[sync-docs] 已把 ${version} 写入 .agents/notes/dev-log.md 的当前状态`);
 }

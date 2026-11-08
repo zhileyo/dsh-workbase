@@ -4,7 +4,7 @@
 
 ## 项目是什么
 
-DeepSeekRuntime（DSH）的工作台插件：管理项目、会话与待办，并向宿主注册三个 Agent 工具。单个 npm 包同时提供宿主服务端入口与浏览器客户端入口。
+DeepSeek Harness（DSH）的工作台插件：管理项目、会话与待办，并向宿主注册三个 Agent 工具。单个 npm 包同时提供宿主服务端入口与浏览器客户端入口。
 
 | 项 | 值 |
 | --- | --- |
@@ -127,7 +127,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 npx semantic-release --dry-run   # 看这次会发哪个版本，不写文件、不发布
 ```
 
-一次发版会：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 同步 `README.md` 与开发日志的**当前状态**（历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。
+一次发版会：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。
 
 出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
 
@@ -169,7 +169,7 @@ tar -tzf dsh-workbase-<版本>.tgz     # 用实际产出的文件名，别照抄
 
 1. `npm run typecheck`、`npm test`、`npm run build` 全绿；改过生成逻辑则再构建一次比对哈希。
 2. 手改的是真源（`docs/ui/ui-directions.html`、`src/**/*.ts(x)`、`styles.css`），不是生成物。
-3. 若改过 `README.md` 或 `.agents/notes/dev-log.md`「当前状态」里的版本标记、tgz 名或哈希说明，确认 `release-sync-docs.mjs` 的正则仍能命中——未命中会让下次发版中止。
+3. 若改过 `.agents/notes/dev-log.md`「当前状态」里的版本标记、tgz 名或哈希说明，确认 `release-sync-docs.mjs` 的正则仍能命中——未命中会让下次发版中止。README 的安装命令用 `<版本>` 占位，不随发版改写。
 4. 新增或调整的能力写进 `.agents/notes/dev-log.md` 的「当前实现」与「仍在约束当前实现的结论」表，需求变化写进 `docs/PRD.md`。
 5. 没有把 `docs/ui/verification/`、`*.tgz`、临时脚本带进提交。
 6. 影响后续维护的决策、放弃的方案、尚未验证的边界，写进 `.agents/notes/dev-log.md`。

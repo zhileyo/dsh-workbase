@@ -41,9 +41,12 @@ GitHub 侧的分支与标签由流水线对齐，提交 SHA 与 CNB 一致；改
 ### 本地安装包
 
 ```sh
-dsh plugin --profile web add ./dsh-workbase-0.2.38.tgz
+npm pack                                   # 产出 dsh-workbase-<版本>.tgz
+dsh plugin --profile web add ./dsh-workbase-<版本>.tgz
 dsh web
 ```
+
+把 `<版本>` 换成 `npm pack` 实际输出的版本号。
 
 ### npm 安装
 

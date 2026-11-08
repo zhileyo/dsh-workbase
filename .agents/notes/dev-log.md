@@ -106,13 +106,23 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
-版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），一次发版依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节与 `README.md` 的当前状态 → `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。
+版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），一次发版依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。
 
 本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
 
 ## 日志
+
+### 2026-11-08 · README 安装命令改用 `<版本>` 占位，发版只改开发日志
+
+**背景**：`release-sync-docs.mjs` 曾有一条 README 规则，只为改写本地安装示例里的 `dsh-workbase-0.2.38.tgz`。这个文件名对读者没有信息量（版本在 `package.json` 与 tag 里），却让每次发版都要动 README，多一处可能与 registry 不一致的版本字面量。
+
+**决策**：README 的本地安装命令改为 `./dsh-workbase-<版本>.tgz`，前面补一行 `npm pack`，正文说明替换方式；同时删掉插件里的 README 规则，`prepare()` 只改写开发日志的当前状态。没有删掉整节本地安装说明：离线安装仍是验收与内网路径，`npm pack` 要先构建这个坑也要留。代价是命令不能原样复制，需要读者替换一次占位符——比每次发版都改一次文档划算。
+
+**证据**：删除前规则正则 `/dsh-workbase-\d+\.\d+\.\d+\.tgz/g` 在 README 全文件只命中第 44 行；删除后剩余四条规则仍逐条抛错校验（`release-sync-docs.mjs` 的 `if (nextHead === head) throw`），`node --check release-sync-docs.mjs` 通过，`npm run typecheck` 与 `npm test` 见提交前的运行记录。
+
+**遗留**：README「npm 安装」节仍写「当前没有 npm 发布成功记录」，0.3.0 发布后这句话会失效，而插件不再碰 README，必须手动改。等真正发布时连同安装建议一起更新。
 
 ### 2026-11-08 · 提交身份统一为 zhileyo，历史 SHA 全部重写
 
