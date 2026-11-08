@@ -106,13 +106,23 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
-版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 CNB 流水线在 push `main` 后执行（`.cnb.yml` 的 `release` 阶段，凭据取自密钥仓库的 `NPM_TOKEN`），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并回推 CNB。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。缺 `NPM_TOKEN` 时该阶段打印提示后跳过，镜像照常。
+版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 GitHub Actions 在 push `main` 后执行（`.github/workflows/release.yml` 的 `release` job），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → `@semantic-release/github` 建 Release；随后 `mirror` job 用 `CNB_TOKEN` 把 `main` 与标签推到 CNB。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。发布凭据为仓库变量 `NPM_TRUSTED_PUBLISHING=true`（可信发布）或 secret `NPM_TOKEN`（首次自举），两者都缺时打印提示跳过，门禁与镜像照常。
 
 本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
 
 ## 日志
+
+### 2026-11-08 · 真源迁到 GitHub，CNB 退回只读镜像
+
+**背景**：本日早些时候把发版放在 CNB 流水线，凭据仓库里的 granular token 直接 `npm publish`。用户指出 CNB 不在 npm 可信发布名单——属实：可信发布只支持 GitHub Actions、GitLab CI.com 与 CircleCI，自托管 runner 也不被支持，CNB 既拿不到 OIDC 也产不出 provenance。npm 同时宣布 2027-01 移除 granular token 的直接发布能力，把发版留在 CNB 等于把半年后要重做的事先欠下。
+
+**决策**：翻转为 GitHub 主库、GitHub Actions 发版、CNB 只读镜像。放弃「CNB 主库 + 另建 GitHub Actions 发版仓」，因为跨仓发版要同步两套历史与两套凭据，比整体迁移更脆；也没有只加可信发布而不迁真源——可信发布的 workflow 必须与主库同仓，否则 tag 与发布位置错位。新增 `.github/workflows/release.yml`：`release` job 先跑三关，再由 semantic-release 发版（`id-token: write`，凭据二选一：`vars.NPM_TRUSTED_PUBLISHING` 或 `secrets.NPM_TOKEN`）；`mirror` job 在 `needs: release` + `if: always()` 下用 `CNB_TOKEN` force push `main` 与标签到 CNB。`release.config.mjs` 接回 `@semantic-release/github`，`.cnb.yml` 整体删除，CNB 侧不再有 CI。
+
+**证据**：npm 文档 `trusted-publishers.mdx` 列出三家 CI 并写明自托管 runner 不支持；`npm trust` 的文档写明 Package must exist，所以 0.3.0 仍需一次 `NPM_TOKEN` 自举。workflow 固定 node 22 并 `npm install -g npm@latest`，满足可信发布的 CLI ≥ 11.5.1；`npx semantic-release --dry-run` 在本机仍因无 token 停在 `verifyConditions`。首次 Actions 运行结果与 CNB 镜像 SHA 待推送后补记。
+
+**遗留**：首次发版必须自举——用户提供一次性 granular token（勾 Bypass 2FA、`Read and write (publish and stage)`、范围限 `dsh-workbase`）→ 0.3.0 发布 → `npm trust github --allow-publish` → 设变量 `NPM_TRUSTED_PUBLISHING=true` → 删 secret。`mirror` job 依赖 `CNB_TOKEN`，未设时该 job 直接失败（有意：宁可红也不静默不同步）。CNB 上的 `main` 从此只由该 job 写入，不要在镜像侧直接推。上一条「发版移入 CNB 流水线」的记录保留为历史，其中描述的六阶段 `.cnb.yml` 已不存在。
 
 ### 2026-11-08 · 发版移入 CNB 流水线，镜像后自动建 GitHub Release
 

@@ -78,7 +78,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | `.agents/notes/` | 开发日志：当前状态 + 按日期的决策记录（随仓库提交） |
 | `sync-ui.mjs`、`build.mjs` | 原型同步、构建 |
 | `release.config.mjs`、`release-sync-docs.mjs` | 发版配置（中文 type 解析 + 版本级别映射）与发版时的文档版本同步 |
-| `.cnb.yml` | CNB 流水线：`main` push 后先跑凭据预检与 typecheck／test／build 门禁，交由 semantic-release 发版（缺 `NPM_TOKEN` 时跳过），再对齐并镜像到 GitHub，为新版本建 GitHub Release |
+| `.github/workflows/release.yml` | GitHub Actions：push `main` 后跑 typecheck／test／build 门禁，交由 semantic-release 发版并建 Release，再把 `main` 与标签镜像到 CNB |
 
 ## 验收脚本与证据
 
@@ -127,9 +127,13 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 npx semantic-release --dry-run   # 本地预演：看这次会发哪个版本，不写文件、不发布
 ```
 
-发版由 CNB 流水线执行，不需要在本地跑 `semantic-release`：push `main` 后 `.cnb.yml` 的 `release` 阶段若发现 `NPM_TOKEN`（放在密钥仓库 `${CNB_ROOT_SLUG}/secrets`）就依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并回推 CNB；随后 `align`／`mirror` 同步到 GitHub，`publish-release` 只给确实发到 npm 的版本建 GitHub Release。没有 `NPM_TOKEN` 时该阶段跳过，镜像照常进行。
+发版由 GitHub Actions 执行（`.github/workflows/release.yml`），不需要在本地跑 `semantic-release`：push `main` 后先跑 `npm ci`／`typecheck`／`test`／`build` 门禁，再依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → 由 `@semantic-release/github` 建 Release；随后 `mirror` 任务把 `main` 与标签推到 CNB。发布凭据缺失时该步骤打印提示并跳过，门禁与镜像照常。
 
-`NPM_TOKEN` 必须是 npm 的 **granular access token**（classic／Automation token 已于 2025-11 撤销）：勾选 **Bypass two-factor authentication**，包权限选 **Read and write (publish and stage)**，范围只选 `dsh-workbase`，并设到期日。不勾 Bypass 2FA 时 CI 里的 `npm publish` 会卡在交互式 2FA。npm 已宣布 **2027-01** 起移除粒度 token 的直接发布能力：届时要么换成 **Read and write (stage only)** 并改跑 `npm stage publish`、由维护者 `npm stage approve <stage-id> --otp <code>` 提升（`@semantic-release/npm` 只调 `npm publish`，这步要自己替换），要么把发版搬到 GitHub Actions 走 trusted publishing。CNB 不在可信发布支持的 CI 名单（GitHub Actions／GitLab CI／CircleCI，自托管 runner 亦不支持）里，因此拿不到 OIDC 与 provenance。
+发布凭据二选一：仓库变量 `NPM_TRUSTED_PUBLISHING=true`（npm 可信发布，OIDC，带 provenance，推荐）或仓库 secret `NPM_TOKEN`（只用于首次自举）。`NPM_TOKEN` 必须是 **granular access token**（classic／Automation token 已于 2025-11 撤销）：勾 **Bypass two-factor authentication**、权限 **Read and write (publish and stage)**、范围限 `dsh-workbase`、设到期日；不勾 Bypass 2FA 时 CI 里的 `npm publish` 会卡在交互式 2FA。
+
+首次发布要先自举：`npm trust` 要求包已存在于 registry，所以 0.3.0 用一次 `NPM_TOKEN` 发出去；随后在本地执行 `npm trust github --allow-publish ...`（交互 2FA，参数见 `npm trust github --help`），在仓库设变量 `NPM_TRUSTED_PUBLISHING=true`，再删掉 `NPM_TOKEN` secret。可信发布要求 npm CLI ≥ 11.5.1（workflow 里已 `npm install -g npm@latest`）与 `id-token: write`，且 npmjs 上登记的 workflow 文件名要与 `.github/workflows/release.yml` 逐字符一致。CNB 不在 npm 支持的 CI 名单（GitHub Actions／GitLab CI／CircleCI，自托管 runner 亦不支持）里，镜像侧无法发布；npm 已宣布 **2027-01** 起移除粒度 token 的直接发布能力，届时同样走可信发布。
+
+镜像凭据是仓库 secret `CNB_TOKEN`（CNB 访问令牌，`https://cnb:<token>@cnb.cool/...`）。改动请提到 GitHub，不要在镜像侧直接推。
 
 出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
 

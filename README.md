@@ -1,7 +1,7 @@
 # DSH Workbase · 工作台
 
-[![CNB](https://img.shields.io/badge/CNB-zhileyo%2Fdsh--workbase-1f6feb)](https://cnb.cool/zhileyo/dsh-workbase)
-[![GitHub 镜像](https://img.shields.io/badge/GitHub-zhileyo%2Fdsh--workbase-181717?logo=github)](https://github.com/zhileyo/dsh-workbase)
+[![GitHub](https://img.shields.io/badge/GitHub-zhileyo%2Fdsh--workbase-181717?logo=github)](https://github.com/zhileyo/dsh-workbase)
+[![CNB 镜像](https://img.shields.io/badge/CNB-zhileyo%2Fdsh--workbase-1f6feb)](https://cnb.cool/zhileyo/dsh-workbase)
 
 DeepSeek Harness 的工作台插件，集中管理项目、会话和待办，并支持 Agent 在当前项目中创建和更新任务。
 
@@ -22,10 +22,10 @@ DeepSeek Harness 的工作台插件，集中管理项目、会话和待办，并
 
 | 平台 | 地址 | 角色 |
 | --- | --- | --- |
-| CNB | <https://cnb.cool/zhileyo/dsh-workbase> | 主库：提交、流水线、发版 |
-| GitHub | <https://github.com/zhileyo/dsh-workbase> | 只读镜像：push `main` 后由 `.cnb.yml` 自动同步 |
+| GitHub | <https://github.com/zhileyo/dsh-workbase> | 主库：提交、Actions、发版与 Release |
+| CNB | <https://cnb.cool/zhileyo/dsh-workbase> | 只读镜像：push `main` 后由 `.github/workflows/release.yml` 推送 |
 
-GitHub 侧的分支与标签由流水线对齐，提交 SHA 与 CNB 一致；改动请提到 CNB，不要在镜像侧直接推。
+CNB 侧的分支与标签由 workflow 的 mirror 任务覆写，提交 SHA 与 GitHub 一致；改动请提到 GitHub，不要在镜像侧直接推。
 
 ## 环境要求
 
@@ -90,7 +90,7 @@ npm run build
 
 改动源码后需重新构建并重启宿主。服务端入口 `src/server/index.ts` 产出 `dist/index.js`，客户端入口 `src/client/entry.tsx` 产出 `lib/client.js`（样式以文本形式打进客户端产物）。
 
-出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。版本号与发版流程由 semantic-release 从提交类型推断，push 到 `main` 后由 CNB 流水线自动发版，规则见 [AGENTS.md](AGENTS.md)。
+出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。版本号与发版流程由 semantic-release 从提交类型推断，push 到 `main` 后由 GitHub Actions 自动发版，规则见 [AGENTS.md](AGENTS.md)。
 
 本地链接安装：
 
@@ -110,7 +110,7 @@ dsh web
 | `test/` | `node:test` 测试，`npm test` 全量执行 |
 | `docs/` | 需求、UI 基线、验收证据与验收脚本；不进入 npm 包 |
 | `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
-| `.cnb.yml` | CNB 流水线：push `main` 后跑凭据预检、类型/测试/构建门禁，交由 semantic-release 发版，再把分支与标签镜像到 GitHub，并为新版本建 GitHub Release |
+| `.github/workflows/release.yml` | GitHub Actions：push `main` 后跑类型／测试／构建门禁，交由 semantic-release 发版并建 Release，再把 `main` 与标签镜像到 CNB |
 
 ## 许可证
 

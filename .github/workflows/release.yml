@@ -1,0 +1,85 @@
+# 主库在 GitHub：push main 后跑三关门禁与 semantic-release，
+# 再把分支与标签镜像到 CNB（CNB 侧不再有流水线，只作为只读镜像）。
+#
+# 发布凭据二选一：
+#   1）仓库变量 NPM_TRUSTED_PUBLISHING=true —— npm 可信发布（OIDC，带 provenance），推荐；
+#   2）仓库 secret NPM_TOKEN —— 首次发布的自举通道（npm trust 要求包已存在）。
+# 两者都没有时跳过发版，门禁与镜像照常。
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write # 提交版本变更、打 tag、建 Release
+  id-token: write # 可信发布的 OIDC
+
+jobs:
+  release:
+    name: test & release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # semantic-release 要读完整历史与 tag
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 升级 npm（可信发布要求 11.5.1 以上）
+        run: npm install --global npm@latest
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TRUSTED_PUBLISHING: ${{ vars.NPM_TRUSTED_PUBLISHING }}
+        run: |
+          title="$(git log -1 --pretty=%s)"
+          case "$title" in
+            "文档修改："*"同步版本标记与变更记录")
+              echo "当前提交是发版提交，跳过"
+              exit 0
+              ;;
+          esac
+          if [ -z "${NPM_TOKEN}" ] && [ "${NPM_TRUSTED_PUBLISHING}" != "true" ]; then
+            echo "未配置发布凭据（NPM_TOKEN 或仓库变量 NPM_TRUSTED_PUBLISHING），跳过发版"
+            exit 0
+          fi
+          npx semantic-release
+
+  mirror:
+    name: mirror to CNB
+    needs: release
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 推送 main 与标签到 CNB
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+        run: |
+          if [ -z "${CNB_TOKEN}" ]; then
+            echo "未配置 CNB_TOKEN，无法镜像" >&2
+            exit 1
+          fi
+          # 拉取 release 阶段刚推上来的发版提交与标签
+          git fetch --force origin '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+          git push --force --prune "https://cnb:${CNB_TOKEN}@cnb.cool/zhileyo/dsh-workbase.git" \
+            '+refs/remotes/origin/main:refs/heads/main' '+refs/tags/*:refs/tags/*'

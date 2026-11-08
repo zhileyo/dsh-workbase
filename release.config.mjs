@@ -54,6 +54,7 @@ export default {
         message: commitMessage,
       },
     ],
-    // 不用 @semantic-release/github：主库在 CNB，GitHub 只是镜像，发布到镜像会与 tag 错位。
+    // 主库在 GitHub，Release 也建在 GitHub；CNB 只是镜像，由 workflow 的 mirror 任务推过去。
+    '@semantic-release/github',
   ],
 };
