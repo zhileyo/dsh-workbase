@@ -50,14 +50,14 @@ dsh web
 
 ### npm 安装
 
-当前没有 npm 发布成功记录。发布预览版后，可执行：
+已发布到 npm，装最新版：
 
 ```sh
-dsh plugin --profile web add dsh-workbase@beta
+dsh plugin --profile web add dsh-workbase
 dsh web
 ```
 
-桌面端需将 `web` 替换为实际运行的 profile。
+需要固定版本时写成 `dsh-workbase@<版本>`；桌面端需将 `web` 替换为实际运行的 profile。
 
 ## Agent 工具
 

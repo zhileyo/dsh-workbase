@@ -110,9 +110,19 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
-npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
+npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。0.3.0 已发布到 npm（`latest`），后续版本由 GitHub Actions 发版。
 
 ## 日志
+
+### 2026-11-08 · 0.3.0 首发：token 自举与 packument 占位
+
+**背景**：GitHub Actions 发版链路搭好后，首次发布仍缺一个前置条件：包在 npm 上不存在时，包设置页与 `npm trust` 都无从绑定，只能先用 token 发一次。
+
+**决策**：按「token 发 0.3.0 → 登记可信发布 → 删 token」的顺序走。用户建 granular token（勾 Bypass 2FA、`Read and write (publish and stage)`），存为仓库 secret `NPM_TOKEN`，同时把仓库变量 `NPM_TRUSTED_PUBLISHING` 设为 `true`。变量先设不妨碍 token 发布：`@semantic-release/npm` 13.2.0 先试 OIDC、失败才回落到 token（`lib/verify-auth.js:86`）。
+
+**证据**：`gh workflow run release` 触发的 run `42443390374` 全绿，日志依次出现 `Created tag v0.3.0`、`Published dsh-workbase@0.3.0 to dist-tag @latest`、`Published GitHub release`；发布提交 `d6da2f4`，tag `v0.3.0` 指向它，Release 创建于 03:36:38Z。registry 侧 `dsh-workbase/0.3.0` 返回 200，`/-/package/dsh-workbase/dist-tags` 为 `{"latest":"0.3.0"}`；tarball 215849 字节，6 个文件（LICENSE、lib/client.js、dist/index.js、package.json、README.md、cordis.patch.yml）。首次查 packument 只看到 `0.0.0-stage`（描述为「Temporary package placeholder for staged publishing」），是 CDN 缓存滞后，per-version 端点当时已可访问，几分钟后 packument 才列出 `0.3.0`——先看 per-version 或 dist-tags 端点，别被占位版本号误导。
+
+**遗留**：可信发布尚未在 npmjs 登记，`NPM_TRUSTED_PUBLISHING=true` 目前只让 semantic-release 多试一次 OIDC。登记 `npm trust github --allow-publish`（workflow 文件名需逐字符一致）并确认下一次发版走 OIDC 后，再删除 `NPM_TOKEN`。README「npm 安装」节已改为直接从 npm 安装。
 
 ### 2026-11-08 · CNB 镜像改为定时拉取
 
