@@ -124,6 +124,8 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 **后续修正**：type 表最终定为七个四字 type，并去掉「破坏变更」、加入「代码重构」。理由：这个仓库还没发布，破坏性改动与加能力都落在 0.x 的 minor 轴上，拆两个 type 只会让归类变成判断题；而每次重构都要在 type 里说明「行为等价」，反而是更有价值的约束。于是 `新增文件` 同时承担「加能力」与「改坏契约」（破坏性改动要在 body 首句写明不兼容），`代码重构` 映射为 major（0.x 期间这会直接把版本推到 1.0.0，是有意为之：重构被视为比加能力更重的动作）。改动位置：`release.config.mjs` 的 `releaseRules` 与注释、`.agents/rules/git-commit-message.md`（type 表、判定顺序、两处示例）、`AGENTS.md`（发版表、提交信息节的 type 列表）、`README.md`（发布表）。**type 名改了就必须同步已有提交，否则 analyzer 匹配不到、静默不发版**——原先那条标题会 amend 成 `新增文件：0.3.0 …`。复验：真实范围 `v0.2.38..HEAD` 仍为 `minor` → 0.3.0；`代码重构` 与旧五字 type 都解析成 `null`。顺带抓到一处真实漂移：早前演示 `npm version` 时把 `package.json` 留在了 `1.0.1-beta.0`，`git add -A` 把它带进了提交，已改回 `0.2.38`（发版算版本看 tag，不看这个字段，但它会对不上 README 与开发日志的三处标记）。
 
+**再修正（宿主对接归入代码重构）**：用户要求「修复与宿主的对接问题，也归为代码重构」。理由：这类问题的根因在插件与宿主的接线，不是插件自己的业务逻辑——`entry.tsx` 的 slots 注入与页面记忆、`host.ts` 的能力探测与降级、`index.ts` 向宿主注册存储域／RPC／HTTP／工具、`cordis.patch.yml` 与 peer 依赖；按 `问题修复`（patch）算会让「宿主侧不兼容」被静默升级。分界写进规则：**接线层归 `代码重构`（major），插件自己的渲染／排序／交互仍归 `问题修复`（patch）**。改动位置：`.agents/rules/git-commit-message.md` 的 type 表场景列与判定顺序（新增一段分界说明）、`AGENTS.md` 发版表下的一段说明。
+
 **遗留**：CNB 仓库、GitHub 同步与 npm 凭据都还没接通。仓库 0 个 tag，semantic-release 会把首个版本定成 `1.0.0`（`lib/get-next-version.js` 的 `FIRST_RELEASE`），所以先给当前提交打了 `v0.2.38` 基线 tag。`release.mjs` 同日决定删除，出包改走 `npm pack`。
 
 ### 2026-11-07 · 重建 Git 仓库

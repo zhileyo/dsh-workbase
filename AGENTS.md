@@ -118,6 +118,8 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | 问题修复／编译代码／文档修改 | patch |
 | 样式修改／其他提交 | 不发版 |
 
+「代码重构」除了抽模块、合重复逻辑，也收**与宿主的对接修复**：`entry.tsx` 的 slots 注入与页面记忆、`host.ts` 的能力探测与降级、`index.ts` 向宿主注册存储域／RPC／HTTP／工具、`cordis.patch.yml` 与 peer 依赖接线。分界是「接线层归重构、插件自己的渲染与交互归问题修复」。
+
 配置在 `release.config.mjs`：中文 type 需要自定义 `headerPattern`（默认的 `\w` 不匹配汉字）与 `releaseRules`；解析失败会静默降级成「不发版」，所以**改 type 名或分隔符必须同步这里**，见 `.agents/rules/git-commit-message.md`。
 
 ```sh
