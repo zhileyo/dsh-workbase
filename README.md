@@ -90,7 +90,7 @@ npm run build
 
 改动源码后需重新构建并重启宿主。服务端入口 `src/server/index.ts` 产出 `dist/index.js`，客户端入口 `src/client/entry.tsx` 产出 `lib/client.js`（样式以文本形式打进客户端产物）。
 
-出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。版本号与发版流程由 semantic-release 从提交类型推断，规则见 [AGENTS.md](AGENTS.md)。
+出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。版本号与发版流程由 semantic-release 从提交类型推断，push 到 `main` 后由 CNB 流水线自动发版，规则见 [AGENTS.md](AGENTS.md)。
 
 本地链接安装：
 
@@ -110,7 +110,7 @@ dsh web
 | `test/` | `node:test` 测试，`npm test` 全量执行 |
 | `docs/` | 需求、UI 基线、验收证据与验收脚本；不进入 npm 包 |
 | `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
-| `.cnb.yml` | CNB 流水线：push `main` 后跑凭据预检、类型/测试/构建门禁，再把分支与标签镜像到 GitHub |
+| `.cnb.yml` | CNB 流水线：push `main` 后跑凭据预检、类型/测试/构建门禁，交由 semantic-release 发版，再把分支与标签镜像到 GitHub，并为新版本建 GitHub Release |
 
 ## 许可证
 

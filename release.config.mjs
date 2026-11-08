@@ -44,13 +44,13 @@ export default {
     ['@semantic-release/commit-analyzer', { parserOpts, releaseRules }],
     ['@semantic-release/release-notes-generator', { parserOpts }],
     '@semantic-release/changelog',
-    // 本地插件：把新版本写进 README 与开发日志；顺序在 npm 之前，失败即整体中止。
+    // 本地插件：把新版本写进开发日志（README 用 `<版本>` 占位，不参与同步）；顺序在 npm 之前，失败即整体中止。
     './release-sync-docs.mjs',
     '@semantic-release/npm',
     [
       '@semantic-release/git',
       {
-        assets: ['CHANGELOG.md', 'package.json', 'README.md', '.agents/notes/dev-log.md'],
+        assets: ['CHANGELOG.md', 'package.json', '.agents/notes/dev-log.md'],
         message: commitMessage,
       },
     ],

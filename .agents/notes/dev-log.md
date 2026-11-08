@@ -106,13 +106,23 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
-版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），一次发版依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。
+版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 CNB 流水线在 push `main` 后执行（`.cnb.yml` 的 `release` 阶段，凭据取自密钥仓库的 `NPM_TOKEN`），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并回推 CNB。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。缺 `NPM_TOKEN` 时该阶段打印提示后跳过，镜像照常。
 
 本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
 
 ## 日志
+
+### 2026-11-08 · 发版移入 CNB 流水线，镜像后自动建 GitHub Release
+
+**背景**：仓库已托管在 CNB、镜像到 GitHub，但 semantic-release 只在本机手工跑；GitHub 的 `releases` 数量为 0——`git-sync` 只搬分支与标签，Release 是独立对象。目标是「push 即发版」，同时不把发布逻辑复制到两套 CI。
+
+**决策**：选 A（CNB 发版 + 镜像后建 Release），放弃 B（GitHub Actions 发版回推 CNB，要维护两套 CI 与两套凭据）与 C（真源迁 GitHub，可得 `npm publish --provenance`，但属于仓库迁移，不混在这次改动里）。`.cnb.yml` 从四阶段扩到六阶段：`check-credentials` → `test` → `release` → `align` → `mirror` → `publish-release`。`release` 用 `CNB_COMMIT_MESSAGE_TITLE` 匹配发版提交标题防自触发；`publish-release` 先查 npm 上该版本是否存在，404 就跳过，避免给历史 tag 补建 Release。
+
+**证据**：`node validate.js .cnb.yml`（validator 复制到工作区跑）YAML 语法／语义／Schema 三项全过。发布动作本身未验证：本机无 `NPM_TOKEN`，首次推送预期 `release` 阶段打印「未配置 NPM_TOKEN…跳过发版」、`publish-release` 打印「当前提交没有 tag，跳过」。
+
+**遗留**：需把 npm Automation token 以 `NPM_TOKEN` 写入 `zhileyo/secrets` 的 `secrets.yml`；之后 push `main` 才会真正发 0.3.0 并生成 Release。`publish-release` 的 POST 分支尚未跑过，首次真实发版要看日志确认。
 
 ### 2026-11-08 · README 安装命令改用 `<版本>` 占位，发版只改开发日志
 

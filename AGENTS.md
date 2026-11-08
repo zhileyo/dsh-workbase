@@ -78,7 +78,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | `.agents/notes/` | 开发日志：当前状态 + 按日期的决策记录（随仓库提交） |
 | `sync-ui.mjs`、`build.mjs` | 原型同步、构建 |
 | `release.config.mjs`、`release-sync-docs.mjs` | 发版配置（中文 type 解析 + 版本级别映射）与发版时的文档版本同步 |
-| `.cnb.yml` | CNB 流水线：`main` push 后先跑凭据预检与 typecheck／test／build 门禁，再把分支与标签对齐并镜像到 GitHub |
+| `.cnb.yml` | CNB 流水线：`main` push 后先跑凭据预检与 typecheck／test／build 门禁，交由 semantic-release 发版（缺 `NPM_TOKEN` 时跳过），再对齐并镜像到 GitHub，为新版本建 GitHub Release |
 
 ## 验收脚本与证据
 
@@ -124,10 +124,10 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 配置在 `release.config.mjs`：中文 type 需要自定义 `headerPattern`（默认的 `\w` 不匹配汉字）与 `releaseRules`；解析失败会静默降级成「不发版」，所以**改 type 名或分隔符必须同步这里**，见 `.agents/rules/git-commit-message.md`。
 
 ```sh
-npx semantic-release --dry-run   # 看这次会发哪个版本，不写文件、不发布
+npx semantic-release --dry-run   # 本地预演：看这次会发哪个版本，不写文件、不发布
 ```
 
-一次发版会：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。
+发版由 CNB 流水线执行，不需要在本地跑 `semantic-release`：push `main` 后 `.cnb.yml` 的 `release` 阶段若发现 `NPM_TOKEN`（放在密钥仓库 `${CNB_ROOT_SLUG}/secrets`）就依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并回推 CNB；随后 `align`／`mirror` 同步到 GitHub，`publish-release` 只给确实发到 npm 的版本建 GitHub Release。没有 `NPM_TOKEN` 时该阶段跳过，镜像照常进行。
 
 出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
 
