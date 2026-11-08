@@ -114,6 +114,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-08 · 提交身份统一为 zhileyo，历史 SHA 全部重写
+
+**背景**：仓库没有本地提交身份，一直沿用全局的 `AlwaysFyo <zhangxy.live@outlook.com>`；GitHub 账号是 `zhileyo`，提交页的作者链接与账号对不上，作者名也不一致。
+
+**决策**：本仓库设 `user.name=zhileyo`、`user.email=zhangxy.live@outlook.com`（邮箱不变，提交仍归属同一账号）；已存在的 8 个提交连同注记标签 `v0.2.38` 一起重写作者与提交者，保留原树、提交信息与作者/提交者时间及时区。没有用 `git filter-branch`：沙箱下 `sh.exe` 建不了信号管道（`couldn't create signal pipe, Win32 error 5`），filter-branch 直接以退出码 1 中止；改用 `git commit-tree -F <消息文件>`，逐个提交重建，不需要 shell，也不需要 stdin。标签原先指向根提交，重写后重新指向重写后的根提交，tagger 同样改为 `zhileyo`。
+
+**证据**：重写前后 `git diff 8f03033 6300996` 为空——树完全一致；逐提交比较 commit 对象中 `\n\n` 之后的消息体，8/8 一致；`git log --format='%an <%ae>'` 全部为 `zhileyo <zhangxy.live@outlook.com>`；`v0.2.38` 现指向 `eb931e3`，与 `git rev-list --max-parents=0 main` 相同，标签消息与旧标签逐字节一致。新 tip `6300996`（原 `8f03033`）。
+
+**遗留**：所有既有 SHA 变了，CNB 只能 force push，GitHub 镜像由流水线覆写；任何本地克隆或分支需要重新 fetch 后 reset。GitHub 上旧提交页面的对象会保留一段时间，直到服务端 GC，属镜像侧不可控。
+
 ### 2026-11-08 · 补 MIT 许可证，README 不再复述发版流程
 
 **背景**：仓库已经公开，但既没有 `LICENSE` 也没有 `license` 字段，README 结尾只写「当前尚未指定开源许可证」——别人无法合法复用。同时发版规则在 README、`AGENTS.md`、本文件三处各写一份，改一次提交类型表要同步三处，漂移只是时间问题。
