@@ -129,6 +129,8 @@ npx semantic-release --dry-run   # 本地预演：看这次会发哪个版本，
 
 发版由 CNB 流水线执行，不需要在本地跑 `semantic-release`：push `main` 后 `.cnb.yml` 的 `release` 阶段若发现 `NPM_TOKEN`（放在密钥仓库 `${CNB_ROOT_SLUG}/secrets`）就依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并回推 CNB；随后 `align`／`mirror` 同步到 GitHub，`publish-release` 只给确实发到 npm 的版本建 GitHub Release。没有 `NPM_TOKEN` 时该阶段跳过，镜像照常进行。
 
+`NPM_TOKEN` 必须是 npm 的 **granular access token**（classic／Automation token 已于 2025-11 撤销）：勾选 **Bypass two-factor authentication**，包权限选 **Read and write (publish and stage)**，范围只选 `dsh-workbase`，并设到期日。不勾 Bypass 2FA 时 CI 里的 `npm publish` 会卡在交互式 2FA。npm 已宣布 **2027-01** 起移除粒度 token 的直接发布能力：届时要么换成 **Read and write (stage only)** 并改跑 `npm stage publish`、由维护者 `npm stage approve <stage-id> --otp <code>` 提升（`@semantic-release/npm` 只调 `npm publish`，这步要自己替换），要么把发版搬到 GitHub Actions 走 trusted publishing。CNB 不在可信发布支持的 CI 名单（GitHub Actions／GitLab CI／CircleCI，自托管 runner 亦不支持）里，因此拿不到 OIDC 与 provenance。
+
 出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
 
 注意：`npm pack` 本身**不触发** `prepublishOnly`，手工 pack 有可能把上一次的 `dist`／`lib` 打进新版本。
