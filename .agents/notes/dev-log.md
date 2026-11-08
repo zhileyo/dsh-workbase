@@ -114,6 +114,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-08 · 托管到 CNB，GitHub 由流水线镜像
+
+**背景**：仓库此前只有本地历史，既没有远程也没有同步；需要放到 CNB 作为主库，并在 GitHub 留一份可读镜像。两个平台手工各推一次必然漂移，镜像只能由流水线在提交后自动完成。
+
+**决策**：主库为 `zhileyo/dsh-workbase`（CNB，public），同名的 GitHub 仓库承接镜像。流水线照抄同组织 `dsh-overview` 的 `.cnb.yml` 结构：凭据来自密钥仓库 `${CNB_ROOT_SLUG}/secrets` 的 `GITHUB_USERNAME`／`GITHUB_TOKEN`，`align` 阶段先把本地 ref 与 CNB 对齐、删掉 GitHub 侧多余的 ref，再由 `tencentcom/git-sync` 推送——该插件没有 prune，只推不删会让镜像越积越脏。没有沿用 `dsh-fairy` 早期的模板：那版用 `filter-branch` 把 `.cnb.yml` 从 GitHub 历史摘掉，两边同一提交的 SHA 不同，就失去了「SHA 一致即镜像同步」这个判据。测试门禁取 `typecheck`／`test`／`build` 三关，与本地发版前自检一致；另加 `check-credentials` 阶段，把「fine-grained PAT 没把本仓库加入 Repository access」这类错误提前暴露成可读信息，而不是让 align 阶段报一个含糊的认证失败。
+
+**证据**：`git -c http.sslBackend=openssl push https://cnb.cool/zhileyo/dsh-workbase.git refs/heads/main:refs/heads/main --tags` 推出 `main` 与 `v0.2.38`；随后 `gh api repos/zhileyo/dsh-workbase/branches` 得 `main`、`.../tags` 得 `v0.2.38`、`.../commits` 首条为 `5afc229`，与 CNB 的 HEAD 同一 SHA，证明 preflight → test → align → mirror 四个阶段都实际跑过。本机侧受沙箱限制：`npm test`（tsx）与 `npm run build`（esbuild）的子进程 spawn 均报 `EPERM`，只能断言 `npm run typecheck` 通过、`node -e "import('./sync-ui.mjs').then(m=>m.syncPrototypeUi())"` 生成物与提交版本无差异；完整三关由 CNB 流水线在 `node:24` 上执行，镜像成功即为通过证据。公开前的脱敏：`docs/ui/ui-directions.html` 的 9 处 `/Users/<user>` 改为 `/Users/example`（同一提交）。
+
+**遗留**：`GITHUB_TOKEN` 若是 fine-grained PAT，Repository access 是按仓库授权的，**以后每建一个新仓库都要在 token 里加一次**，否则 `check-credentials` 会失败。CNB 仓库的 topics 还没设（`dsh-overview` 有 `dsh,dsh-plugin,deepseekruntime,dashboard`）。GitHub 侧是只读镜像，不要直接往镜像推提交或建分支——`align` 阶段会把 CNB 没有的 ref 删掉。本次提交 type 为「新增文件」，下次发版落到 `0.3.0`。
+
 ### 2026-11-07 · 接入 semantic-release 自动定版
 
 **背景**：版本号一直靠手工拍，`release.mjs` 只负责把人工决定写进文件。问到「发布脚本能不能自己判断该发哪类版本」后，先否掉了 git 历史推断（仓库刚重建，只有 1 条提交，没有素材）与提交 type 直映射（type 记的是变更种类，不是影响级别），最后定为语义化提交 + semantic-release。
