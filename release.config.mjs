@@ -20,8 +20,8 @@ export const releaseRules = [
   { type: '编译代码', release: 'patch' },
   { type: '文档修改', release: 'patch' },
   { type: '样式修改', release: false },
-  // 代码重构只改内部结构、对外行为等价，因此不推动版本号。
-  { type: '代码重构', release: false },
+  // 代码重构推动 major：0.x 期间这会直接把版本推到 1.0.0。
+  { type: '代码重构', release: 'major' },
   { type: '其他提交', release: false },
 ];
 

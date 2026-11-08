@@ -113,9 +113,10 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 
 | 提交 type | 版本号 |
 | --- | --- |
+| 代码重构 | major（0.x 期间会直接升到 1.0.0） |
 | 新增文件 | minor（含破坏性改动：0.x 期间 minor 即破坏轴） |
 | 问题修复／编译代码／文档修改 | patch |
-| 样式修改／代码重构／其他提交 | 不发版 |
+| 样式修改／其他提交 | 不发版 |
 
 配置在 `release.config.mjs`：中文 type 需要自定义 `headerPattern`（默认的 `\w` 不匹配汉字）与 `releaseRules`；解析失败会静默降级成「不发版」，所以**改 type 名或分隔符必须同步这里**，见 `.agents/rules/git-commit-message.md`。
 
