@@ -56,7 +56,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 - **响应式一律按面板宽度**，不按浏览器视口。新增断点时写成容器查询，能力查询留在 `@media`。
 - **改类名前先搜动态拼接。** 大量类名由模板字符串生成（`state-${state(p)}`、`wb-recent-${recentStyle}`、`wb-todo-${t.id}`），只做字面 grep 会把活代码误判为死代码。
 - **不要在 `src/` 里随手加运行时依赖。** 客户端是单文件产物，体积变化记录在提交与文档中；引入新依赖前先确认必要性。
-- **`docs/` 不进入 npm 包。** 包的 `files` 白名单只有 `dist/index.js`、`lib/client.js`、`cordis.patch.yml`、`README.md`（外加 npm 自动包含的 `package.json`）。
+- **`docs/` 不进入 npm 包。** 包的 `files` 白名单只有 `dist/index.js`、`lib/client.js`、`cordis.patch.yml`、`README.md`（外加 npm 自动包含的 `package.json` 与 `LICENSE`）。
 - **不发布源码映射，不等于源码保密。** 客户端产物是可读的 JavaScript，不要把秘密、内部域名或本机绝对路径写进 `src/`。
 
 ## 布局

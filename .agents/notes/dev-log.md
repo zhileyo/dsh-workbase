@@ -114,6 +114,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-08 · 补 MIT 许可证，README 不再复述发版流程
+
+**背景**：仓库已经公开，但既没有 `LICENSE` 也没有 `license` 字段，README 结尾只写「当前尚未指定开源许可证」——别人无法合法复用。同时发版规则在 README、`AGENTS.md`、本文件三处各写一份，改一次提交类型表要同步三处，漂移只是时间问题。
+
+**决策**：许可证取 MIT，与同组织 `dsh-overview` 保持一致，版权行 `Copyright (c) 2026 AlwaysFyo`；`LICENSE` 放仓库根，`package.json` 补 `"license": "MIT"`（npm 会自动把 `LICENSE` 打进包，不必改 `files` 白名单）。README 删掉整个「发布」章节：面向使用者的文档不再复述维护者流程，只在「开发」末尾留一句指向 `AGENTS.md`；许可证节改成一行指向 `LICENSE`。README 仍保留 `npm pack` 的「先构建」提示，那是使用者出本地包时会踩的坑，不属于内部发版规则。
+
+**证据**：此前 `git ls-files` 无 `LICENSE`，`package.json` 无 `license` 字段（只有 `private: false`）；`dsh-overview` 的 `LICENSE` 为 MIT + `Copyright (c) 2026 AlwaysFyo`，直接对齐。删除的是 README 原 112-132 行（type 表、semantic-release 命令、`NPM_TOKEN` 说明、白名单说明），目录结构里 `release.config.mjs`／`release-sync-docs.mjs` 的说明保留。
+
+**遗留**：真正的发版仍未发生——没有 npm 发布记录，GitHub 上只有 tag 没有 Release。若要让 GitHub 出 Release，需要在发版链上接 `@semantic-release/github`（或流水线里另建 release），镜像本身只搬 ref，不产出 Release。
+
 ### 2026-11-08 · 托管到 CNB，GitHub 由流水线镜像
 
 **背景**：仓库此前只有本地历史，既没有远程也没有同步；需要放到 CNB 作为主库，并在 GitHub 留一份可读镜像。两个平台手工各推一次必然漂移，镜像只能由流水线在提交后自动完成。

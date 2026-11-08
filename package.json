@@ -3,6 +3,7 @@
   "version": "0.2.38",
   "private": false,
   "description": "DeepSeek Harness 项目、会话与待办工作台",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "exports": {

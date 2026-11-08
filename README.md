@@ -87,7 +87,7 @@ npm run build
 
 改动源码后需重新构建并重启宿主。服务端入口 `src/server/index.ts` 产出 `dist/index.js`，客户端入口 `src/client/entry.tsx` 产出 `lib/client.js`（样式以文本形式打进客户端产物）。
 
-出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。正式发版见「发布」。
+出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。版本号与发版流程由 semantic-release 从提交类型推断，规则见 [AGENTS.md](AGENTS.md)。
 
 本地链接安装：
 
@@ -109,31 +109,9 @@ dsh web
 | `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
 | `.cnb.yml` | CNB 流水线：push `main` 后跑凭据预检、类型/测试/构建门禁，再把分支与标签镜像到 GitHub |
 
-## 发布
-
-版本号由提交类型推断，不手工改：
-
-| 提交类型 | 版本号 |
-| --- | --- |
-| 代码重构 | major（0.x 期间会直接升到 1.0.0；含破坏性契约变更） |
-| 新增文件 | minor（只加能力，不动既有契约） |
-| 问题修复、编译代码、文档修改 | patch |
-| 样式修改、其他提交 | 不发版 |
-
-```sh
-npx semantic-release --dry-run   # 演练：只算版本，不写文件、不发布
-npx semantic-release             # 完整链路：CHANGELOG、文档版本、npm 发布、打 tag
-```
-
-映射规则在 `release.config.mjs`。中文提交类型需要自定义 `headerPattern`——改动提交类型名或冒号形式必须同步这里，否则解析不到类型会静默跳过发版。发布凭据通过 `NPM_TOKEN` 环境变量提供，不写入仓库。
-
-需要出本地安装包时用 `npm pack`（记得先构建）。版本号不由手工指定，全部交给 semantic-release 从提交类型推断。
-
-npm 包仅包含运行资源、宿主 patch、README 与 `package.json`；同一版本不可覆盖。发布前可用 `npm run publish:check` 演练。
-
 ## 许可证
 
-当前尚未指定开源许可证。
+MIT，全文见 [LICENSE](LICENSE)。Copyright (c) 2026 AlwaysFyo。
 
 ## 项目文档
 
