@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-更新日期：2026-11-07。当前源码与本地包为 `0.2.38`；Windows desktop profile 已安装 `0.2.38`，macOS 正式 desktop 仍为 `0.2.5`。Harness／SDK `0.2.2-rc.1`。
+更新日期：2026-11-07。当前源码与本地包为 `0.3.0`；Windows desktop profile 已安装 `0.2.38`，macOS 正式 desktop 仍为 `0.2.5`。Harness／SDK `0.2.2-rc.1`。
 
 ### 仍在约束当前实现的结论
 
@@ -70,7 +70,7 @@
 | [HTML 原型](../../docs/ui/ui-directions.html) 与两个生成物 | 唯一视觉真源；生成物改了会被下一次构建覆盖 |
 | `docs/isolated-search.patch.yml` | 隔离环境的正文搜索补丁，「验证方式」要用 |
 | [视觉报告](../../docs/ui/verification/index.html) 及其引用的截图矩阵（`details.json`、`details-before.json`、`checks.json`、`geometry.json`、`header-motion-checks.json`、`current-contrast-evidence.json`、`navigation-settings-026.webp`、`host-stats-*.webp`） | 已被当前报告引用的有效证据；目录本身被 git 忽略，删了不在仓库历史里 |
-| `dsh-workbase-0.2.38.tgz` 与 `.sha256` | 已安装版本的校验依据；历史包不再归档 |
+| `dsh-workbase-0.3.0.tgz` 与 `.sha256` | 已安装版本的校验依据；历史包不再归档 |
 | `.agents/notes/`（本文件） | 随仓库提交；`.gitignore` 只忽略 `.agents/worktrees/` |
 
 ### 验证方式
@@ -104,7 +104,7 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ### 安装与发布
 
-当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
+当前版本 `0.3.0`：`dsh-workbase-0.3.0.tgz`（完整性校验用 `npm view dsh-workbase@0.3.0 dist.integrity`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
 版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），发版由 GitHub Actions 在 push `main` 后执行（`.github/workflows/release.yml` 的 `release` job），依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节（`README.md` 不参与，安装命令用 `<版本>` 占位）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → `@semantic-release/github` 建 Release。CNB 不在 GitHub 侧推送：仓库根的 `.cnb.yml` 每 10 分钟跑一次，从 GitHub 拉取 `main` 与标签后强推对齐，因此镜像最多滞后一个周期。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。发布凭据为仓库变量 `NPM_TRUSTED_PUBLISHING=true`（可信发布）或 secret `NPM_TOKEN`（首次自举），两者都缺时打印提示跳过，门禁照常。
 
