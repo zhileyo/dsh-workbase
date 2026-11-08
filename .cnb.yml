@@ -16,7 +16,7 @@
     - name: sync
       image: node:24
       script: |
-        set -euo pipefail
+        set -eu
         git config --global --add safe.directory '*'
 
         github="https://github.com/zhileyo/dsh-workbase.git"
