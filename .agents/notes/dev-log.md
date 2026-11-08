@@ -120,7 +120,7 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 **决策**：翻转为 GitHub 主库、GitHub Actions 发版、CNB 只读镜像。放弃「CNB 主库 + 另建 GitHub Actions 发版仓」，因为跨仓发版要同步两套历史与两套凭据，比整体迁移更脆；也没有只加可信发布而不迁真源——可信发布的 workflow 必须与主库同仓，否则 tag 与发布位置错位。新增 `.github/workflows/release.yml`：`release` job 先跑三关，再由 semantic-release 发版（`id-token: write`，凭据二选一：`vars.NPM_TRUSTED_PUBLISHING` 或 `secrets.NPM_TOKEN`）；`mirror` job 在 `needs: release` + `if: always()` 下用 `CNB_TOKEN` force push `main` 与标签到 CNB。`release.config.mjs` 接回 `@semantic-release/github`，`.cnb.yml` 整体删除，CNB 侧不再有 CI。
 
-**证据**：npm 文档 `trusted-publishers.mdx` 列出三家 CI 并写明自托管 runner 不支持；`npm trust` 的文档写明 Package must exist，所以 0.3.0 仍需一次 `NPM_TOKEN` 自举。workflow 固定 node 22 并 `npm install -g npm@latest`，满足可信发布的 CLI ≥ 11.5.1；`npx semantic-release --dry-run` 在本机仍因无 token 停在 `verifyConditions`。首次 Actions 运行结果与 CNB 镜像 SHA 待推送后补记。
+**证据**：npm 文档 `trusted-publishers.mdx` 列出三家 CI 并写明自托管 runner 不支持；`npm trust` 的文档写明 Package must exist，所以 0.3.0 仍需一次 `NPM_TOKEN` 自举。workflow 固定 node 22 并 `npm install -g npm@latest`，满足可信发布的 CLI ≥ 11.5.1；`@semantic-release/npm` 13.2.0 的 `lib/verify-auth.js:86` 会先试 OIDC、失败才回落到 token，因此可信发布不需要额外环境变量。首次运行（run `42439304189`）全绿：`release` job 的 semantic-release 步骤打印「未配置发布凭据（NPM_TOKEN 或仓库变量 NPM_TRUSTED_PUBLISHING），跳过发版」，`mirror` job 把 CNB 的 `main` 推到与 GitHub 相同的 `57ab128e5aa389a1d7c10d8ec91f8ade62c04db0`；两侧标签都只有 `v0.2.38`，GitHub Release 数仍为 0——镜像链路成立，真正的发布分支尚未走过。
 
 **遗留**：首次发版必须自举——用户提供一次性 granular token（勾 Bypass 2FA、`Read and write (publish and stage)`、范围限 `dsh-workbase`）→ 0.3.0 发布 → `npm trust github --allow-publish` → 设变量 `NPM_TRUSTED_PUBLISHING=true` → 删 secret。`mirror` job 依赖 `CNB_TOKEN`，未设时该 job 直接失败（有意：宁可红也不静默不同步）。CNB 上的 `main` 从此只由该 job 写入，不要在镜像侧直接推。上一条「发版移入 CNB 流水线」的记录保留为历史，其中描述的六阶段 `.cnb.yml` 已不存在。
 
