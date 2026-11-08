@@ -10,17 +10,19 @@
 export const headerPattern = /^([\u4e00-\u9fa5A-Za-z]+)(?:\(([^)]*)\))?[：:]\s*(.+)$/;
 export const headerCorrespondence = ['type', 'scope', 'subject'];
 
-const parserOpts = { headerPattern, headerCorrespondence };
+// 导出 parserOpts 是为了能单独喂给 commit-analyzer 做校验：它不在 default 导出里，
+// 探针若误取 config.parserOpts 会拿到 undefined，analyzer 悄悄退回默认 headerPattern、全部解析成 null。
+export const parserOpts = { headerPattern, headerCorrespondence };
 
-// 0.x 期间 minor 就是破坏轴：新增能力与破坏性改动都落 minor，不发版的档位保持不发版。
-// 发布 1.0.0 之前先决定是否把「新增文件」拆成 feat／breaking 两个 type。
+// 「新增文件」只表示加能力，落 minor；破坏性改动与结构大改都走「代码重构」的 major。
+// 0.x 期间 major 的落点就是 1.0.0：一旦出现破坏性提交，版本会直接从 0.3 跳到 1.0.0。
 export const releaseRules = [
   { type: '新增文件', release: 'minor' },
   { type: '问题修复', release: 'patch' },
   { type: '编译代码', release: 'patch' },
   { type: '文档修改', release: 'patch' },
   { type: '样式修改', release: false },
-  // 代码重构推动 major：0.x 期间这会直接把版本推到 1.0.0。
+  // 代码重构推动 major：收结构大改、宿主接线修复与破坏性契约变更，0.x 期间直接到 1.0.0。
   { type: '代码重构', release: 'major' },
   { type: '其他提交', release: false },
 ];

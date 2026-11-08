@@ -126,13 +126,15 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 **再修正（宿主对接归入代码重构）**：用户要求「修复与宿主的对接问题，也归为代码重构」。理由：这类问题的根因在插件与宿主的接线，不是插件自己的业务逻辑——`entry.tsx` 的 slots 注入与页面记忆、`host.ts` 的能力探测与降级、`index.ts` 向宿主注册存储域／RPC／HTTP／工具、`cordis.patch.yml` 与 peer 依赖；按 `问题修复`（patch）算会让「宿主侧不兼容」被静默升级。分界写进规则：**接线层归 `代码重构`（major），插件自己的渲染／排序／交互仍归 `问题修复`（patch）**。改动位置：`.agents/rules/git-commit-message.md` 的 type 表场景列与判定顺序（新增一段分界说明）、`AGENTS.md` 发版表下的一段说明。
 
+**再修正之二（破坏性改动也归入代码重构）**：用户要求「破坏性改动算到代码重构」。此前破坏性改动挂在 `新增文件`（minor）上，理由是 0.x 期 minor 即破坏轴、拆两个 type 只是增加判断题；但既然 `代码重构` 已是 major，破坏性改动放 major 才符合 semver 本义——**major 意味着契约变了**。于是 `新增文件` 收窄为「只加能力，不动既有契约」，`代码重构` 扩为「结构大改／宿主接线修复／破坏性契约变更」三类，判定顺序也随之改成三问：先问契约改坏没有（→ 代码重构），再问加能力没有（→ 新增文件），再问是否只动结构或只在修接线（→ 代码重构）。连带后果：0.x 期间破坏性提交会直接从 0.3 跳到 1.0.0，中间小版本不再出现，这条写进规则文件并注明「不想这样就把 `代码重构` 的 `release` 改成 `minor`」。改动位置：`.agents/rules/git-commit-message.md`（type 表两行、判定顺序、0.x 段落）、`AGENTS.md`（发版表与三类说明）、`README.md`（发布表两行）、`release.config.mjs`（两处注释，`releaseRules` 数值未变）。
+
 **遗留**：CNB 仓库、GitHub 同步与 npm 凭据都还没接通。仓库 0 个 tag，semantic-release 会把首个版本定成 `1.0.0`（`lib/get-next-version.js` 的 `FIRST_RELEASE`），所以先给当前提交打了 `v0.2.38` 基线 tag。`release.mjs` 同日决定删除，出包改走 `npm pack`。
 
 ### 2026-11-07 · 重建 Git 仓库
 
 **背景**：旧 `.git` 只有一天的 41 条提交（`963614a` 基线 0.2.7 → `9be1c3b` 0.2.38），没有远程、没有 tag、没有 stash；清理后的工作区才是要长期保留的起点，中间态与「已删文件还能取回」的能力不再需要。
 
-**决策**：删掉 `.git` 重开仓库，不做备份（用户选择）。同时删除外部工作树 `C:/Users/yolo/WorkBuddy/Worktrees/dsh-workbase/main-cde2b588`（HEAD `cab8785`，里面有 2 个未跟踪目录 `.workbuddy/`、`_build/`，均为工具产物）。提交信息规范改以 `.agents/rules/git-commit-message.md` 为准（type + 原因分析／修改方法），`AGENTS.md` 的「提交信息」节同批改写并加了「版本号写进 subject」的本仓库约定。
+**决策**：删掉 `.git` 重开仓库，不做备份（用户选择）。同时删除外部工作树 `C:/Users/example/WorkBuddy/Worktrees/dsh-workbase/main-cde2b588`（HEAD `cab8785`，里面有 2 个未跟踪目录 `.workbuddy/`、`_build/`，均为工具产物）。提交信息规范改以 `.agents/rules/git-commit-message.md` 为准（type + 原因分析／修改方法），`AGENTS.md` 的「提交信息」节同批改写并加了「版本号写进 subject」的本仓库约定。
 
 **证据**：重建前 `.git` 4.15 MB／41 提交／分支 `main`、`dsh-62f78e5e-779b`、`workbuddy/main-cde2b588`；16 个已跟踪但工作区已删的文件（`docs/README.md`、`docs/plugin-development-status.md`、`docs/sensitive-information-check.md`、`docs/reference-dsh-kanban.md`、`docs/cleanup-20261106.md`、`web-preview.html`、`designs/` 三份、`docs/ui/` 两份、5 张品牌图）在删除后不再有历史副本。重建后 `git init -b main` + 72 个文件入库；`git check-ignore -v` 确认 `node_modules/`、`dist/`、`lib/`、`*.tgz`、`docs/ui/verification/`、`.agents/worktrees/` 均按 `.gitignore` 对应行忽略，而 `.agents/notes/dev-log.md`、`AGENTS.md`、`release.mjs`、`test/prototype-css.test.ts`、`src/client/prototype.css` 正常入库。
 

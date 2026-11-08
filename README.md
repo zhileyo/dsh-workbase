@@ -1,5 +1,8 @@
 # DSH Workbase · 工作台
 
+[![CNB](https://img.shields.io/badge/CNB-zhileyo%2Fdsh--workbase-1f6feb)](https://cnb.cool/zhileyo/dsh-workbase)
+[![GitHub 镜像](https://img.shields.io/badge/GitHub-zhileyo%2Fdsh--workbase-181717?logo=github)](https://github.com/zhileyo/dsh-workbase)
+
 DeepSeek Harness 的工作台插件，集中管理项目、会话和待办，并支持 Agent 在当前项目中创建和更新任务。
 
 ## 功能
@@ -14,6 +17,15 @@ DeepSeek Harness 的工作台插件，集中管理项目、会话和待办，并
 - **响应式布局**：双栏列表或整体卡片，窄屏切换会话与待办页签；断点按面板宽度计算，不依赖浏览器视口。
 
 项目、待办和设置由宿主持久化；未提交草稿及滚动位置保存在当前浏览器。
+
+## 仓库
+
+| 平台 | 地址 | 角色 |
+| --- | --- | --- |
+| CNB | <https://cnb.cool/zhileyo/dsh-workbase> | 主库：提交、流水线、发版 |
+| GitHub | <https://github.com/zhileyo/dsh-workbase> | 只读镜像：push `main` 后由 `.cnb.yml` 自动同步 |
+
+GitHub 侧的分支与标签由流水线对齐，提交 SHA 与 CNB 一致；改动请提到 CNB，不要在镜像侧直接推。
 
 ## 环境要求
 
@@ -95,6 +107,7 @@ dsh web
 | `test/` | `node:test` 测试，`npm test` 全量执行 |
 | `docs/` | 需求、UI 基线、验收证据与验收脚本；不进入 npm 包 |
 | `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
+| `.cnb.yml` | CNB 流水线：push `main` 后跑凭据预检、类型/测试/构建门禁，再把分支与标签镜像到 GitHub |
 
 ## 发布
 
@@ -102,8 +115,8 @@ dsh web
 
 | 提交类型 | 版本号 |
 | --- | --- |
-| 代码重构 | major（0.x 期间会直接升到 1.0.0） |
-| 新增文件 | minor（含破坏性改动：0.x 期间 minor 即破坏轴） |
+| 代码重构 | major（0.x 期间会直接升到 1.0.0；含破坏性契约变更） |
+| 新增文件 | minor（只加能力，不动既有契约） |
 | 问题修复、编译代码、文档修改 | patch |
 | 样式修改、其他提交 | 不发版 |
 
