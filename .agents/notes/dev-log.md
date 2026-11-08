@@ -120,9 +120,9 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 **决策**：删掉 `.github/workflows/release.yml` 的 `mirror` job，workflow 只负责发版；新增仓库根的 `.cnb.yml`，用 CNB 定时事件（`main` 分支下 `crontab: */10 * * * *`）与 `$` 兜底分支的 `web_trigger` 触发，单个 `sync` 阶段从 GitHub `fetch --force --prune` 出全部分支与标签，再以 `--force` 推回 `origin`（CNB），最后删掉 GitHub 上已不存在的分支与标签。凭据用 CNB 内置的 `CNB_TOKEN`／`CNB_TOKEN_USER_NAME`，GitHub 侧不再需要 secret。周期取 10 分钟：CNB 的 crontab 是标准五位表达式，更短没有实际收益，镜像最多滞后一个周期。没有保留「两边都推」的双保险——两个方向同时写同一组 ref 只会让冲突更难判断。
 
-**证据**：validator 三项（YAML／语义／Schema）全过；`web_trigger` 起初放在 `main` 下时有一致性警告「建议移至 `$` 兜底分支」，移到 `$` 后无警告。`node -e` 解析 workflow 得 `jobs: release`，`git status` 只剩 `.cnb.yml`、`release.yml`、README／AGENTS／dev-log 的改动。CNB 上尚无 `.cnb.yml`，定时任务不会自己出现，首次必须手动推一次 `main` 作为 bootstrap。
+**证据**：validator 三项（YAML／语义／Schema）全过；`web_trigger` 起初放在 `main` 下时有一致性警告「建议移至 `$` 兜底分支」，移到 `$` 后无警告。`node -e` 解析 workflow 得 `jobs: release`。CNB 上尚无 `.cnb.yml`，定时任务不会自己出现，首次手动推了一次 `main` 作 bootstrap。第一次 cron（11:00，构建 `cnb-oeb-1k6shie7r`）在 sync 阶段失败：CNB 用 `sh`（dash）执行 script，`set -euo pipefail` 报 `sh: 1: set: Illegal option -o pipefail`，退出码 2；改成 `set -eu` 后（提交 `70f97a1`）11:10 的 cron（`cnb-qd1-1k6si4nto`）成功，日志依次出现「删除多余分支 tmp-sync-probe」与「已同步到 `70f97a1b2667c1822f950e0ce49c423a5521fac2`」——删除逻辑与拉取都实际跑过。
 
-**遗留**：cron 的实际运行尚未观察（首轮需 ≤10 分钟或手动 `web_trigger`）；GitHub 的 `CNB_TOKEN` secret 已无用，可删；CNB 侧不要直接推，下一次同步会把它覆盖回 GitHub 的状态。镜像与发版解耦后，发布完成的滞后从「同一次 run」变成「最多 10 分钟」，页面上的 tag 可能比 GitHub 晚出现。
+**遗留**：CNB 侧不要直接推，下一次同步会把它覆盖回 GitHub 的状态（除 bot 自己的同步提交外）。镜像与发版解耦后，发布完成的滞后从「同一次 run」变成「最多 10 分钟」，页面上的 tag 可能比 GitHub 晚出现。GitHub 的 `CNB_TOKEN` secret 已删除，工作流里不再有镜像 job。
 
 ### 2026-11-08 · 真源迁到 GitHub，CNB 退回只读镜像
 
