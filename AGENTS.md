@@ -21,7 +21,7 @@ npm ci                 # 安装依赖
 npm run typecheck      # tsc --noEmit（src + test，无 lint 配置，别找 .eslintrc）
 npm test               # tsx --test test/*.test.ts，17 个测试文件
 npm run build          # node build.mjs：先同步原型资产，再打包两端
-node release.mjs patch # 发版本时用它，不要手工改版本号（见「发版」）
+npx semantic-release --dry-run  # 看这次会发哪个版本（版本号由提交 type 推断，见「发版」）
 ```
 
 改完源码必须重新 `npm run build` 并重启宿主才能看到效果——`dist/` 与 `lib/` 是被 git 忽略的构建产物。
@@ -76,7 +76,8 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | `test/` | `node:test` 用例，与实现一一对应（`*-render`、`rpc`、`store`、`theme`、`prototype-css` 等） |
 | `docs/` | 需求、UI 基线与验收脚本 |
 | `.agents/notes/` | 开发日志：当前状态 + 按日期的决策记录（随仓库提交） |
-| `sync-ui.mjs`、`build.mjs`、`release.mjs` | 原型同步、构建、发版链路 |
+| `sync-ui.mjs`、`build.mjs` | 原型同步、构建 |
+| `release.config.mjs`、`release-sync-docs.mjs` | 发版配置（中文 type 解析 + 版本级别映射）与发版时的文档版本同步 |
 
 ## 验收脚本与证据
 
@@ -108,17 +109,25 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 
 ## 发版
 
-版本号是手工决定、脚本落地的，没有 git tag、没有 CHANGELOG：
+版本号由 **semantic-release 从提交 type 推断**，不再手工决定：
+
+| 提交 type | 版本号 |
+| --- | --- |
+| 新增文件 | minor（含破坏性改动：0.x 期间 minor 即破坏轴） |
+| 问题修复／编译代码／文档修改 | patch |
+| 样式修改／代码重构／其他提交 | 不发版 |
+
+配置在 `release.config.mjs`：中文 type 需要自定义 `headerPattern`（默认的 `\w` 不匹配汉字）与 `releaseRules`；解析失败会静默降级成「不发版」，所以**改 type 名或分隔符必须同步这里**，见 `.agents/rules/git-commit-message.md`。
 
 ```sh
-node release.mjs patch        # 或 minor／major／0.3.0；--dry-run 只打印计划
+npx semantic-release --dry-run   # 看这次会发哪个版本，不写文件、不发布
 ```
 
-脚本依次做：校验版本递增与目标 tgz 不存在 → `typecheck` → `test` → `build` → 改 `package.json` → `npm pack` → 写 `.sha256` → 同步两处版本标记（`README.md` 的安装路径、`.agents/notes/dev-log.md` 的版本／tgz 名／SHA-256）。任一步失败会回滚全部改动，包括已写的文档。
+一次发版会：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 同步 `README.md` 与开发日志的**当前状态**（历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。
 
-它**不**做：`git commit`、`dsh plugin add`、`npm publish`。发布 npm 仍是 `npm run publish:check` 预览、`npm run publish:beta` 发到 `beta` 渠道。
+出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
 
-注意：`npm pack` 本身**不触发** `prepublishOnly`，所以手工 pack 有可能把上一次的 `dist`／`lib` 打进新版本——本地出包一律走 `release.mjs`。
+注意：`npm pack` 本身**不触发** `prepublishOnly`，手工 pack 有可能把上一次的 `dist`／`lib` 打进新版本。
 
 ## 发布边界与复查
 
@@ -129,17 +138,17 @@ node release.mjs patch        # 或 minor／major／0.3.0；--dry-run 只打印�
 发版前的动作：
 
 ```sh
-npm run publish:check              # 演练，不上传
-node release.mjs patch             # 出包、算哈希、同步文档版本标记
-tar -tzf dsh-workbase-<版本>.tgz    # 用上一步实际产出的文件名，别照抄旧版本号
-cat dsh-workbase-<版本>.tgz.sha256
+npm run typecheck && npm test && npm run build   # 先确认三关都过
+npm run publish:check              # registry 侧演练，不上传
+npm pack                           # 出 tarball 供检查（不触发构建，跑前先 build）
+tar -tzf dsh-workbase-<版本>.tgz     # 用实际产出的文件名，别照抄旧版本号
 ```
 
 核对白名单与版本，并确认 tarball 内没有凭据、私钥、邮箱、内部域名或本机绝对路径。任何扫描结论只对当次文件与方法有效，不能当作「以后也不会泄露」的保证。
 
 ## 提交信息
 
-格式以 [`.agents/rules/git-commit-message.md`](.agents/rules/git-commit-message.md) 为准：`<type>：<subject>` 单行标题 + 「原因分析／修改方法」两段 body，子项用 `1）2）` 编号。type 取「新增文件／文档修改／样式修改／问题修复／编译代码／其他提交」，混合变更按主体内容归类，无法归类用「其他提交」。
+格式以 [`.agents/rules/git-commit-message.md`](.agents/rules/git-commit-message.md) 为准：`<type>：<subject>` 单行标题 + 「原因分析／修改方法」两段 body，子项用 `1）2）` 编号。type 取「新增文件／代码重构／文档修改／样式修改／问题修复／编译代码／其他提交」，混合变更按主体内容归类，无法归类用「其他提交」。
 
 本仓库的补充约定：**版本号写进 subject**，便于和发版对齐（0.2.38 之前的提交是「版本号：说明」，已留在旧历史里，不再追溯）。
 
@@ -156,7 +165,7 @@ cat dsh-workbase-<版本>.tgz.sha256
 
 1. `npm run typecheck`、`npm test`、`npm run build` 全绿；改过生成逻辑则再构建一次比对哈希。
 2. 手改的是真源（`docs/ui/ui-directions.html`、`src/**/*.ts(x)`、`styles.css`），不是生成物。
-3. 版本号、安装包名、SHA-256 在 `README.md` 与 `.agents/notes/dev-log.md` 两处一致。
+3. 若改过 `README.md` 或 `.agents/notes/dev-log.md`「当前状态」里的版本标记、tgz 名或哈希说明，确认 `release-sync-docs.mjs` 的正则仍能命中——未命中会让下次发版中止。
 4. 新增或调整的能力写进 `.agents/notes/dev-log.md` 的「当前实现」与「仍在约束当前实现的结论」表，需求变化写进 `docs/PRD.md`。
 5. 没有把 `docs/ui/verification/`、`*.tgz`、临时脚本带进提交。
 6. 影响后续维护的决策、放弃的方案、尚未验证的边界，写进 `.agents/notes/dev-log.md`。

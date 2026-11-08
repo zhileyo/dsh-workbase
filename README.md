@@ -75,7 +75,7 @@ npm run build
 
 改动源码后需重新构建并重启宿主。服务端入口 `src/server/index.ts` 产出 `dist/index.js`，客户端入口 `src/client/entry.tsx` 产出 `lib/client.js`（样式以文本形式打进客户端产物）。
 
-打本地安装包用 `node release.mjs`（见「发布」）。手工 `npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进新版本，不宜作为常规路径。
+出本地安装包用 `npm pack`，但**先 `npm run build`**——`npm pack` 不会触发构建，可能把上一次的 `dist`／`lib` 打进包。正式发版见「发布」。
 
 本地链接安装：
 
@@ -94,26 +94,28 @@ dsh web
 | `src/client/prototype.css`<br>`src/client/prototype-icons.ts` | 由 `sync-ui.mjs` 从 `docs/ui/ui-directions.html` 生成，改样式要改原型而非这两个文件 |
 | `test/` | `node:test` 测试，`npm test` 全量执行 |
 | `docs/` | 需求、UI 基线、验收证据与验收脚本；不进入 npm 包 |
-| `release.mjs`、`build.mjs`、`sync-ui.mjs` | 发版链路、构建、原型样式与图标的同步生成 |
+| `release.config.mjs`、`release-sync-docs.mjs`、`build.mjs`、`sync-ui.mjs` | 发版配置与文档同步、构建、原型样式与图标的同步生成 |
 
 ## 发布
 
-出本地安装包（改版本号 → 类型检查 → 测试 → 构建 → 打包 → SHA-256 → 同步文档）：
+版本号由提交类型推断，不手工改：
+
+| 提交类型 | 版本号 |
+| --- | --- |
+| 新增文件 | minor（含破坏性改动：0.x 期间 minor 即破坏轴） |
+| 问题修复、编译代码、文档修改 | patch |
+| 样式修改、代码重构、其他提交 | 不发版 |
 
 ```sh
-node release.mjs patch        # 0.2.38 → 0.2.39；也可写 minor／major／0.3.0
-node release.mjs 0.3.0 --dry-run   # 只打印计划，不写文件
+npx semantic-release --dry-run   # 演练：只算版本，不写文件、不发布
+npx semantic-release             # 完整链路：CHANGELOG、文档版本、npm 发布、打 tag
 ```
 
-任何一步失败都会回滚：`package.json` 版本号、已改的文档、半成品 tgz 一并还原。脚本不碰 registry，发布到 npm 仍手动执行：
+映射规则在 `release.config.mjs`。中文提交类型需要自定义 `headerPattern`——改动提交类型名或冒号形式必须同步这里，否则解析不到类型会静默跳过发版。发布凭据通过 `NPM_TOKEN` 环境变量提供，不写入仓库。
 
-```sh
-npm run publish:check
-npm login --registry=https://registry.npmjs.org/
-npm run publish:beta
-```
+需要出本地安装包时用 `npm pack`（记得先构建）。版本号不由手工指定，全部交给 semantic-release 从提交类型推断。
 
-`publish:check` 仅演练，`publish:beta` 发布至 `beta` 渠道。同一版本不可覆盖；npm 包仅包含运行资源、宿主 patch、README 和 package.json。
+npm 包仅包含运行资源、宿主 patch、README 与 `package.json`；同一版本不可覆盖。发布前可用 `npm run publish:check` 演练。
 
 ## 许可证
 

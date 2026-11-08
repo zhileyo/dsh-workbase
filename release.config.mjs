@@ -1,0 +1,57 @@
+/**
+ * semantic-release 配置。
+ *
+ * 提交规范见 `.agents/rules/git-commit-message.md`：那里改 type 名或分隔符时，
+ * 下面的 headerPattern、releaseRules 必须同步，否则 commit-analyzer 解析不到 type，
+ * 会静默降级成「不发版」。
+ */
+
+// type 允许中文；分隔符同时接受全角「：」与半角「:」；作用域可选。
+export const headerPattern = /^([\u4e00-\u9fa5A-Za-z]+)(?:\(([^)]*)\))?[：:]\s*(.+)$/;
+export const headerCorrespondence = ['type', 'scope', 'subject'];
+
+const parserOpts = { headerPattern, headerCorrespondence };
+
+// 0.x 期间 minor 就是破坏轴：新增能力与破坏性改动都落 minor，不发版的档位保持不发版。
+// 发布 1.0.0 之前先决定是否把「新增文件」拆成 feat／breaking 两个 type。
+export const releaseRules = [
+  { type: '新增文件', release: 'minor' },
+  { type: '问题修复', release: 'patch' },
+  { type: '编译代码', release: 'patch' },
+  { type: '文档修改', release: 'patch' },
+  { type: '样式修改', release: false },
+  // 代码重构只改内部结构、对外行为等价，因此不推动版本号。
+  { type: '代码重构', release: false },
+  { type: '其他提交', release: false },
+];
+
+const commitMessage = [
+  '文档修改：${nextRelease.version} 同步版本标记与变更记录',
+  '',
+  '1.原因分析：发版后文档里的版本号与安装包名必须与 registry 一致，手工同步必然漂移',
+  '2.修改方法：',
+  '1）semantic-release 提升 package.json 版本并发布',
+  '2）同步 README 与开发日志的版本标记',
+  '3）生成 CHANGELOG 并一并提交',
+].join('\n');
+
+export default {
+  branches: ['main'],
+  tagFormat: 'v${version}',
+  plugins: [
+    ['@semantic-release/commit-analyzer', { parserOpts, releaseRules }],
+    ['@semantic-release/release-notes-generator', { parserOpts }],
+    '@semantic-release/changelog',
+    // 本地插件：把新版本写进 README 与开发日志；顺序在 npm 之前，失败即整体中止。
+    './release-sync-docs.mjs',
+    '@semantic-release/npm',
+    [
+      '@semantic-release/git',
+      {
+        assets: ['CHANGELOG.md', 'package.json', 'README.md', '.agents/notes/dev-log.md'],
+        message: commitMessage,
+      },
+    ],
+    // 不用 @semantic-release/github：主库在 CNB，GitHub 只是镜像，发布到镜像会与 tag 错位。
+  ],
+};

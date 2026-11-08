@@ -66,7 +66,7 @@
 
 | 内容 | 为什么留着 |
 | --- | --- |
-| 源码、`test/`、`build.mjs`／`sync-ui.mjs`／`release.mjs` | 交付物本体与生成链 |
+| 源码、`test/`、`build.mjs`／`sync-ui.mjs`／`release.config.mjs`／`release-sync-docs.mjs` | 交付物本体与生成链 |
 | [HTML 原型](../../docs/ui/ui-directions.html) 与两个生成物 | 唯一视觉真源；生成物改了会被下一次构建覆盖 |
 | `docs/isolated-search.patch.yml` | 隔离环境的正文搜索补丁，「验证方式」要用 |
 | [视觉报告](../../docs/ui/verification/index.html) 及其引用的截图矩阵（`details.json`、`details-before.json`、`checks.json`、`geometry.json`、`header-motion-checks.json`、`current-contrast-evidence.json`、`navigation-settings-026.webp`、`host-stats-*.webp`） | 已被当前报告引用的有效证据；目录本身被 git 忽略，删了不在仓库历史里 |
@@ -106,11 +106,25 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 当前版本 `0.2.38`：`dsh-workbase-0.2.38.tgz`（SHA-256 `be72911e253011056504bcc03d3438ce727385ad8f3ae0f4f261282762a86326`）与源码构建一致，已在 Windows desktop profile 安装（重启宿主后生效）；macOS 正式 desktop 仍为 `0.2.5`。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
-本地出包统一走 `node release.mjs patch|minor|major|<x.y.z>`：依次做类型检查、测试、构建、`npm pack`、生成 `.sha256`，并改写本节与 `README.md` 里的版本号与哈希；任一步失败即回滚全部改动。手工 `npm pack` 不会触发构建，容易把上一次的 `dist`／`lib` 打进新版本，故不再作为常规路径。
+版本号由 semantic-release 从提交 type 推断（`release.config.mjs` 的 `releaseRules`），一次发版依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写本节与 `README.md` 的当前状态 → `npm publish` → 打 tag `v<版本>` → 提交这些文档改动。任一步失败即中止；文档标记未命中同样中止——文档版本与 registry 不一致比不发版更糟。
+
+本地出包用 `npm pack`，跑前先 `npm run build`：`npm pack` 不触发构建，容易把上一次的 `dist`／`lib` 打进新版本。版本号不由手工指定。
 
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。当前没有实际发布成功记录。
 
 ## 日志
+
+### 2026-11-07 · 接入 semantic-release 自动定版
+
+**背景**：版本号一直靠手工拍，`release.mjs` 只负责把人工决定写进文件。问到「发布脚本能不能自己判断该发哪类版本」后，先否掉了 git 历史推断（仓库刚重建，只有 1 条提交，没有素材）与提交 type 直映射（type 记的是变更种类，不是影响级别），最后定为语义化提交 + semantic-release。
+
+**决策**：`.agents/rules/git-commit-message.md` 增加「版本号」列，把 type 落成 major／minor／patch／不发版四档；`release.config.mjs` 用自定义 `headerPattern` 解析中文 type 与全角冒号（默认 `\w` 不匹配汉字，解析失败会静默不发版）。刻意不接 `@semantic-release/github`——主库在 CNB、GitHub 只是镜像，向镜像发布会让 tag 与发布错位。
+
+**证据**：`headerPattern = /^([\u4e00-\u9fa5A-Za-z]+)(?:\(([^)]*)\))?[：:]\s*(.+)$/`；8 条用例（含带 scope、半角冒号、两个不发版档位）经真实 `analyzeCommits` 全部符合预期，当前唯一提交解析为 `null`；`npm test` 70 项通过，`lib/client.js` 566,004 字符、两次构建哈希一致。`release-sync-docs.mjs` 初版有两个缺陷——会改写历史条目、规则不可重入——改为按 `\n## 日志` 分界只写现状段、哈希规则同时匹配两种形态、任一规则未命中即抛错；0.3.0 → 0.3.1 连跑两次成功，历史段逐字节未变。
+
+**后续修正**：type 表最终定为七个四字 type，并去掉「破坏变更」、加入「代码重构」。理由：这个仓库还没发布，破坏性改动与加能力都落在 0.x 的 minor 轴上，拆两个 type 只会让归类变成判断题；而每次重构都要在 type 里说明「行为等价」，反而是更有价值的约束。于是 `新增文件` 同时承担「加能力」与「改坏契约」（破坏性改动要在 body 首句写明不兼容），`代码重构` 映射为不发版。改动位置：`release.config.mjs` 的 `releaseRules` 与注释、`.agents/rules/git-commit-message.md`（type 表、判定顺序、两处示例）、`AGENTS.md`（发版表、提交信息节的 type 列表）、`README.md`（发布表）。**type 名改了就必须同步已有提交，否则 analyzer 匹配不到、静默不发版**——原先那条标题会 amend 成 `新增文件：0.3.0 …`。复验：真实范围 `v0.2.38..HEAD` 仍为 `minor` → 0.3.0；`代码重构` 与旧五字 type 都解析成 `null`。顺带抓到一处真实漂移：早前演示 `npm version` 时把 `package.json` 留在了 `1.0.1-beta.0`，`git add -A` 把它带进了提交，已改回 `0.2.38`（发版算版本看 tag，不看这个字段，但它会对不上 README 与开发日志的三处标记）。
+
+**遗留**：CNB 仓库、GitHub 同步与 npm 凭据都还没接通。仓库 0 个 tag，semantic-release 会把首个版本定成 `1.0.0`（`lib/get-next-version.js` 的 `FIRST_RELEASE`），所以先给当前提交打了 `v0.2.38` 基线 tag。`release.mjs` 同日决定删除，出包改走 `npm pack`。
 
 ### 2026-11-07 · 重建 Git 仓库
 
