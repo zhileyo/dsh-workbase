@@ -1,0 +1,5 @@
+# 仅用于显式指定 --patch 的隔离验证，不由插件安装自动写入用户配置。
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: first-search

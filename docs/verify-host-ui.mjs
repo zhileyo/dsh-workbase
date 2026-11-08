@@ -1,0 +1,54 @@
+// 隔离宿主实际界面验收；不输出认证信息、不创建会话、不调用模型。
+import { chromium } from '/tmp/dsh-ui-visual-checks/node_modules/playwright/index.mjs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { screenshotWebp } from './evidence-image.mjs';
+import assert from 'node:assert/strict';
+
+const login = (await readFile('/tmp/dsh-workbase-host-022rc1/host.log', 'utf8')).match(/http:\/\/127\.0\.0\.1:8791\/\?token=[A-Za-z0-9._~%-]+/)?.[0];
+assert.ok(login);
+const browser = await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const page = await browser.newPage({viewport:{width:1440,height:900}});
+const errors = [];
+page.on('pageerror', e=>errors.push(e.message));
+const dir = new URL('./ui/verification/',import.meta.url);
+const dirPath = fileURLToPath(dir);
+try {
+  await page.goto(login);
+  await page.getByRole('button',{name:'稍后配置',exact:true}).waitFor({state:'visible',timeout:5000}).catch(()=>{});
+  if (await page.getByRole('button',{name:'稍后配置',exact:true}).count()) await page.getByRole('button',{name:'稍后配置',exact:true}).click();
+  await page.getByText('工作台',{exact:true}).first().click();
+  await page.locator('.wb .wb-sync').waitFor();
+  await page.getByRole('button',{name:'稍后配置',exact:true}).waitFor({state:'visible',timeout:5000}).catch(()=>{});
+  if (await page.getByRole('button',{name:'稍后配置',exact:true}).count()) await page.getByRole('button',{name:'稍后配置',exact:true}).click();
+  await page.getByRole('button',{name:'稍后配置',exact:true}).waitFor({state:'hidden'});
+  await screenshotWebp(page.locator('.wb'),join(dirPath,'host-initial.webp'),{animations:'disabled'});
+  if (await page.locator('.wb .project-open').count()) await page.locator('.wb .project-open').first().click();
+  await page.locator('.wb .detail-main').waitFor();
+  await screenshotWebp(page.locator('.wb'),join(dirPath,'host-detail.webp'),{animations:'disabled'});
+  await page.getByRole('button',{name:'工作台设置',exact:true}).click();
+  await page.getByRole('tab',{name:'主题',exact:true}).click();
+  const oldTheme = await page.locator('.wb').getAttribute('data-theme');
+  await page.getByRole('radio',{name:'温暖阅读'}).check();
+  assert.equal(await page.locator('.wb').getAttribute('data-theme'),'warm');
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal(await page.locator('.wb').getAttribute('data-theme'),oldTheme);
+  await page.getByRole('combobox',{name:'搜索项目、会话和待办'}).fill('完整功能验收');
+  await page.locator('.search-hit').first().waitFor();
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.search-panel').count(),0);
+  await page.getByRole('button',{name:'工作台设置',exact:true}).click();
+  await screenshotWebp(page.locator('dialog[open]'),join(dirPath,'host-settings.webp'),{animations:'disabled'});
+  const bounds = await page.locator('dialog[open]').boundingBox();
+  assert.equal(Math.round(bounds.width),1296);
+  assert.equal(Math.round(bounds.y),50);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog[open]').count(),0);
+  await page.setViewportSize({width:750,height:900});
+  await screenshotWebp(page.locator('.wb'),join(dirPath,'host-750.webp'),{animations:'disabled'});
+  assert.deepEqual(errors,[]);
+  const result = {realHost:true,viewport:[1440,900],narrow:[750,900],themeCancel:true,searchEscape:true,settingsEscape:true,drawer:bounds,pageErrors:errors,modelInvocations:0};
+  await writeFile(new URL('host-checks.json',dir),JSON.stringify(result,null,2));
+  console.log(JSON.stringify(result));
+} finally {await browser.close();}

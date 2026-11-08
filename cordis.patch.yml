@@ -1,0 +1,4 @@
+# 由宿主插件包加载器叠加至现有配置。
+- insert:
+    - id: dsh-workbase
+      name: dsh-workbase

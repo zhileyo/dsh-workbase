@@ -1,0 +1,173 @@
+/* 仅处理宿主容器和 React 接线。视觉规则来自自动同步的 prototype.css。 */
+.wb{box-sizing:border-box;container:workbase/inline-size;display:flex;flex-direction:column;height:100%;min-height:0!important;width:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.6 "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;position:relative;color-scheme:light}
+.wb.dark{color-scheme:dark}
+.wb *{box-sizing:border-box}
+.wb.wb .app-header{flex:none;padding-left:max(32px,calc(var(--dsh-frame-leading-clearance,0px) + 12px));-webkit-app-region:drag}
+.wb .app-header :is(button,.global-search,.header-actions){-webkit-app-region:no-drag}
+.wb .wb-sync{padding:0;border:0;background:transparent;min-height:32px}
+/* 52px：底边对齐宿主侧边栏「新会话」按钮上边框。按钮上边框 = topStrip 高度 52px
+   （_root 6px padding 被 topStrip -6px margin 抵消，按钮 margin-top 0），Windows 在标题栏之下、
+   macOS 在窗口顶部起算，与工作台帧顶部同参考线，因此两平台 header 高度一致为 52px。 */
+.wb.wb .app-header{height:52px;min-height:52px;padding-top:0;padding-bottom:0}
+[data-platform=darwin] .wb .global-search input{height:32px}
+[data-platform=darwin] .wb .global-search kbd{top:6px}
+/* 官方 shell.leading：28px 控件、16px 图标、8px 间距。 */
+[data-platform=darwin] [data-sidebar-collapsed] .wb.wb .app-header{padding-left:max(16px,var(--dsh-frame-leading-clearance,0px))}
+[data-platform=darwin] [data-sidebar-collapsed] .wb .workbase-brand{width:28px;height:28px;gap:0;justify-content:center;transform:translateY(1px)}
+[data-platform=darwin] [data-sidebar-collapsed] .wb .workbase-brand .brand-title{display:none}
+[data-platform=darwin] [data-sidebar-collapsed] .wb .workbase-brand .brand-mark{display:grid;width:28px;height:28px;background:transparent;color:var(--accent);border-radius:var(--dsw-radius-sm,6px)}
+[data-platform=darwin] [data-sidebar-collapsed] .wb .workbase-brand svg{width:16px;height:16px}
+.wb .wb-home{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.wb .detail-main{flex:1;height:auto!important;min-height:0}
+.wb .wb-ellipsis{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.wb .wb-menu{inset:auto;margin:0;color:var(--text)}
+.wb :is(.wb-menu,.composer-options){overflow:auto;box-sizing:border-box}
+.wb .wb-menu [role=menuitemcheckbox]{justify-content:space-between}
+.wb .composer-options{inset:auto;margin:0}
+.wb .wb-icon{flex:none}
+.wb .wb-primary{background:var(--primary-bg);border-color:var(--primary-bg);color:var(--on-primary)}
+.wb .wb-danger{color:var(--danger-text)}
+.wb .wb-tabs>button.wb-active{background:var(--selected-bg);color:var(--selected-text)}
+.wb .wb-target{background:var(--selected-bg);outline:1px solid var(--focus-tone);outline-offset:4px}
+.wb .wb-saving{position:absolute;right:32px;bottom:6px;font-size:11px;color:var(--muted);z-index:10}
+.wb .wb-error{color:var(--danger-text)}
+.wb .wb-warning{color:var(--danger-text);font-size:12px;overflow-wrap:anywhere}
+.wb .wb-help{font-size:12px;color:var(--muted)}
+.wb .wb-feedback{flex:none;margin:12px 32px}
+.wb .wb-binding{flex:none;margin:12px 32px 0}
+.wb .wb-binding button{font-size:12px}
+.wb .wb-fulltext{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;user-select:text}
+.wb .wb-overlay{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px;background:#0d152364;backdrop-filter:blur(3px);overflow:hidden;-webkit-app-region:no-drag}
+.wb .wb-dialog{position:relative;padding:26px;width:520px;max-width:100%;max-height:85%;overflow:auto;margin:0;inset:auto;background:var(--surface);color:var(--text);border:1px solid var(--line)}
+.wb .wb-dialog label:not(.setting-row):not(.theme-choice){display:flex;flex-direction:column;font-size:12px;margin:16px 0 7px;gap:7px}
+.wb .wb-dialog input,.wb .wb-dialog textarea{width:100%;min-width:0;font-size:14px}
+.wb .wb-dialog form:has(textarea)>footer{margin-top:32px}
+.wb .wb-dialog textarea{resize:vertical;white-space:pre-wrap}
+.wb .wb-dialog footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:26px}
+.wb .wb-dialog dl{display:grid;grid-template-columns:80px minmax(0,1fr);gap:12px;font-size:12px;margin-top:20px}
+.wb .wb-dialog dd{margin:0}
+.wb .wb-dialog dt{color:var(--muted)}
+.wb .directory-picker{display:flex;position:relative;width:100%}
+/* 首页纵向节奏：按「区块」分级，而不是四段一样大的缝隙。
+   顺序 = header→输入框、hero（输入框+最近会话）内部、hero→统计卡、统计卡→项目总览（章节分隔）、页尾。
+   章节分隔永远大于区块内缝隙，标题才贴近自己的内容。
+   0.2.37 用固定 40/24/40/48/48；0.2.38 换成随窗口高度伸缩的 clamp：
+   高屏（≥1200 高）到顶 72/64/88，短屏（≤800 高）收到地板 48/44/56，
+   同一套值在笔记本与 4K 上都不会显得空荡或拥挤。hero 内部固定 28，保持「输入框 + 会话」成组。 */
+.wb .home-main.main{padding-top:clamp(48px,6vh,72px);padding-bottom:clamp(48px,6vh,72px)}
+.wb .home-stats{margin-top:clamp(44px,5vh,64px);margin-bottom:clamp(56px,7vh,88px)}
+.wb .home-main:has(.recent-sessions) .home-composer{margin-bottom:28px}
+/* 与 .home-stats 的 margin-top 相邻合并后实际缝隙取后者（章节前留白）。 */
+.wb .home-main>.recent-sessions{margin-bottom:24px}
+/* 窄容器不跟 vh 走：一屏本来就放不下，留白回到固定档。 */
+@container workbase (max-width:750px){
+  .wb .home-main.main{padding-top:32px;padding-bottom:44px}
+  .wb .home-stats{margin-top:40px;margin-bottom:44px}
+  .wb .home-main:has(.recent-sessions) .home-composer{margin-bottom:20px}
+  .wb .home-main>.recent-sessions{margin-bottom:20px}
+}
+/* 输入框 v3 布局强制：皮肤插件（guizang-design / maid-atelier）会以同位规则覆盖卡片、
+   动作行与按钮样式，导致右聚与按钮变形；此处以更高特异度 + !important 压回。
+   composer-shell / composer-body 为插件自有类名，皮肤无从预先针对。
+   本文件 !important 分两类，删改前先确认归属：
+   - 抗皮肤（.home-composer.composer-shell / .composer-shell .composer-* / .composer-branchbar 各块）：
+     对手是仓库外的皮肤插件，本地无从验证回归，不得删。
+   - 抗内部基础层（.composer-shell .composer-leading button 的 margin-left 归零一行）：
+     对手是原型基础层 .composer-actions button{margin-left:auto}，该规则在 prototype.css 的
+     1100/850 断点内也有副本，所以不能只删这一行归零的覆盖。 */
+/* 与设计稿一致：卡片内部不留外框留白——白卡上边/左边/右边直接贴齐渐变卡的边框，
+   分支条紧贴卡片下沿；只有 1px 边框本身可见（设计稿是 1.5px）。
+   圆角对齐 ui-directions.html 输入框的最终渲染值（28px 单卡）：
+   shell 28px，贴边白卡/分支条按同心圆角 = 28 − 1px 边框 = 27px。布局不变。 */
+.wb .home-composer.composer-shell{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 14%,var(--surface)),color-mix(in srgb,var(--accent) 5%,var(--surface)))!important;border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line))!important;border-radius:28px!important;box-shadow:none!important;padding:0!important}
+.wb .composer-shell .composer-body{background:var(--surface)!important;border-radius:27px!important;display:flex!important;flex-direction:column!important;padding:20px 16px 12px!important}
+.wb .composer-shell .composer-actions{display:flex!important;justify-content:space-between!important;flex-wrap:nowrap!important;padding:2px 0 0!important}
+.wb .composer-shell .composer-leading{display:flex!important;flex:1 1 auto!important;justify-content:flex-start!important;align-items:center!important;gap:4px!important;min-width:0!important}
+/* 基础层 v1 规则 .composer-actions button{margin-left:auto}（原为右推发送按钮）
+   会命中 leading 里的 + 按钮把它推离最左；此处归零，对齐靠 space-between。 */
+.wb .composer-shell .composer-leading button{margin-left:0!important}
+.wb .composer-shell .composer-trailing{display:flex!important;flex:0 0 auto!important;align-items:center!important}
+.wb .composer-shell .composer-leading>.wb-icon{width:32px!important;height:32px!important;border:0!important;background:var(--hover)!important;color:var(--muted)!important;border-radius:50%!important;flex:none!important;display:inline-flex!important;align-items:center!important;justify-content:center!important}
+.wb .composer-shell .composer-leading>.wb-icon:hover{color:var(--text)!important}
+.wb .composer-shell .composer-leading>.wb-icon svg{width:16px!important;height:16px!important}
+/* 分支条右侧两枚控件逐项对齐宿主「新对话」输入行的官方实现
+   （@deepseek-ai/dsh-experimental-client-ui-forge 的 WorktreeToggle.module.css）：
+   28px 紧凑 chip、13px/500、secondary ink、透明底（仅 hover / 展开时显底）、--dsw-radius-sm；
+   勾选框是 14px 原生 checkbox（accent-color 取品牌色），焦点环取宿主 focus token。
+   宿主 token 缺失时回落到插件灰阶，旧宿主与皮肤插件下仍可读。 */
+.wb .composer-branchbar{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:2px!important;flex:none!important;height:44px!important;min-height:44px!important;padding:0 28px!important;background:transparent!important;border-radius:0 0 27px 27px!important}
+.wb .composer-branchbar .forge-current{display:inline-flex!important;align-items:center!important;gap:6px!important;min-width:0!important;height:28px!important;padding:0 8px!important;border:0!important;border-radius:var(--dsw-radius-sm,8px)!important;background:transparent!important;color:var(--dsw-alias-label-secondary,#68717d)!important;font-size:13px!important;font-weight:500!important;line-height:20px!important;white-space:nowrap!important}
+.wb .composer-branchbar .forge-current>svg{flex:none!important;color:currentColor!important}
+.wb .composer-branchbar .forge-label{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.wb .composer-branchbar .theme-select-trigger{display:inline-flex!important;align-items:center!important;gap:4px!important;min-width:0!important;max-width:200px!important;height:28px!important;padding:0 4px 0 8px!important;border:0!important;border-radius:var(--dsw-radius-sm,8px)!important;background:transparent!important;color:var(--dsw-alias-label-secondary,#68717d)!important;font-size:13px!important;font-weight:500!important;line-height:20px!important;white-space:nowrap!important;cursor:pointer!important}
+.wb .composer-branchbar .theme-select-trigger[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover,#eff1f4)!important}
+.wb .composer-branchbar .theme-select-trigger>svg{flex:none!important;width:12px!important;height:12px!important;color:var(--dsw-alias-label-tertiary,#8a919c)!important;transition:transform 120ms ease!important}
+.wb .composer-branchbar .theme-select-trigger[aria-expanded=true]>svg{transform:rotate(180deg)!important}
+.wb .composer-branchbar .theme-select-value{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;color:inherit!important;font:inherit!important}
+@media (hover:hover){
+  .wb .composer-branchbar .theme-select-trigger:hover{background:var(--dsw-alias-interactive-bg-hover,#eff1f4)!important;color:var(--dsw-alias-label-secondary,#68717d)!important}
+  .wb .composer-branchbar .forge-toggle:hover:not([data-disabled]){background:var(--dsw-alias-interactive-bg-hover,#eff1f4)!important}
+}
+.wb .composer-branchbar .forge-toggle{display:inline-flex!important;align-items:center!important;gap:6px!important;min-width:0!important;height:28px!important;padding:0 8px!important;border-radius:var(--dsw-radius-sm,8px)!important;background:transparent!important;color:var(--dsw-alias-label-secondary,#68717d)!important;font-size:13px!important;font-weight:500!important;line-height:20px!important;white-space:nowrap!important;cursor:pointer!important}
+.wb .composer-branchbar .forge-toggle[data-disabled]{color:var(--dsw-alias-label-dimmed,#a9b0ba)!important;cursor:default!important}
+.wb .composer-branchbar .forge-checkbox{flex:none!important;width:14px!important;height:14px!important;margin:0!important;accent-color:var(--dsw-alias-brand-primary,#4d6bfe)!important;cursor:inherit!important}
+.wb .composer-branchbar .forge-checkbox:focus-visible{outline:none!important}
+.wb .composer-branchbar .forge-toggle:has(.forge-checkbox:focus-visible){outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#8260b4))!important;outline-offset:2px!important}
+/* 基准分支菜单项：分支名等宽字体 12px，右侧灰色小字标「当前分支」（同官方 .option / .optionNote）。 */
+.wb .composer-branchbar .composer-option-copy{display:inline-flex!important;flex-direction:row!important;align-items:baseline!important;gap:8px!important;min-width:0!important}
+.wb .composer-branchbar .composer-option-copy>span{min-width:0!important;overflow:hidden!important;font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,monospace)!important;font-size:12px!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.wb .composer-branchbar .composer-option-copy small{flex:none!important;font-size:12px!important;line-height:1.4!important;color:var(--dsw-alias-label-tertiary,#8a919c)!important}
+/* 添加项目弹窗：两种模式叠放在同一网格单元，高度恒取较高者，切换不跳动；
+   隐藏面板用 visibility 保持在布局中占位但不可交互。 */
+.wb .add-project-body{display:grid}
+.wb .add-project-pane{grid-area:1/1;min-width:0}
+.wb .add-project-pane[data-active=false]{visibility:hidden;pointer-events:none}
+.wb .directory-picker input{padding-right:42px}
+.wb .directory-picker button{position:absolute;right:4px;top:4px;bottom:4px;padding:5px 7px}
+.wb .directory-picker input{cursor:pointer}
+.wb .directory-field>.wb-warning{margin-top:8px}
+/* 会话页使用公开导航插槽，系统控件预留量由宿主发布。 */
+[data-conversation-header-leading]:has(.wb-return){padding-inline-start:max(0px,calc(var(--dsh-frame-leading-clearance,0px) - 20px));padding-inline-end:8px}
+[data-conversation-header-leading]:has(.wb-return)+*{padding-inline-start:0}
+.wb-return{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,#68717d);font:13px/1.4 "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;cursor:pointer;-webkit-app-region:no-drag}
+.wb-return:hover{background:var(--dsw-alias-interactive-bg-hover,#eff1f4);color:var(--dsw-alias-label-primary,#202832)}
+.wb-return:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#8260b4);outline-offset:2px}
+[data-platform=darwin] [data-sidebar-collapsed] .wb-return{width:28px;padding:0;gap:0}
+[data-platform=darwin] [data-sidebar-collapsed] .wb-return span{display:none}
+.wb .wb-overlay-drawer{align-items:flex-end;padding:50px 0 0;backdrop-filter:none;animation:wb-settings-mask-in .2s ease-out both}
+.wb .wb-drawer{width:90%;max-width:90%;height:100%;max-height:100%;inset:auto;margin:0;padding:0;overflow:hidden;border-radius:16px 16px 0 0;border-bottom:0}
+.wb .wb-drawer[open]{display:flex;flex-direction:column}
+.wb dialog.wb-drawer.workspace-settings{width:90%;max-width:90%;height:100%;max-height:100%}
+.wb .wb-settings{display:flex;flex-direction:column;flex:1;min-height:0}
+.wb .wb-drawer .dialog-head{height:72px;min-height:72px;flex:none;margin:0;padding:0 24px;border-bottom:1px solid var(--line)}
+.wb .wb-drawer .dialog-head h2{font-size:18px}
+.wb .wb-drawer .dialog-footer{margin:0;min-height:72px;padding:16px 24px;border-top:1px solid var(--line);flex:none}
+.wb .wb-drawer label.setting-row{margin:0}
+.wb .wb-drawer .setting-row>div{flex:1;min-width:0}
+.wb .wb-drawer .setting-row input[type=checkbox]{width:32px}
+.wb .wb-drawer .theme-choice input[type=radio]{width:16px}
+.wb .wb-drawer .settings-content{padding:0}
+.wb .wb-drawer .settings-layout{min-height:0}
+.wb .wb-search-popover{z-index:40}
+/* 居中的 .global-search 用 transform 定位，形成层叠上下文把弹层 z-index 困住，
+   下方 composer 的 position:relative 控件会按 DOM 顺序绘制在弹层之上；展开弹层时提升整个搜索容器。 */
+.wb .app-header .global-search:has(.wb-search-popover){z-index:2}
+.wb .search-panel{position:absolute;top:calc(100% + 8px);left:0;transform:none;width:100%;max-width:100%}
+.wb .toast{position:absolute;max-width:calc(100% - 32px)}
+.wb .search-foot small{font-size:10px}
+.wb .search-hit .hit-content{display:block}
+.wb .wb-sync{cursor:pointer}
+.wb .session-row .session-title{position:static}
+.wb .session-row .session-title::after{pointer-events:none}
+.wb .wb-group-container[aria-hidden=true]{visibility:hidden}
+.wb .wb-session-results,.wb .todo-group-scroll{scrollbar-gutter:stable}
+.wb .todo-row .todo-details{font-size:11px;min-height:24px;padding:0 4px}
+.wb .todo-complete>span{color:var(--muted)}
+.wb .wb-drawer .theme-mode-note p{margin-top:6px}
+@container workbase (min-width:851px){.wb .detail-panel-tabs{display:none}.wb .detail-content>.sessions,.wb .detail-content>.todos{display:flex}}
+@container workbase (max-width:850px){.wb .detail-content{grid-template-columns:minmax(0,1fr)!important}.wb .detail-content[data-tab=sessions]>.todos,.wb .detail-content[data-tab=todos]>.sessions{display:none}}
+@container workbase (max-width:1100px){.wb.wb .app-header{padding-left:max(24px,calc(var(--dsh-frame-leading-clearance,0px) + 12px))}}
+@container workbase (max-width:750px){.wb.wb .app-header{padding-left:max(16px,calc(var(--dsh-frame-leading-clearance,0px) + 12px))}}
+@container workbase (max-width:650px){.wb .wb-drawer{width:100%;max-width:100%}.wb .wb-drawer .dialog-head{height:60px;min-height:60px;padding:0 18px}.wb .wb-drawer .dialog-footer{min-height:64px;padding:14px 18px}}
+@container workbase (max-width:650px){.wb dialog.wb-drawer.workspace-settings{width:100%;max-width:100%}}
+@media(prefers-reduced-motion:reduce){.wb *{animation:none!important;transition:none!important}}
