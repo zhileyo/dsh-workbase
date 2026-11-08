@@ -1,0 +1,108 @@
+# CNB dsh-workbase → GitHub 镜像流水线
+#
+# push: main 后先校验镜像凭据、跑类型与测试门禁，再对齐本地 branches/tags，
+# 最后由 tencentcom/git-sync 推送到 GitHub。目标是精确镜像：GitHub 侧多出的
+# 分支/标签会在对齐阶段删掉（插件自身没有 prune）。
+# 凭据 GITHUB_USERNAME / GITHUB_TOKEN 由密钥仓库 ${CNB_ROOT_SLUG}/secrets 注入，
+# 不写进本文件；`.cnb.yml` 本身也照常镜像，两边同一提交的 SHA 保持一致。
+
+.mirror-job: &mirror-job
+  name: mirror-to-github
+  runner:
+    cpus: 2
+  imports:
+    - https://cnb.cool/${CNB_ROOT_SLUG}/secrets/-/blob/main/secrets.yml
+  lock:
+    key: mirror-github
+    wait: true
+    cancel-in-wait: true
+  stages:
+    # 失败早于推送：token 过期或没把本仓库加进 fine-grained PAT 的 Repository access
+    # 时，这里给出可读的原因，而不是让 align 阶段报一个含糊的认证失败。
+    - name: check-credentials
+      image: node:24
+      script: |
+        set -eu
+        node --input-type=module -e '
+        const repo = `${process.env.GITHUB_USERNAME}/${process.env.CNB_REPO_NAME}`;
+        const res = await fetch(`https://api.github.com/repos/${repo}`, {
+          headers: {
+            authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+            accept: "application/vnd.github+json",
+            "user-agent": "cnb-mirror",
+          },
+        });
+        if (res.status === 404) {
+          console.error(`✗ ${repo} 不可见：仓库不存在，或 token 未授权该仓库（fine-grained PAT 需在 Repository access 里加入本仓库）`);
+          process.exit(1);
+        }
+        if (!res.ok) {
+          console.error(`✗ GitHub API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+          process.exit(1);
+        }
+        const body = await res.json();
+        if (body.permissions && body.permissions.push !== true) {
+          console.error(`✗ token 对 ${repo} 没有写入权限（需 Contents: Read and write）`);
+          process.exit(1);
+        }
+        console.log(`✓ ${repo} 可写`);
+        '
+
+    - name: test
+      image: node:24
+      script: |
+        set -eu
+        npm ci
+        npm run typecheck
+        npm test
+        npm run build
+
+    # 插件只推工作区里已有的本地 ref：先与 CNB 对齐，再清理 GitHub 侧已删除的 ref。
+    - name: align
+      image: node:24
+      script: |
+        set -eu
+        git config --global --add safe.directory '*'
+
+        _target="https://github.com/${GITHUB_USERNAME}/${CNB_REPO_NAME}.git"
+        _cred='!f() { echo username="$GITHUB_USERNAME"; echo password="$GITHUB_TOKEN"; }; f'
+
+        # 浅克隆推出去会让 GitHub 侧历史残缺
+        [ "$(git rev-parse --is-shallow-repository)" != "true" ] || git fetch --unshallow origin
+
+        # 1) 对齐本地 ref（分支和标签都拉到 CNB 的当前状态）
+        git fetch origin --prune --update-head-ok \
+          '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+
+        # 2) 校验：本地 ref 与 CNB 逐条一致（SHA 也相同）
+        git for-each-ref --format='%(objectname) %(refname)' refs/heads refs/tags | sort > /tmp/local.refs
+        git ls-remote --heads --tags origin > /tmp/origin.raw
+        grep -vF '^{}' /tmp/origin.raw | tr '\t' ' ' | sort > /tmp/origin.refs
+        diff -q /tmp/local.refs /tmp/origin.refs >/dev/null || {
+          echo "✗ 本地 ref 与 CNB 不一致：" >&2
+          diff /tmp/local.refs /tmp/origin.refs >&2 || true
+          exit 1
+        }
+
+        # 3) 清理 GitHub 侧 CNB 已不存在的 ref（git-sync 没有 prune）
+        git -c credential.helper="$_cred" ls-remote --heads --tags "$_target" > /tmp/target.raw
+        cut -f2 /tmp/target.raw | grep -vF '^{}' | sort > /tmp/target.refs
+        while read -r _ref; do
+          git rev-parse --verify -q "$_ref" >/dev/null && continue
+          echo "· 删除 GitHub 上多余 ref: $_ref"
+          git -c credential.helper="$_cred" push "$_target" ":$_ref" < /dev/null
+        done < /tmp/target.refs
+
+    - name: mirror
+      image: tencentcom/git-sync
+      settings:
+        target_url: https://github.com/${GITHUB_USERNAME}/${CNB_REPO_NAME}.git
+        auth_type: https
+        username: ${GITHUB_USERNAME}
+        password: ${GITHUB_TOKEN}
+        force: true
+        push_tags: true
+
+main:
+  push:
+    - *mirror-job

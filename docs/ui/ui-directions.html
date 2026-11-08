@@ -958,7 +958,7 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 // 仅提取展示文本，保存、检索与复制使用原始路径。
 function folderName(path){const value=String(path||'');if(/^[a-z]:[\\/]?$/i.test(value))return value;const trimmed=value.replace(/[\\/]+$/,'');return trimmed.split(/[\\/]/).pop()||value||'目录'}
 const seed=()=>[
-{id:'p1',name:'Harness 工作台',path:'/Users/<user>/Custom/workspace/dsh-workbase',activity:'刚刚',order:6,archived:false,allowAgent:true,sessions:[
+{id:'p1',name:'Harness 工作台',path:'/Users/example/Custom/workspace/dsh-workbase',activity:'刚刚',order:6,archived:false,allowAgent:true,sessions:[
 {id:'s1',title:'工作台 UI 设计：项目总览与待办交互',sub:'对比三个视觉方向，确认项目名称与目录的信息层级',time:'刚刚',running:true,archived:false},
 {id:'s2',title:'完善项目迁移与 72 小时撤销规则',sub:'合并后保留数据身份，新增内容仍归属目标项目',time:'今天 14:32',archived:false},
 {id:'s3',title:'核对 Harness 工作区重命名与状态同步能力',sub:'从宿主入口重命名后，工作台需要同步显示',time:'今天 11:08',archived:false},
@@ -971,11 +971,11 @@ todos:[
 {id:'t4',title:'验证项目重命名后 Harness 和工作台保持一致',status:0,by:'用户',time:'今天 11:12'},
 {id:'t5',title:'确认创建项目使用配置根目录，不覆盖已有文件夹',status:0,by:'Agent',time:'昨天'},
 {id:'t6',title:'移除会话自动提取与候选确认流程',status:2,by:'用户',time:'昨天'}]},
-{id:'p2',name:'会话归档管理',path:'/Users/<user>/Custom/workspace/dsh-archive-manager-main',activity:'32 分钟前',order:5,archived:false,allowAgent:true,sessions:[{id:'s6',title:'检查会话永久删除的失败重试行为',time:'32 分钟前',archived:false}],todos:[{id:'t7',title:'核对归档状态与宿主接口',status:0,by:'用户',time:'32 分钟前'},{id:'t8',title:'整理删除确认文案',status:0,by:'Agent',time:'今天'}]},
-{id:'p3',name:'项目待办看板',path:'/Users/<user>/Custom/workspace/dsh-kanban-main',activity:'今天 10:24',order:4,archived:false,allowAgent:true,sessions:[{id:'s7',title:'Agent 卡片工具与活动记录',time:'今天 10:24',archived:false}],todos:[{id:'t9',title:'参考工具调用流程',status:2,by:'用户',time:'今天'}]},
-{id:'p4',name:'飞书多维表格自动化',path:'/Users/<user>/Projects/feishu-bitable-automation',activity:'昨天 17:06',order:3,archived:false,allowAgent:true,sessions:[{id:'s8',title:'批量导入的数据校验与错误处理',time:'昨天 17:06',archived:false}],todos:[{id:'t10',title:'补充导入错误提示',status:0,by:'用户',time:'昨天'}]},
-{id:'p5',name:'知识检索与资料整理',path:'/Users/<user>/Projects/research/knowledge-search',activity:'11 月 1 日',order:2,archived:false,allowAgent:true,sessions:[],todos:[]},
-{id:'p6',name:'历史数据迁移',path:'/Users/<user>/Projects/data-migration-v1',activity:'10 月 28 日',order:1,archived:true,allowAgent:false,sessions:[{id:'s9',title:'第一阶段数据迁移完成记录',time:'10 月 28 日',archived:false}],todos:[{id:'t11',title:'完成第一阶段校验',status:2,by:'Agent',time:'10 月 28 日'}]}
+{id:'p2',name:'会话归档管理',path:'/Users/example/Custom/workspace/dsh-archive-manager-main',activity:'32 分钟前',order:5,archived:false,allowAgent:true,sessions:[{id:'s6',title:'检查会话永久删除的失败重试行为',time:'32 分钟前',archived:false}],todos:[{id:'t7',title:'核对归档状态与宿主接口',status:0,by:'用户',time:'32 分钟前'},{id:'t8',title:'整理删除确认文案',status:0,by:'Agent',time:'今天'}]},
+{id:'p3',name:'项目待办看板',path:'/Users/example/Custom/workspace/dsh-kanban-main',activity:'今天 10:24',order:4,archived:false,allowAgent:true,sessions:[{id:'s7',title:'Agent 卡片工具与活动记录',time:'今天 10:24',archived:false}],todos:[{id:'t9',title:'参考工具调用流程',status:2,by:'用户',time:'今天'}]},
+{id:'p4',name:'飞书多维表格自动化',path:'/Users/example/Projects/feishu-bitable-automation',activity:'昨天 17:06',order:3,archived:false,allowAgent:true,sessions:[{id:'s8',title:'批量导入的数据校验与错误处理',time:'昨天 17:06',archived:false}],todos:[{id:'t10',title:'补充导入错误提示',status:0,by:'用户',time:'昨天'}]},
+{id:'p5',name:'知识检索与资料整理',path:'/Users/example/Projects/research/knowledge-search',activity:'11 月 1 日',order:2,archived:false,allowAgent:true,sessions:[],todos:[]},
+{id:'p6',name:'历史数据迁移',path:'/Users/example/Projects/data-migration-v1',activity:'10 月 28 日',order:1,archived:true,allowAgent:false,sessions:[{id:'s9',title:'第一阶段数据迁移完成记录',time:'10 月 28 日',archived:false}],todos:[{id:'t11',title:'完成第一阶段校验',status:2,by:'Agent',time:'10 月 28 日'}]}
 ];
 // 用独立的示例消息展示全文命中；真实产品通过宿主能力读取与定位。
 const transcripts={
@@ -990,7 +990,7 @@ s8:[{role:'用户',text:'导入多维表格的数据需要先验证格式，再�
 s9:[{role:'用户',text:'第一阶段数据迁移已完成，保留校验报告以便后续核对。'}]
 };
 let globalQuery='',searchType='all',searchOpen=false,searchIndex=-1,searchHits=[],openedSession=null,matchedMessage=-1,messageKeyword='',highlightTodo=null;
-let projects=seed(),migrations=[],root='/Users/<user>/Projects';
+let projects=seed(),migrations=[],root='/Users/example/Projects';
 const projectFieldChoices=()=>[['path','目录'],['activity','最近活动'],['status','状态'],['recent','近期活跃'],['pending','待办'],['archived','归档'],['latest','最近会话']];
 const defaultProjectFields=()=>({list:{path:true,pending:true,activity:true,status:true,recent:true,archived:true,latest:false},grid:{path:true,pending:true,activity:true,status:false,recent:true,archived:true,latest:true}});
 let projectFields=defaultProjectFields();
@@ -1472,7 +1472,7 @@ let directoryTarget=null;
 function openDemoDirectoryPicker(trigger,target){
  directoryTarget=target;
  const input=document.getElementById(target);
- const paths=[...new Set([input?.value,root,...projects.filter(p=>!p.removed&&!p.merged).map(p=>p.path),'/Users/<user>/Projects'].filter(Boolean))];
+ const paths=[...new Set([input?.value,root,...projects.filter(p=>!p.removed&&!p.merged).map(p=>p.path),'/Users/example/Projects'].filter(Boolean))];
  menu([...paths.map(path=>[esc(path),'choose-demo-directory',path]),['取消选择','close-menu']],trigger);
  document.querySelector('.menu')?.insertAdjacentHTML('afterbegin','<p class="directory-options-note">示例目录 · 原型模拟</p>');
 }
@@ -1615,7 +1615,7 @@ function bindSettingsTabs(layout,initial){
  layout.querySelector('.settings-nav').addEventListener('keydown',e=>{const keys=['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End'];if(!keys.includes(e.key))return;e.preventDefault();const tabs=[...layout.querySelectorAll('[data-settings-tab]')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(['ArrowDown','ArrowRight'].includes(e.key)?1:-1)+tabs.length)%tabs.length;selectSettingsTab(tabs[next].dataset.settingsTab,true)});
  selectSettingsTab(initial);layout.querySelector(`[data-settings-tab="${initial}"]`).focus();
 }
-function addProject(mode='existing'){closeModal();addMode=mode;modal('添加项目',`<div class="tabs">${button('打开已有目录','add-existing',mode==='existing'?'active':'')}${button('创建新项目','add-new',mode==='new'?'active':'')}</div><p class="dialog-description">${mode==='existing'?'与 Harness 打开项目使用同一入口。此预览用路径输入模拟目录选择。':'输入名称，在配置根目录下创建同名文件夹。此预览不会实际创建目录。'}</p>${mode==='existing'?field('已有项目目录','add-path','/Users/<user>/Projects/my-project'):field('项目名称','add-name','')+`<div class="path-preview">项目根目录<code>${esc(root||'未配置，请先设置')}</code></div><div class="path-preview">将创建的目录<code id="target-preview">${esc(root)}/项目名称</code></div>`}`,button('取消','close-modal')+button(mode==='existing'?'打开项目':'创建项目','submit-project','primary'));document.getElementById('add-name')?.addEventListener('input',e=>document.getElementById('target-preview').textContent=root+'/'+e.target.value)}
+function addProject(mode='existing'){closeModal();addMode=mode;modal('添加项目',`<div class="tabs">${button('打开已有目录','add-existing',mode==='existing'?'active':'')}${button('创建新项目','add-new',mode==='new'?'active':'')}</div><p class="dialog-description">${mode==='existing'?'与 Harness 打开项目使用同一入口。此预览用路径输入模拟目录选择。':'输入名称，在配置根目录下创建同名文件夹。此预览不会实际创建目录。'}</p>${mode==='existing'?field('已有项目目录','add-path','/Users/example/Projects/my-project'):field('项目名称','add-name','')+`<div class="path-preview">项目根目录<code>${esc(root||'未配置，请先设置')}</code></div><div class="path-preview">将创建的目录<code id="target-preview">${esc(root)}/项目名称</code></div>`}`,button('取消','close-modal')+button(mode==='existing'?'打开项目':'创建项目','submit-project','primary'));document.getElementById('add-name')?.addEventListener('input',e=>document.getElementById('target-preview').textContent=root+'/'+e.target.value)}
 function confirm(title,description,fn,label='确认'){closeModal();confirmation=fn;modal(title,`<p class="dialog-description">${description}</p>`,button('取消','close-modal')+button(label,'confirm','primary'))}
 let menuTrigger=null;
 function menu(items,target){
@@ -1731,7 +1731,7 @@ else if(action==='confirm'){const fn=confirmation;if(fn?.()!==false){confirmatio
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeMenu()}const overlay=document.querySelector('.overlay');if(e.key==='Tab'&&overlay){const focusable=[...overlay.querySelectorAll('button,input,select,textarea')].filter(x=>!x.disabled&&x.tabIndex>=0&&x.getClientRects().length);const first=focusable[0],end=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();end?.focus()}else if(!e.shiftKey&&document.activeElement===end){e.preventDefault();first?.focus()}}});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!document.querySelector('.overlay')){e.preventDefault();document.getElementById('global-search')?.focus();return}if(e.key==='Escape'){closeSearch();return}if(!searchOpen||!e.target.closest('.global-search'))return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!searchHits.length)return;searchIndex=e.key==='ArrowDown'?(searchIndex+1)%searchHits.length:(searchIndex<=0?searchHits.length-1:searchIndex-1);document.querySelectorAll('.search-hit').forEach((el,i)=>el.setAttribute('aria-selected',String(i===searchIndex)));const active=document.getElementById('search-hit-'+searchIndex);active?.scrollIntoView({block:'nearest'});document.getElementById('global-search').setAttribute('aria-activedescendant','search-hit-'+searchIndex)}else if(e.key==='Enter'&&e.target.id==='global-search'){e.preventDefault();if(searchHits.length)openSearchHit(searchIndex<0?0:searchIndex)}});
 document.getElementById('scene').onchange=e=>{scene=e.target.value;if(scene==='path'||scene==='empty'){selected='p1';view='detail'}render()};
-document.getElementById('reset-demo').onclick=()=>{projects=seed();migrations=[];scene='normal';view='overview';selected='p1';query='';globalQuery='';searchType='all';searchOpen=false;searchIndex=-1;openedSession=null;matchedMessage=-1;messageKeyword='';highlightTodo=null;filter='active';layout='grid';showDone=false;sessionFilter='active';detailPanel='sessions';last={view,selected};positions={};viewStates={};root='/Users/<user>/Projects';homepage={composer:true,recent:true,projects:true,stats:false,recentLayout:'cards'};composerDraft='';composerProject='p1';composerMode='standard';composerModel='demo-v4-flash';workbaseReturn=null;document.getElementById('scene').value='normal';saveSearch();save();render();window.scrollTo(0,0);toast('示例已重置')};
+document.getElementById('reset-demo').onclick=()=>{projects=seed();migrations=[];scene='normal';view='overview';selected='p1';query='';globalQuery='';searchType='all';searchOpen=false;searchIndex=-1;openedSession=null;matchedMessage=-1;messageKeyword='';highlightTodo=null;filter='active';layout='grid';showDone=false;sessionFilter='active';detailPanel='sessions';last={view,selected};positions={};viewStates={};root='/Users/example/Projects';homepage={composer:true,recent:true,projects:true,stats:false,recentLayout:'cards'};composerDraft='';composerProject='p1';composerMode='standard';composerModel='demo-v4-flash';workbaseReturn=null;document.getElementById('scene').value='normal';saveSearch();save();render();window.scrollTo(0,0);toast('示例已重置')};
 window.addEventListener('beforeunload',remember);
 const resetDemo=document.getElementById('reset-demo').onclick;document.getElementById('reset-demo').onclick=()=>{workbaseTheme='follow';projectFields=defaultProjectFields();todoLayout='list';resetDemo()};
 function updateDemoHost(){hostTheme=document.getElementById('host-theme').value;hostAppearance=document.getElementById('host-appearance').value;try{localStorage.setItem('dsh-ui-host-appearance-v1',JSON.stringify({theme:hostTheme,appearance:hostAppearance}))}catch{}closeComposerPicker();applyWorkbaseTheme()}

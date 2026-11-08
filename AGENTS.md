@@ -78,6 +78,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | `.agents/notes/` | 开发日志：当前状态 + 按日期的决策记录（随仓库提交） |
 | `sync-ui.mjs`、`build.mjs` | 原型同步、构建 |
 | `release.config.mjs`、`release-sync-docs.mjs` | 发版配置（中文 type 解析 + 版本级别映射）与发版时的文档版本同步 |
+| `.cnb.yml` | CNB 流水线：`main` push 后先跑凭据预检与 typecheck／test／build 门禁，再把分支与标签对齐并镜像到 GitHub |
 
 ## 验收脚本与证据
 
