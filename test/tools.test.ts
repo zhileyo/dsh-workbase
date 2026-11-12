@@ -24,13 +24,33 @@ function fixture() {
     { signal: new AbortController().signal, ...(sessionId ? { agent: { session: { id: sessionId } } } : {}) } as ToolRunContext);
   return { service, definitions, execute };
 }
-test('三个工具的参数及输出schema符合官方注册器限制', () => {
+test('十一个工具的参数及输出schema符合官方注册器限制', () => {
   const f = fixture();
-  assert.equal(f.definitions.length, 3);
+  assert.equal(f.definitions.length, 11);
   for (const d of f.definitions) {
     assert.doesNotThrow(() => assertSupportedJsonSchema(d.parameters));
     assert.doesNotThrow(() => assertSupportedJsonSchema(d.output!.schema));
   }
+});
+test('全局开关关闭保留查询并拒绝所有写入，开启后允许删除且保护归属和版本', async () => {
+  const f = fixture();
+  await f.execute('workbase_create_todo', { title: '保留任务' }, 's1');
+  const snapshot = await f.service.snapshot();
+  const todo = snapshot.projects[0]!.todos[0]!;
+  await f.service.saveSettings('follow', {}, { home: snapshot.preferences.home, root: '', agentManageTodos: false });
+  assert.ok(await f.execute('workbase_list_todos', {}, 's1'));
+  for (const [name, args] of [
+    ['workbase_create_todo', { title: '禁止创建' }],
+    ['workbase_update_todo', { id: todo.id, expectedVersion: 1, title: '禁止修改' }],
+    ['workbase_delete_todo', { id: todo.id, expectedVersion: 1 }],
+  ] as const) {
+    await assert.rejects(f.execute(name, args, 's1'), /管理待办/);
+  }
+  await f.service.saveSettings('follow', {}, { home: snapshot.preferences.home, root: '', agentManageTodos: true });
+  await assert.rejects(f.execute('workbase_delete_todo', { id: todo.id, expectedVersion: 1 }, 's2'), /不存在/);
+  await assert.rejects(f.execute('workbase_delete_todo', { id: todo.id, expectedVersion: 2 }, 's1'), /变化/);
+  await f.execute('workbase_delete_todo', { id: todo.id, expectedVersion: 1 }, 's1');
+  assert.equal((await f.service.snapshot()).projects[0]!.todos.length, 0);
 });
 test('工具入口拒绝缺失Agent、未归属会话以及伪造跨项目参数', async () => {
   const f = fixture();

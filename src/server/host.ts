@@ -14,6 +14,8 @@ import { extractConversation } from '../shared/session.js';
 import { z } from 'zod';
 import type { HostPort } from './service.js';
 import type { GitBranches } from '../shared/model.js';
+import { AttachmentId, type AttachmentStore, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
+import { todoImageSchema, todoAttachmentSchema, MAX_TODO_ATTACHMENT_BYTES } from '../shared/todo.js';
 const titleProjection = z.object({ title: z.string() });
 const runGit = (cwd: string, args: string[]) => new Promise<{ code: number; out: string; err: string }>(resolve => {
   const child = spawn('git', args, { cwd, windowsHide: true });
@@ -42,10 +44,41 @@ export async function createProjectDirectory(root: string, name: string) {
 }
 
 export function createHost(ctx: Context): HostPort {
-  // 会话标题折叠缓存：折叠要打开会话日志，代价高；仅在会话 updatedAt 变化时重新折叠，
-  // 未变化或无标题事件的会话沿用缓存，避免每次快照都批量读日志导致页面切换变慢。
-  const titleCache = new Map<string, { stamp: number; title: string }>();
+  // updatedAt 仅随用户消息变化；标题缓存必须同时跟踪官方投影水位。
+  // 没有投影时重新折叠，避免把手工改名永久留在旧缓存中。
+  const titleCache = new Map<string, { stamp: string; title: string }>();
   return {
+    async saveTodoAttachment(data, mediaType, name) {
+      const store = ctx.get('attachments') as AttachmentStore | undefined;
+      if (!store) throw new WorkbaseError('unsupported', '宿主未启用附件服务');
+      const ref = await store.saveFile({ data, name });
+      return todoAttachmentSchema.parse({ attachmentId: ref.attachmentId, bytes: ref.bytes, name: ref.name, mediaType });
+    },
+    async readTodoAttachment(attachment, signal) {
+      const store = ctx.get('attachments') as AttachmentStore | undefined;
+      if (!store) throw new WorkbaseError('unsupported', '宿主未启用附件服务');
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      for await (const chunk of store.readFileStream({ attachmentId: AttachmentId(attachment.attachmentId), name: attachment.name, bytes: attachment.bytes }, signal)) {
+        size += chunk.length;
+        if (size > MAX_TODO_ATTACHMENT_BYTES) throw new WorkbaseError('invalid', '附件不能超过10MiB');
+        chunks.push(chunk);
+      }
+      if (size !== attachment.bytes) throw new WorkbaseError('invalid', '附件长度校验失败');
+      return Buffer.concat(chunks);
+    },
+    async saveTodoImage(data, mediaType) {
+      const store = ctx.get('attachments') as AttachmentStore | undefined;
+      if (!store) throw new WorkbaseError('unsupported', '宿主未启用图片附件服务');
+      const ref = await store.saveImage({ data, mediaType });
+      return todoImageSchema.parse({ attachmentId: ref.attachmentId, mediaType: ref.mediaType,
+        bytes: ref.bytes, width: ref.width, height: ref.height });
+    },
+    async readTodoImage(image, signal) {
+      const store = ctx.get('attachments') as AttachmentStore | undefined;
+      if (!store) throw new WorkbaseError('unsupported', '宿主未启用图片附件服务');
+      return (await store.readImage(image as ImageAttachmentRef, signal)).data;
+    },
     async workspaces() {
       return Promise.all(ctx.workspaceRegistry.list().map(async w => ({
         workspaceId: w.id, path: w.path,
@@ -58,26 +91,27 @@ export function createHost(ctx: Context): HostPort {
       const result = await ctx.sessionController.list({}, signal);
       const archived = new Set(ctx.workspaceRegistry.archivedSessionIds);
       const items = result.items.filter(s => s.origin !== 'subagent');
-      // 平台侧边栏的会话标题来自日志折叠的 session/title 事件（自动命名 + 首条消息回退），
-      // 与投影无关；标题事件变化会推进 updatedAt，因此仅对更新过的会话重新折叠。
-      const stale = items.filter(s => !s.blank && titleCache.get(s.sessionId)?.stamp !== s.updatedAt);
+      const stamp = (s: typeof items[number]) => JSON.stringify([
+        s.updatedAt, s.projections?.kind, s.projections?.asOfSeq, s.projections?.values.title,
+      ]);
+      const stale = items.filter(s => !s.projections || titleCache.get(s.sessionId)?.stamp !== stamp(s));
       if (stale.length) {
         try {
           const observations = await ctx.sessionQuery.readTitleSnapshots(stale.map(s => s.sessionId), signal);
           for (const observation of observations) {
             const session = stale.find(s => s.sessionId === observation.sessionId);
             if (!session) continue;
-            const title = observation.status === 'fulfilled' ? observation.value.title?.title.trim() ?? '' : '';
-            titleCache.set(session.sessionId, { stamp: session.updatedAt, title });
+            if (observation.status !== 'fulfilled') continue;
+            const title = observation.value.title?.title.trim() ?? '';
+            titleCache.set(session.sessionId, { stamp: stamp(session), title });
           }
         } catch { /* 折叠失败时沿用缓存与投影回退，不阻塞快照。 */ }
       }
-      // 与平台侧边栏一致：blank 会话显示「新会话」，空标题回退「未命名会话」。
+      // 空会话也可能已有手工标题；仅在没有标题时使用默认名称。
       return items.map(s => {
-        if (s.blank) return { sessionId: s.sessionId, title: '新会话', updatedAt: s.updatedAt, archived: archived.has(s.sessionId), running: s.running };
         const projected = titleProjection.safeParse(s.projections?.values.title);
         const folded = titleCache.get(s.sessionId)?.title.trim();
-        const title = folded || (projected.success && projected.data.title.trim()) || '未命名会话';
+        const title = folded || (projected.success && projected.data.title.trim()) || (s.blank ? '新会话' : '未命名会话');
         return { sessionId: s.sessionId, title,
           updatedAt: s.updatedAt, archived: archived.has(s.sessionId), running: s.running };
       });
@@ -108,7 +142,16 @@ export function createHost(ctx: Context): HostPort {
     async catalog() {
       const [roster, catalog] = await Promise.all([ctx.agentPresets.remoteExportList(), ctx.sessionController.modelCatalog()]);
       return {
-        presets: roster.presets.map(p => ({ ...p, name: p.name ?? p.id })),
+        presets: roster.presets.map(p => {
+          const builtIn = p.name === undefined ? ({
+            standard: ['标准模式', '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。'],
+            ptc: ['PTC 模式', '包含标准模式的所有能力，更适合批量调用工具，并对结果进行筛选、整理、去重、统计或汇总的任务。'],
+            minimal: ['极简模式', 'Agent 使用终端和图片读取工具，并支持上下文压缩，适合测试和对比其基础表现。'],
+            cordis: ['创造模式', '用对话定制 DSH：让 Agent 编写插件，添加新功能或界面；也能组合工具和提示词，创建自己的模式。'],
+          } as Record<string, [string, string]>)[p.id] : undefined;
+          return { ...p, name: builtIn?.[0] ?? p.name ?? p.id, description: builtIn?.[1] ?? p.description,
+            requiresCodingTools: p.name === undefined && (p.id === 'ptc' || p.id === 'minimal') };
+        }),
         models: catalog.groups.flatMap(group => group.models.map(model => ({
           provider: group.id, providerName: group.name, id: model.id, name: model.name,
         }))),
@@ -118,6 +161,9 @@ export function createHost(ctx: Context): HostPort {
     async begin(workspaceId, agentPreset) {
       return ctx.sessionController.create({ workspaceId: WorkspaceId(workspaceId), agentPreset });
     },
+    async configureModel(sessionId, provider, model) {
+      await ctx.sessionController.selectModel({ sessionId: SessionId(sessionId), provider, model });
+    },
     async submit(input, signal) {
       await ctx.sessionController.selectModel({ sessionId: SessionId(input.sessionId), provider: input.provider, model: input.model });
       await ctx.sessionController.prompt({
@@ -125,7 +171,20 @@ export function createHost(ctx: Context): HostPort {
         mode: 'queue', content: [{ type: 'text', text: input.text }],
       }, signal);
     },
-    async renameSession(id, title) { await ctx.sessionController.rename({ sessionId: SessionId(id), title }); },
+    async renameSession(id, title) {
+      await ctx.sessionController.rename({ sessionId: SessionId(id), title });
+      titleCache.delete(id);
+    },
+    async deleteSession(id) {
+      // dsh-archive-manager overlay 扩展同一个 registry；沿用其持久化屏障、
+      // SUBAGENT 级联、spill/转录清理与 api-session/removed 通知，避免双份删除实现。
+      const registry = ctx.workspaceRegistry as unknown as { deleteSession?(id: string): Promise<{ deleted: boolean }> };
+      if (typeof registry.deleteSession !== 'function')
+        throw new WorkbaseError('unsupported', '请先安装并启用 dsh-archive-manager 归档管理插件，再删除会话');
+      const result = await registry.deleteSession(id);
+      if (result?.deleted !== true) throw new WorkbaseError('delete-failed', '宿主未确认会话删除，请刷新后重试');
+      titleCache.delete(id);
+    },
     async readSession(sessionId, signal) {
       // 平台 SessionController.page 的消息对齐窗口；正文提取与 dsh-archive-manager 同规则。
       const result = await ctx.sessionController.page(

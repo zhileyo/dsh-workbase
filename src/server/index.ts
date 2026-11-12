@@ -7,6 +7,7 @@ import { WorkbaseService } from './service.js';
 import { createHost } from './host.js';
 import { handleRequest } from './http.js';
 import { registerTools } from './tools.js';
+import { todoFetchRoutes } from './todo-images.js';
 
 export const name = 'dsh-workbase';
 export const inject = ['workspaceRegistry', 'sessionController', 'agentPresets', 'storageDomain', 'connection', 'tools', 'sessionQuery'];
@@ -64,4 +65,5 @@ export async function apply(ctx: Context) {
     fetch: request => handleRequest(service, request),
   }));
   registerTools(ctx, service);
+  for (const route of todoFetchRoutes(service)) ctx.effect(() => ctx.connection.fetch.register(route));
 }

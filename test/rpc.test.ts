@@ -41,8 +41,23 @@ test('前后端合同支持创建读取与版本校验', async () => {
   assert.equal((await service.snapshot()).projects[0]!.todos[0]!.title, '真实任务');
 });
 
+test('删除撤销 RPC 仅所有者可调用，严格拒绝客户端伪造记录并完整恢复', async () => {
+  const service = fixture(), signal = new AbortController().signal;
+  const projectId = (await service.snapshot()).projects[0]!.projectId;
+  const todo = await service.createTodo({ projectId, title: '撤销原记录', note: '备注' });
+  const deleted = await dispatch(service, { op: 'delete', projectId, id: todo.id, expectedVersion: 1 }, true, signal);
+  assert.equal(deleted.ok, true);
+  if (!deleted.ok) return;
+  const token = (deleted.value as { undoToken: string }).undoToken;
+  const payload = { op: 'restore-deleted-todo', projectId, token };
+  assert.equal((await dispatch(service, payload, false, signal)).ok, false);
+  assert.equal((await dispatch(service, { ...payload, todo }, true, signal)).ok, false);
+  assert.equal((await dispatch(service, payload, true, signal)).ok, true);
+  assert.deepEqual((await service.snapshot()).projects[0]!.todos, [{ ...todo, version: 2 }]);
+});
+
 test('偏好补丁解析不补齐未提交字段，空补丁不生成默认值', () => {
-  for (const patch of [{}, { view: 'list' }, { selectedProject: null }, { projectFilter: 'favorite' }]) {
+  for (const patch of [{}, { view: 'list' }, { selectedProject: null }, { projectFilter: 'favorite' }, { openOnStartup: true }, { openOnStartup: false }]) {
     const parsed = commandSchema.parse({ op: 'preferences', patch });
     assert.equal(parsed.op, 'preferences');
     if (parsed.op === 'preferences') assert.deepEqual(parsed.patch, patch);
@@ -70,7 +85,7 @@ test('RPC切换视图、筛选和项目后保留统计卡、根目录及字段�
   const signal = new AbortController().signal;
   const home = { ...state.preferences.home, stats: true, recentStyle: 'buttons' as const };
   const navigation = { sidebarName: '我的项目', sidebarVisible: true, headerButtonVisible: false, sidebarPosition: 3 };
-  assert.equal((await dispatch(service, { op: 'settings', theme: 'violet', permissions: {}, options: { home, root: '/项目根目录', navigation } }, true, signal)).ok, true);
+  assert.equal((await dispatch(service, { op: 'settings', theme: 'violet', permissions: {}, options: { home, root: '/项目根目录', navigation, openOnStartup: true } }, true, signal)).ok, true);
   const fields = { grid: { ...defaultFields('grid'), activity: false }, list: { ...defaultFields('list'), todos: false } };
   for (const patch of [{ fields }, { view: 'list' }, { projectFilter: 'favorite' }, { selectedProject: 'p' }, { selectedProject: null }]) {
     assert.equal((await dispatch(service, { op: 'preferences', patch }, true, signal)).ok, true);
@@ -79,14 +94,19 @@ test('RPC切换视图、筛选和项目后保留统计卡、根目录及字段�
     assert.equal(snapshot.preferences.root, '/项目根目录');
     assert.deepEqual(snapshot.preferences.fields, fields);
     assert.deepEqual(snapshot.preferences.navigation, navigation);
+    assert.equal(snapshot.preferences.openOnStartup, true);
   }
   const restored = await new WorkbaseService(store, host, () => 'p').snapshot();
   assert.deepEqual(restored.preferences.home, home);
   assert.equal(restored.preferences.root, '/项目根目录');
   assert.deepEqual(restored.preferences.fields, fields);
   assert.deepEqual(restored.preferences.navigation, navigation);
+  assert.equal(restored.preferences.openOnStartup, true);
   assert.equal((await dispatch(service, { op: 'settings', theme: 'warm', permissions: {}, options: { home, root: '' } }, true, signal)).ok, true);
   assert.deepEqual((await service.snapshot()).preferences.navigation, navigation, '旧版设置请求保留入口设置');
+  assert.equal((await service.snapshot()).preferences.openOnStartup, true, '旧版设置请求保留启动设置');
+  assert.equal((await dispatch(service, { op: 'preferences', patch: { openOnStartup: false } }, true, signal)).ok, true);
+  assert.equal((await service.snapshot()).preferences.openOnStartup, false);
 });
 
 test('会话预览返回轻量信息与正文，打开目录走服务端并保留平台优先回退', async () => {

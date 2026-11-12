@@ -29,8 +29,41 @@ function fixture() {
   };
   let id = 0;
   const service = new WorkbaseService(persistence, host, () => `id-${++id}`, () => ++tick);
-  return { service, workspaces, saved: () => saved, fail: (value: boolean) => { fail = value; } };
+  return { service, workspaces, saved: () => saved, fail: (value: boolean) => { fail = value; }, advance: (ms: number) => { tick += ms; } };
 }
+
+test('删除撤销恢复原始记录，保存失败可重试，不能重复或跨项目恢复', async () => {
+  const f = fixture();
+  const [a,b] = (await f.service.snapshot()).projects;
+  const original = await f.service.createTodo({ projectId: a!.projectId, title: '保留来源和备注', note: '完整备注' }, { kind: 'agent', workspaceId: 'w1' });
+  const done = await f.service.updateTodo({ projectId: a!.projectId, id: original.id, expectedVersion: 1, done: true });
+  const removed = await f.service.deleteTodo({ projectId: a!.projectId, id: done.id, expectedVersion: done.version });
+  assert.equal(f.saved().todos.length, 0);
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId: b!.projectId, token: removed.undoToken }), /撤销/);
+  f.fail(true);
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId: a!.projectId, token: removed.undoToken }), /disk full/);
+  f.fail(false);
+  const restored = await f.service.restoreDeletedTodo({ projectId: a!.projectId, token: removed.undoToken });
+  assert.deepEqual(restored, { ...done, version: done.version + 1 });
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId: a!.projectId, token: removed.undoToken }), /撤销/);
+});
+
+test('撤销删除限五秒且仅恢复最近一次，归档和 Agent 不能恢复', async () => {
+  const f = fixture();
+  const projectId = (await f.service.snapshot()).projects[0]!.projectId;
+  const a = await f.service.createTodo({ projectId, title: '任务 A' });
+  const b = await f.service.createTodo({ projectId, title: '任务 B' });
+  const first = await f.service.deleteTodo({ projectId, id: a.id, expectedVersion: 1 });
+  const last = await f.service.deleteTodo({ projectId, id: b.id, expectedVersion: 1 });
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId, token: first.undoToken }), /撤销/);
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId, token: last.undoToken }, { kind: 'agent', workspaceId: 'w1' }), /Agent/);
+  await f.service.archiveProject({ projectId, archived: true });
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId, token: last.undoToken }), /归档/);
+  await f.service.archiveProject({ projectId, archived: false });
+  f.advance(5001);
+  await assert.rejects(f.service.restoreDeletedTodo({ projectId, token: last.undoToken }), /撤销/);
+  assert.equal(f.saved().todos.length, 0);
+});
 
 test('同名项目保持不同身份，会话仅按宿主归属关联', async () => {
   const f = fixture();
@@ -80,7 +113,7 @@ test('跨项目更新删除被拒绝，目录失效仍可编辑待办', async ()
   assert.equal(f.saved().todos.length, 1);
 });
 
-test('Agent 只允许当前项目，关闭权限后不能修改状态且不能删除', async () => {
+test('Agent 只允许当前项目，旧状态权限仍受校验，全局开启后可删除', async () => {
   const f = fixture();
   const [a, b] = (await f.service.snapshot()).projects;
   await f.service.setAgentStatus(a!.projectId, false);
@@ -90,9 +123,34 @@ test('Agent 只允许当前项目，关闭权限后不能修改状态且不能�
   assert.equal(t.creator, 'agent');
   const edited = await f.service.updateTodo({ projectId: a!.projectId, id: t.id, expectedVersion: 1, title: '更新标题' }, actor);
   await assert.rejects(f.service.updateTodo({ projectId: a!.projectId, id: t.id, expectedVersion: edited.version, done: true }, actor), /状态/);
-  await assert.rejects(f.service.deleteTodo({ projectId: a!.projectId, id: t.id, expectedVersion: edited.version }, actor), /删除/);
   await f.service.setAgentStatus(a!.projectId, true);
-  assert.equal((await f.service.updateTodo({ projectId: a!.projectId, id: t.id, expectedVersion: edited.version, done: true }, actor)).done, true);
+  const done = await f.service.updateTodo({ projectId: a!.projectId, id: t.id, expectedVersion: edited.version, done: true }, actor);
+  assert.equal(done.done, true);
+  await f.service.deleteTodo({ projectId: a!.projectId, id: t.id, expectedVersion: done.version }, actor);
+  assert.equal(f.saved().todos.length, 0);
+});
+
+test('全局管理覆盖已有与新增项目，写入失败不生效，Agent 删除不覆盖用户撤销', async () => {
+  const f = fixture();
+  const snapshot = await f.service.snapshot();
+  const projectId = snapshot.projects[0]!.projectId;
+  const options = { home: snapshot.preferences.home, root: '', agentManageTodos: false };
+  f.fail(true);
+  await assert.rejects(f.service.saveSettings('follow', {}, options), /disk full/);
+  assert.equal(f.saved().preferences.agentManageTodos, true);
+  f.fail(false);
+  await f.service.saveSettings('follow', {}, options);
+  f.workspaces.push({ workspaceId: 'w3', path: '/projects/three', title: '新增项目', available: true, sessionIds: [] });
+  const added = (await f.service.snapshot()).projects.find(p => p.workspaceId === 'w3')!;
+  await assert.rejects(f.service.createTodo({ projectId: added.projectId, title: '禁止' }, { kind: 'agent', workspaceId: 'w3' }), /管理待办/);
+  const userTodo = await f.service.createTodo({ projectId, title: '用户可操作' });
+  const removed = await f.service.deleteTodo({ projectId, id: userTodo.id, expectedVersion: 1 });
+  await f.service.saveSettings('follow', {}, { ...options, agentManageTodos: true });
+  const agent = { kind: 'agent' as const, workspaceId: 'w1' };
+  const agentTodo = await f.service.createTodo({ projectId, title: 'Agent 可操作' }, agent);
+  await f.service.deleteTodo({ projectId, id: agentTodo.id, expectedVersion: 1 }, agent);
+  const restored = await f.service.restoreDeletedTodo({ projectId, token: removed.undoToken });
+  assert.equal(restored.id, userTodo.id);
 });
 
 test('外部重新注册同目录需显式恢复原身份，原待办保留', async () => {

@@ -1,11 +1,19 @@
 import {
   type State, type HostWorkspace, type HostSession, type Snapshot, type Binding, type Actor,
   type Preferences, stateSchema, todoSchema, emptyMark, userActor, WorkbaseError,
-  type LaunchCatalog, type SessionSearch, type SessionPreview, type SessionPreviewMessage, type GitBranches,
+  type LaunchCatalog, type SessionSearch, type SessionPreview, type SessionPreviewMessage, type GitBranches, type Todo,
 } from '../shared/model.js';
+import type { Diagnosis, DiagnosticCandidate, DiagnosticRepairKind, DiagnosticRepairResult, HostDiagnosis } from '../shared/diagnostics.js';
+import type { BackupPort } from '../shared/backup.js';
+import type { RestorePort } from '../shared/restore.js';
+import { todoImageSchema, todoAttachmentSchema, todoAttachments, todoFilterSchema, MAX_TODO_IMAGE_BYTES, MAX_TODO_IMAGES, type Priority, type TodoImage, type TodoAttachment, type TodoFilter } from '../shared/todo.js';
 
 export interface Persistence { get(): State; set(next: State): Promise<void> }
 export interface HostPort {
+  saveTodoAttachment?(data: Uint8Array, mediaType: string, name: string): Promise<TodoAttachment>;
+  readTodoAttachment?(attachment: TodoAttachment, signal: AbortSignal): Promise<Uint8Array>;
+  saveTodoImage?(data: Uint8Array, mediaType: TodoImage['mediaType']): Promise<TodoImage>;
+  readTodoImage?(image: TodoImage, signal: AbortSignal): Promise<Uint8Array>;
   workspaces(): Promise<HostWorkspace[]>;
   sessions(signal?: AbortSignal): Promise<HostSession[]>;
   rename(workspaceId: string, title: string): Promise<void>;
@@ -15,11 +23,15 @@ export interface HostPort {
   search?(query: string, signal: AbortSignal): Promise<SessionSearch>;
   catalog?(): Promise<LaunchCatalog>;
   begin?(workspaceId: string, preset: string): Promise<{ sessionId: string }>;
+  configureModel?(sessionId: string, provider: string, model: string): Promise<void>;
   submit?(input: { sessionId: string; provider: string; model: string; text: string; requestId: string }, signal: AbortSignal): Promise<void>;
   renameSession?(sessionId: string, title: string): Promise<void>;
+  deleteSession?(sessionId: string): Promise<void>;
   readSession?(sessionId: string, signal: AbortSignal): Promise<{ hasEarlier: boolean; messages: SessionPreviewMessage[] }>;
   reveal?(path: string): Promise<void>;
   gitBranches?(projectPath: string, signal: AbortSignal): Promise<GitBranches>;
+  diagnose?(signal: AbortSignal): Promise<HostDiagnosis>;
+  repairDiagnostics?(kind: DiagnosticRepairKind, items: DiagnosticCandidate[]): Promise<DiagnosticRepairResult>;
 }
 const identity = (projectId: string) => {
   if (!projectId) throw new WorkbaseError('invalid', '缺少项目标识');
@@ -30,6 +42,7 @@ const assertWritable = (binding: Binding) => {
 };
 export class WorkbaseService {
   private queue: Promise<unknown> = Promise.resolve();
+  private deletedTodo: { token: string; todo: Todo; expiresAt: number } | null = null;
   constructor(
     private readonly persistence: Persistence, private readonly host: HostPort,
     private readonly uuid: () => string, private readonly now: () => number = Date.now,
@@ -39,7 +52,20 @@ export class WorkbaseService {
     this.queue = pending.catch(() => undefined);
     return pending;
   }
-  private async change<T>(run: (state: State, workspaces: HostWorkspace[]) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  async configureSessionModel(input: { projectId: string; sessionId: string; provider: string; model: string }, signal: AbortSignal) {
+    return this.change(async (state, workspaces) => {
+      const binding = this.writable(state, workspaces, input.projectId);
+      assertWritable(binding);
+      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId);
+      if (!workspace?.available) throw new WorkbaseError('directory-unavailable', '项目目录不可用');
+      if (!workspace?.sessionIds.includes(input.sessionId)) throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      if (!this.host.configureModel) throw new WorkbaseError('unsupported', '宿主不支持选择模型');
+      signal.throwIfAborted();
+      await this.host.configureModel(input.sessionId, input.provider, input.model);
+      return { configured: true };
+    }, signal);
+  }
+  private async change<T>(run: (state: State, workspaces: HostWorkspace[]) => T | Promise<T>, signal?: AbortSignal, onCommit?: (result: T) => void): Promise<T> {
     return this.serial(async () => {
       signal?.throwIfAborted();
       const current = this.persistence.get();
@@ -52,6 +78,7 @@ export class WorkbaseService {
         next.revision = current.revision + 1;
         await this.persistence.set(stateSchema.parse(next));
       }
+      onCommit?.(result);
       return result;
     });
   }
@@ -108,22 +135,25 @@ export class WorkbaseService {
         preferences: state.preferences, sessionMarks: state.sessionMarks, syncedAt: this.now() });
     });
   }
-  async createTodo(input: { projectId: string; title: string; note?: string }, actor = userActor, signal?: AbortSignal) {
+  async createTodo(input: { projectId: string; title: string; note?: string; priority?: Priority }, actor = userActor, signal?: AbortSignal) {
     return this.change((state, workspaces) => {
       assertWritable(this.writable(state, workspaces, input.projectId, actor));
+      this.assertAgentManagement(state, actor);
       const time = this.now();
       const todo = todoSchema.parse({
         id: this.uuid(), projectId: input.projectId, title: input.title, note: input.note ?? '',
+        priority: input.priority ?? null,
         done: false, creator: actor.kind, createdAt: time, updatedAt: time, completedAt: null, version: 1,
       });
       state.todos.push(todo);
       return todo;
     }, signal);
   }
-  async updateTodo(input: { projectId: string; id: string; expectedVersion: number; title?: string; note?: string; done?: boolean }, actor = userActor, signal?: AbortSignal) {
+  async updateTodo(input: { projectId: string; id: string; expectedVersion: number; title?: string; note?: string; done?: boolean; priority?: Priority }, actor = userActor, signal?: AbortSignal) {
     return this.change((state, workspaces) => {
       const binding = this.writable(state, workspaces, input.projectId, actor);
       assertWritable(binding);
+      this.assertAgentManagement(state, actor);
       const index = state.todos.findIndex(t => t.id === input.id && t.projectId === input.projectId);
       const old = state.todos[index];
       if (!old) throw new WorkbaseError('not-found', '待办不存在');
@@ -132,28 +162,171 @@ export class WorkbaseService {
         throw new WorkbaseError('forbidden', '当前项目未允许 Agent 修改状态');
       const done = input.done ?? old.done;
       const next = todoSchema.parse({ ...old, title: input.title ?? old.title, note: input.note ?? old.note,
+        priority: input.priority === undefined ? old.priority : input.priority,
         done, completedAt: done ? (old.completedAt ?? this.now()) : null, updatedAt: this.now(), version: old.version + 1 });
       state.todos[index] = next;
       return next;
     }, signal);
   }
   async deleteTodo(input: { projectId: string; id: string; expectedVersion: number }, actor = userActor, signal?: AbortSignal) {
+    let undo: typeof this.deletedTodo = null;
     return this.change((state, workspaces) => {
       assertWritable(this.writable(state, workspaces, input.projectId, actor));
-      if (actor.kind === 'agent') throw new WorkbaseError('forbidden', 'Agent 不允许删除待办');
+      this.assertAgentManagement(state, actor);
       const old = state.todos.find(t => t.id === input.id && t.projectId === input.projectId);
       if (!old) throw new WorkbaseError('not-found', '待办不存在');
       if (old.version !== input.expectedVersion) throw new WorkbaseError('conflict', '待办已经变化，请刷新后重试');
       state.todos = state.todos.filter(t => t.id !== old.id);
-      return { deleted: true };
-    }, signal);
+      undo = { token: this.uuid(), todo: structuredClone(old), expiresAt: this.now() + 5000 };
+      return { deleted: true, undoToken: undo.token, undoExpiresAt: undo.expiresAt };
+    }, signal, result => {
+      if (undo) {
+        undo.expiresAt = this.now() + 5000; result.undoExpiresAt = undo.expiresAt;
+        if (actor.kind === 'user') this.deletedTodo = undo;
+      }
+    });
   }
-  async listForAgent(workspaceId: string, signal?: AbortSignal) {
+  private assertAgentManagement(state: State, actor: Actor) {
+    if (actor.kind === 'agent' && !state.preferences.agentManageTodos)
+      throw new WorkbaseError('forbidden', '已关闭 Agent 管理待办，仅允许查询');
+  }
+  async restoreDeletedTodo(input: { projectId: string; token: string }, actor = userActor, signal?: AbortSignal) {
+    return this.change((state, workspaces) => {
+      if (actor.kind === 'agent') throw new WorkbaseError('forbidden', 'Agent 不允许撤销删除');
+      const undo = this.deletedTodo;
+      if (!undo || undo.token !== input.token || undo.todo.projectId !== input.projectId || this.now() >= undo.expiresAt)
+        throw new WorkbaseError('not-found', '撤销已失效，请重新记录待办');
+      assertWritable(this.writable(state, workspaces, input.projectId, actor));
+      if (state.todos.some(t => t.id === undo.todo.id)) throw new WorkbaseError('conflict', '待办已恢复，请刷新');
+      const restored = todoSchema.parse({ ...undo.todo, version: undo.todo.version + 1 });
+      state.todos.push(restored);
+      return restored;
+    }, signal, () => { this.deletedTodo = null; });
+  }
+  async listForAgent(workspaceId: string, signal?: AbortSignal, filter: TodoFilter = {}) {
+    const options = todoFilterSchema.parse(filter);
     return this.change((state, workspaces) => {
       const binding = state.bindings.find(b => b.workspaceId === workspaceId && !b.retired);
       if (!binding) throw new WorkbaseError('binding-unavailable', '当前项目绑定不可用');
       this.writable(state, workspaces, binding.projectId, { kind: 'agent', workspaceId });
-      return { projectId: binding.projectId, todos: state.todos.filter(t => t.projectId === binding.projectId) };
+      const query = options.query?.toLocaleLowerCase() ?? '';
+      const todos = state.todos.filter(t => t.projectId === binding.projectId
+        && (options.status === undefined || options.status === 'all' || t.done === (options.status === 'done'))
+        && (options.priority === undefined || t.priority === options.priority)
+        && (!query || `${t.title}\n${t.note}`.toLocaleLowerCase().includes(query)));
+      return { projectId: binding.projectId, todos: options.summary ? todos.map(({ note, images, attachments, ...todo }) =>
+        ({ ...todo, imageCount: images.length, attachmentCount: images.length + attachments.length })) : todos };
+    }, signal);
+  }
+  async getForAgent(workspaceId: string, id: string, signal?: AbortSignal): Promise<Todo> {
+    const result = await this.listForAgent(workspaceId, signal);
+    const todo = result.todos.find(t => t.id === id);
+    if (!todo || !('note' in todo)) throw new WorkbaseError('not-found', '待办不存在');
+    return todo;
+  }
+  private imageTodo(state: State, workspaces: HostWorkspace[],
+    input: { projectId: string; id: string; expectedVersion?: number }, actor: Actor, write: boolean) {
+    const binding = this.writable(state, workspaces, input.projectId, actor);
+    if (write) { assertWritable(binding); this.assertAgentManagement(state, actor); }
+    const todo = state.todos.find(t => t.id === input.id && t.projectId === input.projectId);
+    if (!todo) throw new WorkbaseError('not-found', '待办不存在');
+    if (input.expectedVersion !== undefined && todo.version !== input.expectedVersion)
+      throw new WorkbaseError('conflict', '待办已经变化，请刷新后重试');
+    return todo;
+  }
+  async uploadTodoImage(input: { projectId: string; id: string; expectedVersion: number },
+    data: Uint8Array, mediaType: string, actor = userActor, signal?: AbortSignal) {
+    if (!this.host.saveTodoImage) throw new WorkbaseError('unsupported', '宿主未提供图片附件服务');
+    if (!data.length || data.length > MAX_TODO_IMAGE_BYTES) throw new WorkbaseError('invalid', '图片应小于等于10MiB');
+    const type = todoImageSchema.shape.mediaType.parse(mediaType);
+    return this.change(async (state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, true);
+      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      const image = todoImageSchema.parse(await this.host.saveTodoImage!(data, type));
+      if (!todo.images.some(i => i.attachmentId === image.attachmentId)) todo.images.push(image);
+      todo.version++; todo.updatedAt = this.now();
+      return todo;
+    }, signal);
+  }
+  async attachTodoImage(input: { projectId: string; id: string; expectedVersion: number },
+    read: () => Promise<TodoImage>, actor: Actor, signal: AbortSignal) {
+    return this.change(async (state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, true);
+      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      const image = todoImageSchema.parse(await read());
+      if (!todo.images.some(i => i.attachmentId === image.attachmentId)) todo.images.push(image);
+      todo.version++; todo.updatedAt = this.now();
+      return todo;
+    }, signal);
+  }
+  async removeTodoImage(input: { projectId: string; id: string; expectedVersion: number; attachmentId: string },
+    actor = userActor, signal?: AbortSignal) {
+    return this.change((state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, true);
+      if (!todo.images.some(i => i.attachmentId === input.attachmentId)) throw new WorkbaseError('not-found', '图片不存在');
+      todo.images = todo.images.filter(i => i.attachmentId !== input.attachmentId);
+      todo.version++; todo.updatedAt = this.now();
+      return todo;
+    }, signal);
+  }
+  async readImage(input: { projectId: string; id: string; attachmentId: string }, actor = userActor,
+    signal = new AbortController().signal) {
+    return this.change(async (state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, false);
+      const image = todo.images.find(i => i.attachmentId === input.attachmentId);
+      if (!image) throw new WorkbaseError('not-found', '图片不存在');
+      if (!this.host.readTodoImage) throw new WorkbaseError('unsupported', '宿主未提供图片附件服务');
+      return { image, data: await this.host.readTodoImage(image, signal) };
+    }, signal);
+  }
+  async uploadTodoAttachment(input: { projectId: string; id: string; expectedVersion: number },
+    data: Uint8Array, mediaType: string, name: string, actor = userActor, signal?: AbortSignal) {
+    if (!this.host.saveTodoAttachment) throw new WorkbaseError('unsupported', '宿主未提供文件附件服务');
+    const metadata = todoAttachmentSchema.omit({ attachmentId: true }).parse({
+      name, mediaType: mediaType || 'application/octet-stream', bytes: data.length,
+    });
+    return this.attachTodoAttachment(input, async () =>
+      this.host.saveTodoAttachment!(data, metadata.mediaType, metadata.name), actor, signal);
+  }
+  async attachTodoAttachment(input: { projectId: string; id: string; expectedVersion: number },
+    read: () => Promise<TodoAttachment>, actor = userActor, signal?: AbortSignal) {
+    return this.change(async (state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, true);
+      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      const attachment = todoAttachmentSchema.parse(await read());
+      if (!todoAttachments(todo).some(a => a.attachmentId === attachment.attachmentId))
+        todo.attachments.push(attachment);
+      todo.version++; todo.updatedAt = this.now();
+      return todo;
+    }, signal);
+  }
+  async removeTodoAttachment(input: { projectId: string; id: string; expectedVersion: number; attachmentId: string },
+    actor = userActor, signal?: AbortSignal) {
+    return this.change((state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, true);
+      if (!todoAttachments(todo).some(a => a.attachmentId === input.attachmentId))
+        throw new WorkbaseError('not-found', '附件不存在');
+      todo.images = todo.images.filter(a => a.attachmentId !== input.attachmentId);
+      todo.attachments = todo.attachments.filter(a => a.attachmentId !== input.attachmentId);
+      todo.version++; todo.updatedAt = this.now();
+      return todo;
+    }, signal);
+  }
+  async readAttachment(input: { projectId: string; id: string; attachmentId: string }, actor = userActor,
+    signal = new AbortController().signal) {
+    return this.change(async (state, workspaces) => {
+      const todo = this.imageTodo(state, workspaces, input, actor, false);
+      const attachment = todoAttachments(todo).find(a => a.attachmentId === input.attachmentId);
+      if (!attachment) throw new WorkbaseError('not-found', '附件不存在');
+      let data: Uint8Array;
+      if ('width' in attachment) {
+        if (!this.host.readTodoImage) throw new WorkbaseError('unsupported', '宿主未提供图片附件服务');
+        data = await this.host.readTodoImage(attachment, signal);
+      } else {
+        if (!this.host.readTodoAttachment) throw new WorkbaseError('unsupported', '宿主未提供文件附件服务');
+        data = await this.host.readTodoAttachment(attachment, signal);
+      }
+      return { attachment, data };
     }, signal);
   }
   async setAgentStatus(projectId: string, allowed: boolean) {
@@ -199,21 +372,29 @@ export class WorkbaseService {
       return { saved: true };
     });
   }
-  async setPreferences(patch: Partial<Omit<Preferences, 'detail'>> & { detail?: Record<string, Preferences['detail'][string]> }) {
+  async setPreferences(patch: Partial<Omit<Preferences, 'detail' | 'backup'>> & { detail?: Record<string, Preferences['detail'][string]>; backup?: Partial<Preferences['backup']> }) {
     return this.change((state) => {
-      state.preferences = { ...state.preferences, ...patch, detail: { ...state.preferences.detail, ...patch.detail } };
-      if (state.preferences.home.stats) state.preferences.home.recentStyle = 'buttons';
+      state.preferences = { ...state.preferences, ...patch, backup: { ...state.preferences.backup, ...patch.backup }, detail: { ...state.preferences.detail, ...patch.detail } };
       return { saved: true };
     });
   }
-  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'navigation'>>) {
+  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'navigation' | 'openOnStartup' | 'agentManageTodos' | 'pluginUpdateVisible' | 'pluginAutoUpdate'>> & { backup?: Partial<Preferences['backup']> }) {
     return this.change((state, workspaces) => {
       for (const [projectId, allowed] of Object.entries(permissions))
         this.writable(state, workspaces, projectId).agentCanChangeStatus = allowed;
       state.preferences.theme = theme;
       if (options) {
-        state.preferences.home = { ...options.home, ...(options.home.stats ? { recentStyle: 'buttons' as const } : {}) };
+        state.preferences.home = { ...options.home };
         state.preferences.root = options.root;
+        if (options.openOnStartup !== undefined) state.preferences.openOnStartup = options.openOnStartup;
+        if (options.pluginUpdateVisible !== undefined) state.preferences.pluginUpdateVisible = options.pluginUpdateVisible;
+        if (options.pluginAutoUpdate !== undefined) state.preferences.pluginAutoUpdate = options.pluginAutoUpdate;
+        if (options.backup !== undefined) state.preferences.backup = { ...state.preferences.backup, ...options.backup };
+        if (options.agentManageTodos !== undefined) {
+          state.preferences.agentManageTodos = options.agentManageTodos;
+          // 全局设置替代旧逐项目状态权限，包含当前不可见及后续恢复的绑定。
+          for (const binding of state.bindings) binding.agentCanChangeStatus = options.agentManageTodos;
+        }
         if (options.navigation) state.preferences.navigation = options.navigation;
       }
       return { saved: true };
@@ -251,7 +432,7 @@ export class WorkbaseService {
       let workspace: HostWorkspace;
       try { workspace = await this.host.register!(directory, name); }
       catch (error) {
-        if (name !== undefined) throw new WorkbaseError('register-failed', `目录已创建：${directory}。注册失败：${error instanceof Error ? error.message : '宿主不可用'}。请切换「打开已有目录」重试此路径，不必再次创建文件夹。`);
+        if (name !== undefined) throw new WorkbaseError('register-failed', `目录已创建：${directory}。注册失败：${error instanceof Error ? error.message : '宿主不可用'}。请切换「打开已有项目」重试此路径，不必再次创建文件夹。`);
         throw error;
       }
       const existing = next.bindings.find(b => !b.retired && (b.workspaceId === workspace.workspaceId || b.path === workspace.path));
@@ -326,6 +507,23 @@ export class WorkbaseService {
         throw new WorkbaseError('forbidden', '会话不属于当前项目');
       await this.host.renameSession!(sessionId, title);
       return { saved: true };
+    });
+  }
+  async deleteSession(projectId: string, sessionId: string) {
+    if (!this.host.deleteSession) throw new WorkbaseError('unsupported', '当前宿主未启用会话删除能力');
+    return this.change(async (state, workspaces) => {
+      const binding = this.writable(state, workspaces, projectId);
+      assertWritable(binding);
+      if (!workspaces.find(w => w.workspaceId === binding.workspaceId)!.sessionIds.includes(sessionId)
+        && !state.worktreeSessions.some(w => w.sessionId === sessionId && w.projectId === projectId))
+        throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      const session = (await this.host.sessions()).find(s => s.sessionId === sessionId);
+      if (!session) throw new WorkbaseError('not-found', '会话已不存在，请刷新');
+      if (session.running) throw new WorkbaseError('running', '请先停止运行中的会话，再永久删除');
+      await this.host.deleteSession!(sessionId);
+      delete state.sessionMarks[sessionId];
+      state.worktreeSessions = state.worktreeSessions.filter(w => w.sessionId !== sessionId);
+      return { deleted: true };
     });
   }
   // 在系统文件管理器中显示项目目录：优先平台 SessionController.openWorkspacePath（与

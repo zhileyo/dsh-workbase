@@ -63,61 +63,139 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 
 
 /* 首页强调项目选择，详情强调会话与待办操作。 */
-.home-main{--home-cards-width:min(1120px,calc(100% - 48px))}
+.home-main{--home-cards-width:min(1120px,calc(100% - 48px));--home-shortcuts-gap:12px}
 .home-composer,:scope.c .home-composer{width:calc(var(--home-cards-width) * 6 / 7);max-width:960px;min-width:min(640px,calc(var(--home-cards-width) - 32px));margin-left:auto;margin-right:auto}
 .home-main:has(.recent-sessions) .home-composer{margin-bottom:12px}
 .home-main>.recent-sessions{width:100%;max-width:960px;margin:0 auto 24px;padding:0;border:0}
 .home-main>.recent-sessions[data-layout="cards"]{width:var(--home-cards-width);max-width:1120px;margin-top:28px}
+:scope .home-main>.recent-sessions[data-layout="buttons"]{width:calc(var(--home-cards-width) * 6 / 7);max-width:960px;min-width:min(640px,calc(var(--home-cards-width) - 32px));padding-inline:clamp(24px,5%,48px);box-sizing:border-box}
+.home-main:has(>.recent-sessions[data-layout="buttons"])>.home-composer{margin-bottom:0}
+.home-main>.home-composer+.recent-sessions[data-layout="buttons"]{margin-top:var(--home-shortcuts-gap)}
 @container workbase (max-width:750px){.home-main>.recent-sessions[data-layout="cards"]{width:100%}}
-.home-stats{width:var(--home-cards-width);max-width:1120px;margin:28px auto 24px}
-.stats-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-:scope .stat-card{display:flex;align-items:flex-start;justify-content:flex-start;text-align:left;gap:12px;min-width:0;min-height:116px;padding:18px 16px;border:1px solid var(--line);border-radius:var(--card-radius);background:var(--surface);white-space:normal}
-.stat-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:5px}
-.stat-value{font-size:26px;line-height:30px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
-.stat-label{font-size:13px;line-height:18px;color:var(--muted)}
-.stat-detail{font-size:12px;line-height:18px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.stat-card[data-stat-tab="running"]{--stat-tone:#8260b4}
-.stat-card[data-stat-tab="recent"]{--stat-tone:#558cb6}
+.home-stats{width:calc(100% - 48px);max-width:1440px;margin:28px auto 24px;container:workbase-stats / inline-size}
+.stats-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.stats-grid[data-count="1"]{grid-template-columns:minmax(0,1fr)}
+.stats-grid[data-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.stats-grid[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.stats-grid[data-count="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
+.stats-grid[data-count="5"]{grid-template-columns:repeat(5,minmax(0,1fr))}
+@container workbase-stats (max-width:1139px){.stats-grid:is([data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container workbase-stats (max-width:719px){.stats-grid:is([data-count="2"],[data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container workbase-stats (max-width:419px){.stats-grid[data-count]{grid-template-columns:minmax(0,1fr)}}
+:scope .stat-card{position:relative;display:flex;align-items:flex-start;justify-content:flex-start;text-align:left;gap:0;min-width:0;min-height:104px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);white-space:normal}
+.stat-copy{min-width:0;flex:1;display:flex;flex-direction:column;gap:4px}
+.stat-value{font-size:26px;line-height:28px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stat-label{font-size:13px;line-height:16px;color:var(--muted);padding-right:36px}
+.stat-detail{font-size:12px;line-height:16px;color:var(--muted);padding-right:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stat-card[data-stat-tab="running"]{--stat-tone:var(--accent)}
+.stat-card[data-stat-tab="recent"]{--stat-tone:var(--accent)}
 .stat-card[data-stat-tab="pending"]{--stat-tone:#9a7a3b}
 .stat-card[data-stat-tab="diagnostic"]{--stat-tone:#b0665c}
-.stat-card>.recent-icon{width:36px;height:36px;background:color-mix(in srgb,var(--stat-tone) 10%,var(--surface));color:var(--stat-tone)}
-:scope.dark .stat-card>.recent-icon{color:color-mix(in srgb,var(--stat-tone) 65%,var(--text));background:color-mix(in srgb,var(--stat-tone) 16%,var(--surface))}
-.stat-card>.recent-icon svg{width:20px;height:20px}
-.stat-card .stat-arrow{display:flex;color:var(--muted);flex:none;align-self:center;opacity:0;transition:opacity .15s ease}
+.stat-card[data-stat-tab="diagnostic"][data-state="normal"]{--stat-tone:var(--success)}
+.stat-card[data-stat-tab="diagnostic"][data-state="error"]{--stat-tone:var(--danger-text)}
+.stat-card[data-stat-tab="diagnostic"][data-state="unknown"]{--stat-tone:var(--muted)}
+.stat-card:is([data-stat-tab="skills"],[data-stat-tab="mcp"],[data-stat-tab="rss"]){--stat-tone:var(--accent)}
+.stat-card>.recent-icon{position:absolute;right:16px;top:16px;width:24px;height:24px;background:transparent;color:var(--stat-tone)}
+:scope.dark .stat-card[data-stat-tab="pending"]>.recent-icon{color:color-mix(in srgb,var(--stat-tone) 65%,var(--text))}
+.stat-card>.recent-icon svg{width:18px;height:18px}
+.stat-card .stat-arrow{position:absolute;right:16px;bottom:18px;display:flex;color:var(--muted);flex:none;opacity:0;transition:opacity .15s ease}
 .stat-arrow svg{width:14px;height:14px}
-:scope .stat-card:hover{background:var(--hover)}
+:scope .stat-card:is(:hover,:active,:focus-visible){background:var(--surface);border-color:var(--line)}
+:scope .stat-card:focus-visible,:scope .recent-shortcuts .recent-session:focus-visible{outline:2px solid var(--focus-tone);outline-offset:3px}
 .stat-card:hover .stat-arrow,.stat-card:focus-visible .stat-arrow{color:var(--text);opacity:1}
-@media(prefers-reduced-motion:reduce){.stat-card .stat-arrow{transition:none}}
-.stat-card[data-stat-tab="diagnostic"] .stat-value{font-size:20px}
+@media(prefers-reduced-motion:reduce){:scope .stat-card,:scope .recent-shortcuts .recent-session,.stat-card .stat-arrow,.recent-session .recent-arrow{transition:none}}
 .stats-notice{font-size:12px;color:var(--warntext);margin-bottom:8px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-@container workbase (max-width:750px){.home-main{--home-cards-width:100%}.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@container workbase (max-width:400px){:scope .stat-card{padding:14px 12px;gap:8px;min-height:110px}.stat-card>.recent-icon{display:none}}
+@container workbase (max-width:750px){.home-main{--home-cards-width:100%}.home-stats{width:100%}}
+@container workbase (max-width:400px){:scope .stat-card{padding:16px 12px}.stat-card>.recent-icon{display:none}.stat-label{padding-right:0}}
 .stats-summary{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
 .stats-summary strong{font-size:30px;line-height:1.2;font-variant-numeric:tabular-nums}
 .stats-summary span{font-size:12px;color:var(--muted)}
-:scope .stats-item{display:flex;align-items:center;justify-content:flex-start;gap:14px;width:100%;padding:16px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;text-align:left;white-space:normal}
+:scope .stats-item{display:flex;align-items:center;justify-content:flex-start;gap:14px;width:100%;padding:16px 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;text-align:left;white-space:normal}
 :scope .stats-item:hover{background:var(--hover)}
 .stats-item-copy{flex:1;min-width:0}
-.stats-item-copy strong{display:block;font-size:14px;font-weight:550;overflow-wrap:anywhere}
-.stats-item-copy small{display:block;font-size:12px;color:var(--muted);margin-top:5px;overflow-wrap:anywhere}
+.stats-item-copy strong{display:block;font-size:14px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stats-item-copy small{display:block;font-size:12px;color:var(--muted);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .diagnostic-session-id{display:block;font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;line-height:1.7;color:var(--muted);margin-top:6px;white-space:normal;overflow-wrap:anywhere;user-select:text}
+:scope .diagnostic-item>button{flex:none}
+:scope .stats-group-results.diagnostic-results-empty{display:flex;align-items:center;justify-content:center;min-height:180px}
+:scope .diagnostic-empty{width:100%;padding:28px 16px;text-align:center;overflow-wrap:anywhere}
+:scope .diagnostic-empty strong{display:block;font-size:14px;font-weight:500;color:var(--text)}
+:scope .diagnostic-empty p{margin:8px 0 0;font-size:12px;color:var(--muted)}
+:scope .diagnostic-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:none;margin-bottom:12px}
+:scope .diagnostic-list-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex:none;min-height:44px;padding:0 16px 12px;border-bottom:1px solid var(--line)}
+:scope .diagnostic-list-header strong{font-size:14px;font-weight:500;overflow-wrap:anywhere}
+:scope .diagnostic-list-header button{margin-left:auto;flex:none}
+:scope .diagnostic-refresh,:scope .diagnostic-toolbar button,:scope .diagnostic-list-header button,:scope .diagnostic-item button,:scope .diagnostic-feedback button{min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12px;background:var(--panel);color:var(--text);white-space:nowrap}
+:scope .diagnostic-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;font-size:14px}
+:scope .diagnostic-refresh>svg{width:14px;height:14px;flex:none}
+:scope .diagnostic-refresh:hover,:scope .diagnostic-toolbar button:hover,:scope .diagnostic-list-header button:hover,:scope .diagnostic-item button:hover,:scope .diagnostic-feedback button:hover{background:var(--hover)}
+:scope :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item) button.danger{color:var(--danger-text)}
+:scope .diagnostic-refresh:disabled,:scope :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item,.diagnostic-feedback) button:disabled{opacity:.5;cursor:not-allowed}
+:scope .diagnostic-item{cursor:default;flex-wrap:wrap;gap:10px}
+:scope .diagnostic-item .stats-item-copy{min-width:140px}
+:scope .diagnostic-message,:scope .diagnostic-feedback{flex:none;font-size:12px;overflow-wrap:anywhere;margin:0 0 12px;color:var(--muted)}
+:scope .diagnostic-message[role="alert"]{color:var(--danger-text)}
+:scope .diagnostic-feedback{max-height:180px;overflow:auto;padding:12px;border:1px solid var(--line);border-radius:10px}
+:scope .diagnostic-feedback p{margin:0 0 8px}
+:scope .diagnostic-confirm-list{max-height:200px;overflow:auto;font-size:12px;overflow-wrap:anywhere;color:var(--muted)}
 .stats-empty{padding:28px 0;color:var(--muted);font-size:13px}
 .stats-diagnostic-state{padding:20px;border:1px solid var(--line);border-radius:16px;background:var(--bg)}
 .stats-diagnostic-state p{font-size:13px;color:var(--muted);margin-top:8px;overflow-wrap:anywhere}
+:scope .stats-drawer .settings-content{overflow:hidden}
+:scope .stats-drawer .settings-panel{height:100%;display:flex;flex-direction:column;min-height:0}
+:scope .stats-drawer .settings-panel[hidden]{display:none}
+:scope .stats-drawer .stats-page-heading{margin:0 0 8px;font-size:16px;line-height:24px}
+:scope .stats-page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;margin-bottom:8px}
+:scope .stats-drawer .stats-page-header>.stats-page-heading{min-width:0;margin:0}
+:scope .stats-drawer .stats-page-description{padding-bottom:16px;border-bottom:1px solid var(--line)}
+:scope .stats-project-browser{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;flex:1;min-height:0}
+:scope .stats-project-groups{min-width:0;min-height:0;display:flex;flex-direction:column;padding-right:16px}
+:scope .stats-group-search{display:flex;flex-direction:row;align-items:center;gap:8px;min-width:0;height:36px;flex:none;margin:0 0 12px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);background:var(--surface)}
+:scope .stats-group-search input{flex:1;min-width:0;width:100%;border:0;padding:0;background:transparent;color:var(--text);font:inherit;font-size:14px;line-height:20px;outline:none}
+:scope .stats-group-search:focus-within{border-color:var(--focus-tone);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus-tone) 12%,transparent);outline:none}
+:scope .stats-group-search>svg{flex:none;width:15px;height:15px;pointer-events:none}
+:scope .stats-group-items{overflow:auto;min-height:0;display:flex;flex-direction:column;gap:4px;overscroll-behavior:contain}
+:scope .stats-group-entry{display:flex;align-items:center;gap:8px;width:100%;min-width:0;margin:0;padding:10px 8px;border:0;border-radius:8px;background:transparent;color:var(--text);text-align:left}
+:scope .stats-group-entry:hover{background:var(--hover)}
+:scope .stats-group-entry[aria-pressed=true]{background:var(--selected-bg);color:var(--selected-text)}
+:scope .stats-group-entry>svg{flex:none}
+:scope .stats-group-copy{flex:1;min-width:0}
+:scope .stats-group-copy strong{display:block;font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:scope .stats-group-entry[aria-pressed=true] strong{font-weight:600}
+:scope .stats-group-count{flex:none;font-size:12px;line-height:18px;color:var(--muted);font-variant-numeric:tabular-nums}
+:scope .stats-group-entry[aria-pressed=true] .stats-group-count{color:inherit}
+:scope .stats-group-empty{padding:12px 8px;font-size:12px;color:var(--muted)}
+:scope .stats-group-content{display:flex;flex-direction:column;min-width:0;min-height:0}
+:scope .stats-group-results{min-width:0;min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:0 4px}
+:scope .stats-project-browser [hidden]{display:none}
+@container workbase (max-width:900px){:scope .stats-project-browser{grid-template-columns:180px minmax(0,1fr);gap:16px}:scope .stats-project-groups{padding-right:12px}}
+@container workbase (max-width:650px){:scope .stats-drawer .settings-content{overflow:auto}:scope .stats-drawer .settings-panel{height:auto;min-height:100%}:scope .stats-project-browser{display:flex;flex-direction:column;gap:16px;min-height:240px}:scope .stats-project-groups{border-right:0;border-bottom:1px solid var(--line);padding:0 0 12px;flex:none}:scope .stats-group-items{max-height:180px}:scope .stats-group-results{overflow:visible;padding:0}}
+@container workbase (max-width:650px){:scope .diagnostic-group-content{height:360px;max-height:60vh;flex:none}:scope .diagnostic-group-content .stats-group-results{overflow:auto}:scope .diagnostic-list-header{padding-left:12px;padding-right:12px}}
 .home-main>.recent-sessions .recent-heading{height:28px;padding:0;margin-bottom:4px;gap:12px}
 .home-main>.recent-sessions .recent-heading h2{font-size:14px;font-family:inherit;font-weight:550;color:var(--text)}
 .recent-shortcuts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
-:scope .recent-shortcuts .recent-session{min-width:0;min-height:64px;padding:12px 16px;margin:0;border:1px solid var(--line);border-radius:var(--card-radius);background:var(--surface);text-align:left;align-items:center;justify-content:flex-start;gap:12px}
-.recent-shortcuts .recent-session:hover{background:var(--hover)}
+:scope .recent-shortcuts .recent-session{min-width:0;min-height:60px;padding:10px 12px;margin:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);text-align:left;align-items:center;justify-content:flex-start;gap:10px;transition:background .15s ease,border-color .15s ease}
+:scope .recent-shortcuts .recent-session:hover{background:color-mix(in srgb,var(--selected-bg) 28%,var(--surface));border-color:color-mix(in srgb,var(--accent) 22%,var(--line))}
+:scope .recent-shortcuts .recent-session:active{background:var(--selected-bg)}
 .recent-shortcuts .recent-copy{display:flex;flex-direction:column;gap:0;min-width:0;flex:1}
-.recent-shortcuts .recent-copy strong{font-size:14px;font-weight:550;line-height:20px;white-space:nowrap;display:block;overflow:hidden;text-overflow:ellipsis;min-height:0}
+.recent-shortcuts .recent-copy strong{font-size:14px;font-weight:500;line-height:20px;white-space:nowrap;display:block;overflow:hidden;text-overflow:ellipsis;min-height:0}
 .recent-icon{display:grid;place-items:center;width:32px;height:32px;flex:none;border-radius:8px;background:var(--soft);color:var(--accent)}
 .recent-icon svg{width:20px;height:20px}
+.recent-shortcuts .recent-icon{width:28px;height:28px;background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.recent-shortcuts .recent-icon svg{width:16px;height:16px}
+.recent-session .recent-arrow{display:flex;flex:none;color:var(--muted);opacity:0;transition:opacity .15s ease}
+.recent-arrow svg{width:14px;height:14px}
+.recent-session:hover .recent-arrow,.recent-session:focus-visible .recent-arrow{opacity:1;color:var(--text)}
+@media(pointer:coarse){.recent-session .recent-arrow{opacity:1}}
 .recent-shortcuts .recent-copy small{font-size:12px;line-height:18px;display:block;margin:0}
 .recent-shortcuts .recent-project{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.recent-shortcuts[data-layout="buttons"]{display:flex;justify-content:center;flex-wrap:nowrap;gap:8px}
-:scope .recent-shortcuts[data-layout="buttons"] .recent-session{width:auto;max-width:calc((100% - 16px)/3);min-height:32px;padding:5px 12px;border:0;border-radius:999px;background:color-mix(in srgb,var(--text) 4%,var(--surface));gap:6px}
-:scope .recent-shortcuts[data-layout="buttons"] .recent-session:hover{background:var(--hover)}
+.recent-shortcuts[data-layout="buttons"]{display:flex;justify-content:center;flex-wrap:nowrap;gap:8px;position:relative;overflow:hidden;min-height:32px}
+:scope .recent-shortcuts[data-layout="buttons"] .recent-session{width:max-content;flex:none;max-width:min(220px,100%);min-height:32px;padding:4px 10px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--surface) 60%,var(--bg));gap:6px}
+:scope .recent-shortcuts[data-layout="buttons"] .recent-session[data-overflow="true"]{position:absolute;left:0;top:0;visibility:hidden;pointer-events:none}
+:scope .recent-shortcuts[data-layout="buttons"] .recent-session:hover{background:color-mix(in srgb,var(--selected-bg) 28%,var(--surface))}
+:scope .recent-shortcuts[data-layout="buttons"] .recent-session:active{background:var(--selected-bg)}
+.recent-shortcuts[data-layout="buttons"] .recent-session:hover .recent-icon,.recent-shortcuts[data-layout="buttons"] .recent-session:focus-visible .recent-icon{color:var(--accent)}
 .recent-shortcuts[data-layout="buttons"] .recent-icon{width:16px;height:16px;border-radius:0;background:transparent;color:var(--muted)}
 .recent-shortcuts[data-layout="buttons"] .recent-icon svg{width:14px;height:14px}
 .recent-shortcuts[data-layout="buttons"] .recent-copy strong{font-size:13px;font-weight:400}
@@ -128,8 +206,8 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
  .recent-shortcuts{grid-template-columns:minmax(0,1fr)}
 }
 @container workbase (max-width:750px){
- :scope .recent-shortcuts .recent-session{padding:12px}
- :scope .recent-shortcuts[data-layout="buttons"] .recent-session{padding:5px 12px}
+ :scope .recent-shortcuts .recent-session{padding:10px 12px}
+ :scope .recent-shortcuts[data-layout="buttons"] .recent-session{padding:4px 10px}
 }
 :scope{--card-radius:16px}
 :scope .home-composer,:scope.c .home-composer,:scope .project-grid .project,:scope.c .project-grid .project,:scope .agent-permission{border-radius:var(--card-radius)}
@@ -241,6 +319,12 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .composer-project-picker{max-width:240px;flex:0 1 auto;min-width:0}
 .composer-mode-picker{flex:none}
 .composer-model-picker{max-width:240px}
+/* 快捷模型位复用官方控件；仅限制工具行占用宽度，浮层仍由宿主 portal 定位。 */
+:scope .home-composer .wb-composer-model{display:flex;align-items:center;min-width:0;max-width:240px}
+:scope .home-composer .wb-composer-model>div{min-width:0;max-width:100%}
+:scope .home-composer .wb-composer-model>div>button{max-width:100%;margin:0}
+:scope .home-composer .wb-model-selector>div{min-width:0;max-width:100%}
+:scope .home-composer .wb-model-selector>div>button{max-width:100%;margin:0}
 :scope .home-composer .composer-picker select{position:absolute;inset:0;width:100%;height:100%;min-width:0;max-width:none;opacity:0;padding:0;border:0;cursor:inherit}
 :scope .home-composer #composer-send{width:34px;height:34px;border-radius:50%;padding:0;margin:0;flex:none;background:#4d6bfe;border-color:#4d6bfe;color:white}
 :scope .home-composer #composer-send:disabled{background:var(--hover);border-color:transparent;color:var(--muted);opacity:1}
@@ -270,9 +354,11 @@ textarea::placeholder{color:var(--muted);opacity:1}
  :scope .home-composer .composer-picker{width:auto;max-width:100%;flex:0 1 auto}
  :scope .home-composer .composer-mode-picker{flex:0 0 auto}
  :scope .home-composer .composer-model-picker{max-width:120px}
+ :scope .home-composer .wb-composer-model{max-width:120px}
  :scope .home-composer .composer-trigger{width:100%;padding:0 4px;gap:4px}
  .composer-project-picker .composer-trigger>svg:first-child{display:none}
 }
+@container workbase (max-width:420px){:scope .home-composer .wb-composer-model{--dsh-composer-model-text-display:none;--dsh-composer-model-icon-display:block}}
 .composer-options{position:fixed;z-index:30;overflow:auto;max-height:min(330px,50vh);padding:5px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px #0003}
 .composer-options .composer-option{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 10px;border:0;border-radius:7px;background:transparent;color:var(--text);text-align:left;white-space:normal;font-size:13px}
 .composer-options .composer-option:hover,.composer-options .composer-option:focus-visible{background:var(--hover)}
@@ -281,23 +367,42 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .composer-option-copy small{font-size:11px;color:var(--muted);margin-top:2px}
 .composer-option svg{width:15px;height:15px}
 .overlay.settings-overlay{padding:50px 5vw 0;align-items:flex-end;background:#0d152359;backdrop-filter:none;animation:wb-settings-mask-in .2s ease-out both}
-:scope .workspace-settings.dialog{width:100%;max-width:100%;height:calc(100dvh - 50px);max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px 16px 0 0;border-bottom:0;animation:wb-settings-slide-up .2s cubic-bezier(.22,1,.36,1) both}
+:scope .workspace-settings.dialog{--wb-drawer-max-width:1120px;width:100%;max-width:var(--wb-drawer-max-width);height:calc(100dvh - 50px);max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px 16px 0 0;border-bottom:0;animation:wb-settings-slide-up .2s cubic-bezier(.22,1,.36,1) both}
 @keyframes wb-settings-slide-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes wb-settings-mask-in{from{background:transparent}to{background:#0d152359}}
 .workspace-settings .dialog-head{height:72px;min-height:72px;margin:0;padding:0 24px;border-bottom:1px solid var(--line)}
 .workspace-settings .dialog-head h2{font-size:18px}
 .settings-layout{display:flex;flex:1;min-height:0}
+:scope .overlay{container:workbase / inline-size}
 .settings-nav{width:200px;flex:none;background:var(--bg);border-right:1px solid var(--line);padding:20px 12px;display:flex;flex-direction:column;gap:6px}
-.settings-nav button{border:0;background:transparent;justify-content:flex-start;padding:10px 12px;font-size:13px;border-radius:8px}
+.settings-nav button{border:0;background:transparent;justify-content:flex-start;padding:10px 12px;font-size:14px;font-weight:500;border-radius:8px}
 .settings-nav button[aria-selected=true]{background:var(--soft);color:var(--accent);font-weight:600}
 .settings-content{flex:1;min-width:0;overflow:auto;overscroll-behavior:contain}
 .settings-panel{padding:24px 28px}
 .settings-panel[hidden]{display:none}
+:scope .settings-subtabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin:20px 0 24px}
+:scope .settings-subtabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;padding:10px 0;color:var(--muted);font-size:14px;font-weight:500}
+:scope .settings-subtabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--accent);font-weight:600}
+:scope .workspace-settings :is(.settings-nav,.settings-subtabs)>button{font-family:var(--font-ui);font-size:14px;line-height:20px;font-weight:500}
+:scope .workspace-settings :is(.settings-nav,.settings-subtabs)>button[aria-selected=true]{font-weight:600}
+:scope .settings-subtabs button[hidden]{display:none}
+:scope .settings-subpanel[hidden],:scope .setting-dependent[hidden]{display:none}
+:scope .setting-dependent{padding:0 0 0 16px;border-left:2px solid var(--line);margin:12px 0 20px}
+:scope .settings-group-title{font-size:13px;color:var(--muted);font-weight:500;margin:24px 0 8px}
+:scope .settings-empty{min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);text-align:center}
+:scope .settings-empty>svg{width:32px;height:32px}
+:scope .settings-empty strong{font-size:14px;color:var(--text);font-weight:500}
+:scope .settings-inline-note{margin:12px 0;font-size:12px;color:var(--muted)}
+:scope .settings-control{width:180px;flex:none}
+:scope .theme-select-stat-days,:scope .theme-select-sidebar-position{width:180px;flex:none}
+:scope .settings-disabled{opacity:.55}
+@container workbase (max-width:650px){:scope .settings-layout{flex-direction:column}:scope .settings-nav{width:100%;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line)}:scope .settings-nav button{flex:1 1 28%}:scope .settings-subtabs{gap:20px}:scope .settings-control,:scope .theme-select-stat-days,:scope .theme-select-sidebar-position{width:140px}}
 .workspace-settings .settings-panel h3{font-size:17px;margin:0 0 6px}
 .workspace-settings .settings-panel>.dialog-description{margin:0 0 20px!important;font-size:12px}
 .workspace-settings .setting-row{min-height:64px;padding:14px 0;gap:24px;border-bottom:1px solid var(--line)}
-.workspace-settings .setting-row strong{font-weight:500;font-size:13px}
-.workspace-settings .setting-row small{font-size:12px;line-height:1.6;margin-top:4px}
+:scope .workspace-settings .setting-row strong,:scope .workspace-settings label.field,:scope .workspace-settings .theme-choice strong{font-size:14px;font-weight:500;line-height:20px}
+:scope .workspace-settings .setting-row small,:scope .workspace-settings .theme-choice small{font-size:12px;line-height:20px}
+.workspace-settings .setting-row small{margin-top:4px}
 .workspace-settings .setting-row input[type=checkbox]{appearance:none;position:relative;width:32px;height:18px;flex:none;border:0;border-radius:20px;background:var(--muted);padding:0;margin:0;cursor:pointer;transition:background .15s}
 .workspace-settings .setting-row input[type=checkbox]::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
 .workspace-settings .setting-row input[type=checkbox]:checked{background:var(--accent)}
@@ -310,6 +415,27 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .workspace-settings label.field{margin:22px 0 8px}
 .workspace-settings #settings-project-path{padding:12px;margin:10px 0 12px;font-size:12px;background:var(--bg);overflow-wrap:anywhere}
 :scope .workspace-settings .dialog-footer{position:static;min-height:72px;flex:none;align-items:center;margin:0;padding:16px 24px;border-top:1px solid var(--line);background:var(--surface)}
+:scope .workspace-settings .setting-row>div{flex:1 1 0;min-width:0}
+:scope .workspace-settings .setting-row>.theme-select{flex:0 0 180px;width:180px;max-width:100%}
+:scope .workspace-settings .setting-row>.theme-select .theme-select-trigger{width:100%}
+:scope .workspace-settings .setting-row>.settings-text-control{flex:0 0 180px;width:180px;max-width:100%;height:auto;min-height:40px;font-size:13px}
+:scope .wb-archive-input{display:flex;position:relative;align-items:center;width:100%;min-width:0}
+:scope .wb-restore-settings>div.field{display:block;font-size:12px;margin:22px 0 8px}
+:scope .wb-restore-settings>div.field>label{display:block;margin-bottom:7px}
+:scope .wb-archive-input>.settings-text-control{width:100%;min-width:0;padding-right:42px;font-size:13px;text-overflow:ellipsis;cursor:pointer}
+:scope .wb-archive-input>.wb-archive-toggle{position:absolute;right:4px;top:4px;bottom:4px;width:32px;padding:0;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--muted)}
+:scope .wb-archive-options{max-height:320px;overflow-y:auto}
+:scope .wb-archive-options .composer-option-copy{min-width:0;flex:1}
+:scope .wb-archive-options .composer-option-copy>span,:scope .wb-archive-options .composer-option-copy>small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .wb-archive-options .composer-option-copy>small{margin-top:3px;font-size:12px;color:var(--muted)}
+:scope .wb-archive-options>.settings-inline-note{padding:8px 12px}
+:scope .composer-options-restore-mode .composer-option{padding:12px;gap:10px;min-height:64px}
+:scope .composer-options-restore-mode .composer-option-copy{gap:4px;flex:1;min-width:0}
+:scope .composer-options-restore-mode .composer-option-copy>span{font-size:14px;font-weight:600}
+:scope .composer-options-restore-mode .composer-option-copy>small{margin:0;font-size:12px;line-height:1.6;white-space:normal;color:var(--muted)}
+:scope .composer-options-restore-mode .composer-option>svg{flex:none}
+@container workbase (max-width:650px){:scope .workspace-settings .setting-row>.theme-select,:scope .workspace-settings .setting-row>.settings-text-control{flex-basis:140px;width:140px}}
+@container workbase (max-width:480px){:scope .workspace-settings .setting-row:has(>.theme-select,>.settings-text-control){flex-direction:column;align-items:stretch;gap:12px}:scope .workspace-settings .setting-row>.theme-select,:scope .workspace-settings .setting-row>.settings-text-control{flex:0 0 auto;width:100%}}
 .settings-save-note{margin-right:auto;font-size:12px;color:var(--muted)}
 .workspace-settings #dialog-error{margin:0;padding:10px 24px;border-top:1px solid var(--line);flex:none;background:var(--warn)}
 @container workbase (max-width:650px){.overlay.settings-overlay{padding:50px 0 0}.workspace-settings .dialog-head{height:60px;min-height:60px;padding:0 18px}.settings-layout{flex-direction:column}.settings-nav{width:100%;border-right:0;border-bottom:1px solid var(--line);padding:10px;flex-direction:row;gap:4px}.settings-nav button{flex:1;justify-content:center;gap:6px;padding:8px 5px;font-size:12px}.settings-nav svg{width:14px;height:14px}.settings-panel{padding:20px 18px}:scope .workspace-settings .dialog-footer{padding:14px 18px;min-height:64px;padding-bottom:max(14px,env(safe-area-inset-bottom))}.settings-save-note{display:none}.workspace-settings #recent-layout{width:150px}}
@@ -320,6 +446,7 @@ textarea::placeholder{color:var(--muted);opacity:1}
 :scope input:focus,:scope textarea:focus,:scope select:focus{border-color:var(--line)}
 :scope input:not([type=checkbox]):not([type=radio]):focus,:scope textarea:focus{outline:none;border-color:var(--focus-tone);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus-tone) 12%,transparent)}
 :scope .global-search input:focus{outline:none;border-color:var(--focus-tone);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus-tone) 12%,transparent)}
+:scope .stats-group-search input[type=search]:focus{outline:none;box-shadow:none}
 :scope #quick-input:focus{box-shadow:none;outline:none}
 :scope .home-main .home-composer:has(#quick-input:focus){box-shadow:0 0 0 1px var(--focus-tone),0 0 0 3px color-mix(in srgb,var(--focus-tone) 12%,transparent)}
 :scope .composer-picker:focus-within{outline:none}
@@ -359,7 +486,9 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .theme-choice-copy{min-width:0;display:flex;flex-direction:column;gap:6px}
 .theme-choice strong{font-size:14px;font-weight:600}
 .theme-choice small{font-size:12px;color:var(--muted);line-height:20px}
-.theme-mode-note{padding:14px 16px;margin-top:20px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:12px;color:var(--muted)}
+.theme-mode-note{display:flex;align-items:flex-start;gap:8px;padding:12px 16px;margin:0 0 20px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--surface) 92%,var(--accent));font-size:12px;line-height:20px;color:var(--muted)}
+.theme-mode-note>svg{width:16px;height:16px;margin-top:2px;color:var(--accent)}
+.theme-mode-note .theme-mode-copy{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;min-width:0}
 .theme-mode-note strong{color:var(--text);font-weight:500}
 
 
@@ -411,7 +540,7 @@ textarea::placeholder{color:var(--muted);opacity:1}
  :scope .global-search input{font-size:11px;padding-right:8px}
 }
 @container workbase (max-width:650px){
- :scope .settings-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;overflow:visible;padding:8px}
+ :scope .settings-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:4px;overflow:visible;padding:8px}
  :scope .settings-nav button{min-width:0!important;max-width:100%;padding:8px 4px;gap:4px}
  :scope .workspace-settings .setting-row{gap:12px}
  :scope .dialog-footer{flex-wrap:wrap}
@@ -423,7 +552,7 @@ textarea::placeholder{color:var(--muted);opacity:1}
  :scope .project-toolbar h2{font-size:15px}
  :scope .project-toolbar .tabs{gap:2px}
  :scope .project-toolbar .tabs button{font-size:11px;padding:5px}
- :scope .project-toolbar .view-switch button{width:28px;height:28px;padding:4px}
+ :scope .project-toolbar .view-switch>button{width:28px;height:28px;padding:4px}
  :scope .settings-nav svg{display:none}
  :scope .settings-nav button{font-size:12px}
  :scope .detail-project-line .theme-select-trigger{font-size:16px;padding:3px 4px;gap:4px}
@@ -435,8 +564,8 @@ textarea::placeholder{color:var(--muted);opacity:1}
 
 /* 总览展示工具：紧凑图标与按视图保存的字段偏好。 */
 :scope .project-toolbar .view-switch{gap:3px;border:0;padding:0;border-radius:0}
-:scope .project-toolbar .view-switch button{width:26px;height:26px;padding:5px;border-radius:5px;color:var(--muted)}
-:scope .project-toolbar .view-switch button svg{width:16px;height:16px}
+:scope .project-toolbar .view-switch>button{width:26px;height:26px;padding:5px;border-radius:5px;color:var(--muted)}
+:scope .project-toolbar .view-switch>button svg{width:16px;height:16px}
 /* 激活与悬停状态色由 r43 统一规则定义，此处不重复声明以免覆盖主题令牌。 */
 :scope .project-toolbar .view-switch .field-settings{margin-right:4px}
 @container workbase (max-width:1100px){
@@ -548,15 +677,14 @@ textarea::placeholder{color:var(--muted);opacity:1}
 :scope .detail-project-info .theme-select-project-switch{flex:0 1 auto;min-width:0;max-width:520px}
 :scope .detail-project-info .theme-select-project-switch .theme-select-trigger{padding:0;min-height:22px;font-size:12px;font-weight:400;font-family:inherit;gap:6px;color:var(--muted);background:transparent}
 :scope .detail-project-info .theme-select-project-switch .theme-select-trigger:hover,:scope .detail-project-info .theme-select-project-switch .theme-select-trigger[aria-expanded=true]{color:var(--text)}
-.detail-project-context>.detail-folder-icon{width:14px;height:14px;color:var(--muted);flex:none;margin-right:-6px}
 .breadcrumb-divider svg{width:12px;height:12px}
 .detail-project-symbol{display:grid;place-items:center;width:22px;height:22px;flex:none;border-radius:6px;background:var(--soft);color:var(--accent)}
 .detail-project-symbol svg{width:14px;height:14px}
 :scope .detail-project-line .theme-select-project-switch{flex:0 1 auto;width:auto;max-width:calc(100% - 132px)}
 :scope .theme-select-project-switch .theme-select-trigger{justify-content:flex-start;gap:6px;font-size:15px;line-height:1.4;padding:2px 0;min-height:28px}
 :scope .theme-select-project-switch .theme-select-trigger>svg{flex:none}
-:scope .detail-project-line .heading-actions button{width:28px;height:28px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
-:scope .detail-project-line .heading-actions button:hover{background:var(--hover);color:var(--text)}
+:scope .detail-project-line .heading-actions>button{width:28px;height:28px;padding:6px;border:0;border-radius:6px;background:transparent;color:var(--muted)}
+:scope .detail-project-line .heading-actions>button:hover{background:var(--hover);color:var(--text)}
 .detail-project-info{display:flex;align-items:center;justify-content:flex-start;gap:12px;margin-top:4px;min-width:0;padding-left:0}
 .detail-project-context{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
 .detail-project-info .path{display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto;font-size:12px;color:var(--muted);font-family:inherit;margin:0}
@@ -648,7 +776,6 @@ body:has(.detail-main){overflow:hidden}
 :scope .todo-view-switch button:hover:not(.active){background:var(--hover);color:var(--text)}
 :scope .detail-project-info .todo-view-switch{margin-left:auto;height:28px;padding:1px;gap:2px;border:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:6px;background:transparent}
 :scope .detail-project-info .todo-view-switch button{width:24px;height:24px;padding:4px;border-radius:4px}
-.todo-note{display:none}
 :scope .detail-content>:is(.sessions,.todos)[data-layout="cards"]{align-self:stretch;max-height:100%;padding:12px;border:1px solid color-mix(in srgb,var(--line) 70%,transparent);border-radius:10px;background:color-mix(in srgb,var(--surface) 40%,var(--bg));box-shadow:none}
 :scope .detail-content>.sessions[data-layout="cards"] .session-row{border-bottom-color:color-mix(in srgb,var(--line) 25%,transparent)}
 :scope .detail-content>.todos[data-layout="cards"] .todo-row{padding:8px 4px;gap:6px;min-height:56px;border:0;box-shadow:none;background:transparent}
@@ -656,7 +783,6 @@ body:has(.detail-main){overflow:hidden}
 :scope .detail-content>.todos[data-layout="cards"] .todo-title{line-height:1.5}
 :scope .detail-content>.todos[data-layout="cards"] .group-title{margin:8px 4px 4px}
 :scope .detail-content>.todos[data-layout="cards"] .todo-row:hover,:scope .detail-content>.todos[data-layout="cards"] .todo-row:focus-within{background:var(--hover)}
-:scope #todo-results[data-layout="cards"] .todo-note{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line;overflow-wrap:anywhere;font-size:12px;line-height:1.6;color:var(--muted);margin-top:4px}
 :scope #todo-results[data-layout="cards"] .todo-meta{font-size:11px;margin-top:3px;color:var(--muted)}
 /* 列表模式收紧行间留白，辅助信息保持可读，交互反馈与会话使用相同底色。 */
 :scope #todo-results[data-layout="list"] .todo-row{padding:8px 6px;min-height:56px;border-radius:5px}
@@ -754,10 +880,23 @@ body.detail-resizing,body.detail-resizing *{cursor:col-resize!important;user-sel
 :scope .tabs button.active,:scope .settings-nav button[aria-selected=true],:scope .composer-option[aria-selected=true]{background:var(--selected-bg);color:var(--selected-text)}
 :scope .detail-panel-tabs button[aria-selected=true],:scope .search-hit[aria-selected=true]{background:var(--selected-bg);color:var(--selected-text)}
 :scope .banner.readonly,:scope .readonly-pill,:scope .agent-info,:scope .tool-result,:scope .search-panel mark,:scope .chat-message mark{color:var(--selected-text)}
-:scope .view-switch button.active,:scope .todo-view-switch button.active,:scope .entity-mark-button.active{background:var(--selected-bg);color:var(--selected-text);box-shadow:none}
+:scope .view-switch>button.active,:scope .todo-view-switch button.active,:scope .entity-mark-button.active{background:var(--selected-bg);color:var(--selected-text);box-shadow:none}
 :scope .entity-marks .entity-mark-button.active{background:var(--selected-bg);color:var(--selected-text)}
-:scope .view-switch button:hover:not(.active),:scope .todo-view-switch button:hover:not(.active){background:var(--hover);box-shadow:none}
+:scope .view-switch>button:hover:not(.active),:scope .todo-view-switch button:hover:not(.active){background:var(--hover);box-shadow:none}
 :scope .detail-content>:is(.sessions,.todos)[data-layout="cards"]{background:var(--panel);border-color:var(--line)}
+/* 官方侧栏同款半透明悬停层：在原底色上叠加，保持既有边框与连续列表。 */
+:scope{--entity-hover-bg:var(--dsw-alias-interactive-bg-hover,#2631480f)}
+:scope.dark{--entity-hover-bg:var(--dsw-alias-interactive-bg-hover,#ffffff14)}
+:scope .project-list .project:is(:hover,:focus-within){background:linear-gradient(var(--entity-hover-bg),var(--entity-hover-bg)),var(--surface);border-color:var(--line)}
+:scope{--project-hover-shadow:0 4px 16px 4px rgba(31,35,41,.03),0 4px 8px rgba(31,35,41,.02),0 2px 4px -4px rgba(31,35,41,.02)}
+:scope.dark{--project-hover-shadow:0 4px 16px 4px rgba(0,0,0,.2),0 4px 8px rgba(0,0,0,.14),0 2px 4px -4px rgba(0,0,0,.12)}
+:scope .project-grid .project.project-summary,:scope .project-grid .project.project-summary:is(:hover,:focus-within){background:var(--dsw-alias-bg-base,var(--surface));border-color:var(--line)}
+:scope .project-grid .project.project-summary,:scope .stat-card{transform:none;box-shadow:none;transition:transform .3s ease,box-shadow .3s ease}
+:scope .project-grid .project.project-summary:has(:focus-visible),:scope .stat-card:focus-visible{transform:translateY(-4px);box-shadow:var(--project-hover-shadow)}
+@media(hover:hover) and (pointer:fine){:scope .project-grid .project.project-summary:hover,:scope .stat-card:hover{transform:translateY(-4px);box-shadow:var(--project-hover-shadow)}}
+@media(prefers-reduced-motion:reduce){:scope .project-grid .project.project-summary:is(:hover,:focus-within),:scope .stat-card:is(:hover,:focus-visible){transform:none}}
+:scope .detail-content>:is(.sessions,.todos)[data-layout="cards"] :is(.session-row,.todo-row){background:transparent;box-shadow:none}
+:scope .detail-content>:is(.sessions,.todos)[data-layout] .session-row:is(:hover,:focus-within),:scope .detail-content #todo-results[data-layout] .todo-row:is(:hover,:focus-within){background:var(--entity-hover-bg)}
 :scope :is(input,textarea,.theme-select-trigger){border-color:var(--control-line)}
 :scope .todo-input{border-color:var(--control-line)}
 :scope .detail-content .completion-circle,:scope .todo-row:not(.completed) .completion-circle{border-color:var(--checkbox-border)}
@@ -771,7 +910,7 @@ body.detail-resizing,body.detail-resizing *{cursor:col-resize!important;user-sel
 :scope .detail-content>:is(.sessions,.todos){container-type:inline-size}
 :scope:is(.a,.b,.c) .detail-content{grid-template-columns:minmax(280px,var(--session-share,65fr)) 24px minmax(240px,var(--todo-share,35fr))}
 :scope .detail-content :is(.session-row,.todo-row){border-radius:5px}
-:scope .detail-content :is(.session-row .more,.todo-row .more,.todo-complete),:scope .detail-project-line .heading-actions button,:scope .project-summary .more,:scope .project-toolbar .view-switch button{width:var(--icon-target);height:var(--icon-target);min-width:var(--icon-target);min-height:var(--icon-target);padding:7px;border-radius:5px}
+:scope .detail-content :is(.session-row .more,.todo-row .more,.todo-complete),:scope .detail-project-line .heading-actions>button,:scope .project-summary .more,:scope .project-toolbar .view-switch>button{width:var(--icon-target);height:var(--icon-target);min-width:var(--icon-target);min-height:var(--icon-target);padding:7px;border-radius:5px}
 :scope .project-summary-head{grid-template-columns:44px minmax(0,1fr) var(--icon-target)}
 :scope .detail-content>.todos[data-layout="cards"] .todo-row :is(.more,.todo-complete){width:var(--icon-target);height:var(--icon-target);min-width:var(--icon-target);min-height:var(--icon-target);padding:7px}
 :scope .detail-project-info .todo-view-switch{height:36px}
@@ -784,6 +923,10 @@ body.detail-resizing,body.detail-resizing *{cursor:col-resize!important;user-sel
 :scope .todo-details{font-size:11px;color:var(--muted);border:0;background:transparent;padding:0 4px;min-height:24px;flex:none}
 :scope .todo-meta-line{display:flex;align-items:center;justify-content:space-between;gap:8px}
 :scope .todo-meta-line .todo-meta{min-width:0;margin:0}
+:scope .todo-row .todo-delete{opacity:0;pointer-events:none;flex:none;color:var(--muted)}
+:scope .todo-row:hover .todo-delete,:scope .todo-row:focus-within .todo-delete{opacity:1;pointer-events:auto}
+:scope .todo-row .todo-delete:enabled:is(:hover,:focus-visible){color:var(--danger-text);background:color-mix(in srgb,var(--danger-text) 12%,var(--surface))}
+@media(hover:none){:scope .todo-row .todo-delete{opacity:1;pointer-events:auto}}
 :scope.dark #todo-results[data-layout="list"] .todo-meta{color:var(--muted)}
 :scope .read-detail-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85}
 :scope .read-detail-field{margin:16px 0}
@@ -795,6 +938,14 @@ body.detail-resizing,body.detail-resizing *{cursor:col-resize!important;user-sel
 :scope .toast{padding-bottom:max(12px,env(safe-area-inset-bottom))}
 :scope .toast button{min-height:28px}
 :scope .toast .toast-dismiss{font-size:11px;text-decoration:none}
+/* 工作台通知固定在顶部，面板底色随主题变化；高于工作台模态遮罩。 */
+:scope .toast{top:68px;bottom:auto;z-index:60;max-width:min(520px,calc(100% - 32px));max-height:calc(100% - 92px);overflow:auto;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--surface) 96%,var(--primary-bg));color:var(--text);box-shadow:0 8px 28px color-mix(in srgb,var(--text) 12%,transparent);font-size:13px;line-height:20px;align-items:center}
+:scope .toast>svg{width:17px;height:17px;flex:none;color:var(--primary-bg)}
+:scope .toast[data-tone=success]>svg{color:var(--success)}
+:scope .toast .toast-message{flex:1;min-width:0;overflow-wrap:anywhere}
+:scope .toast .toast-dismiss{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;min-height:28px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--muted);text-decoration:none}
+:scope .toast .toast-dismiss:hover{background:var(--hover);color:var(--text)}
+:scope .toast .toast-dismiss:focus-visible{outline:1px solid var(--focus-tone);outline-offset:-1px}
 :scope .menu button:focus-visible{outline-offset:-2px;background:var(--hover)}
 body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope[data-height-mode="scroll"] .detail-main{height:auto;min-height:var(--detail-main-height);overflow:visible;padding-bottom:24px}
@@ -821,8 +972,8 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
  :scope .todo-details,:scope .path-copy{min-height:32px}
  :scope .todo-heading-actions .agent-permission summary{height:44px}
 }
-@container workbase (max-width:420px){:scope .project-toolbar .view-switch button{width:32px;height:32px}:scope .todo-undo-entry{font-size:10px;padding:3px!important}:scope .detail-project-info{gap:6px}}
-@media (pointer:coarse){@container workbase (max-width:420px){:scope .project-toolbar .view-switch button{width:44px;height:44px}}}
+@container workbase (max-width:420px){:scope .project-toolbar .view-switch>button{width:32px;height:32px}:scope .todo-undo-entry{font-size:10px;padding:3px!important}:scope .detail-project-info{gap:6px}}
+@media (pointer:coarse){@container workbase (max-width:420px){:scope .project-toolbar .view-switch>button{width:44px;height:44px}}}
 
 
 /* 顶栏去除重复品牌信息，给搜索及系统控件保留空间。 */
@@ -841,7 +992,7 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .app-header .header-actions button{height:32px;min-height:32px;padding-top:0;padding-bottom:0}
 :scope .workbase-return{height:32px;padding:0 8px;gap:6px;font-size:13px}
 :scope .directory-picker{display:flex;position:relative;width:100%}
-:scope .directory-picker input{width:100%;min-width:0;padding-right:42px;cursor:pointer}
+:scope .directory-picker input{width:100%;min-width:0;padding-right:42px;cursor:text}
 :scope .directory-picker button{position:absolute;right:4px;top:4px;bottom:4px;padding:5px 7px}
 :scope .menu:has([data-action="choose-demo-directory"]){width:360px;max-width:calc(100vw - 32px);max-height:60vh;overflow:auto;z-index:41}
 :scope .menu:has([data-action="choose-demo-directory"]) button{overflow:hidden;text-overflow:ellipsis;display:block;text-align:left}
@@ -863,13 +1014,70 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .preview-message[data-role=user] .preview-role>span{color:var(--accent)}
 :scope .preview-text{white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.8;margin:0;overflow-wrap:anywhere;user-select:text}
 :scope .preview-earlier{margin:0}
-/* 路径前缀四圆点图标：inline-flex 与路径文字垂直居中；细描边圆点与官方图标绘制惯例一致。 */
-:scope .directory-name{display:inline-flex;align-items:center;gap:4px}
-:scope .directory-name svg{width:8px;height:8px;flex:none}
+/* 弹出层统一使用主题令牌；工具栏尺寸只作用于直属触发按钮，菜单项保持整行。 */
+:scope .menu{width:216px;padding:6px;border-radius:10px}
+:scope .menu>button{display:flex;align-items:center;justify-content:flex-start;width:100%;min-width:0;height:36px;min-height:36px;padding:0 12px;border-radius:6px;font-size:13px;font-weight:450;line-height:20px;white-space:nowrap;color:var(--text);transition:background .14s,color .14s}
+:scope .menu .menu-label{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .menu>button:not(:disabled):hover,:scope .menu>button:not(:disabled):focus-visible{background:var(--hover);color:var(--text)}
+:scope .menu>button:focus-visible{outline:1px solid var(--focus-tone);outline-offset:-1px}
+:scope .menu>button.danger{color:var(--danger-text)}
+:scope .menu>button.danger:not(:disabled):hover,:scope .menu>button.danger:not(:disabled):focus-visible{background:color-mix(in srgb,var(--danger-text) 8%,var(--surface));color:var(--danger-text)}
+:scope .menu .menu-separator{height:1px;margin:5px 8px;background:var(--line)}
+:scope .menu.fields-menu{width:224px;padding:6px}
+:scope .menu.fields-menu>h3{padding:8px 10px 2px}
+:scope .menu.fields-menu>.fields-scope{margin:0;padding:0 10px 12px}
+:scope .menu.fields-menu>button{display:grid;grid-template-columns:minmax(0,1fr) 16px;gap:10px;padding:0 10px}
+:scope .menu.fields-menu>button[aria-checked=false]{color:var(--text)}
+:scope .menu .menu-checkbox{display:grid;place-items:center;width:16px;height:16px;border:1px solid var(--checkbox-border);border-radius:4px;background:transparent;flex:none}
+:scope .menu .menu-checkbox svg{width:12px;height:12px}
+:scope .menu button[aria-checked=true] .menu-checkbox{background:var(--primary-bg);border-color:var(--primary-bg);color:var(--on-primary)}
+:scope .menu .fields-note{margin:6px 10px 2px;padding-top:10px;border-top:1px solid var(--line)}
+:scope .composer-options-project-switch .composer-option{min-height:60px;padding:10px 12px;gap:12px}
+:scope .composer-options-project-switch .composer-option-copy{flex:1;min-width:0;gap:2px;overflow:hidden}
+:scope .composer-options-project-switch .composer-option-copy>span{font-size:14px;font-weight:600}
+:scope .composer-options-project-switch .composer-option-copy>span,:scope .composer-options-project-switch .composer-option-copy>small{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:scope .composer-options-project-switch .composer-option-copy>small{margin:0;font:12px/1.7 "SFMono-Regular",Consolas,monospace;color:var(--muted)}
+:scope .composer-options-project-switch .composer-option>svg{width:16px;height:16px;color:var(--selected-text)}
+:scope .composer-options-project-switch .composer-option:not(:disabled):hover{background:var(--hover)}
+:scope .composer-options-project-switch .composer-option[aria-selected=true]{background:var(--selected-bg);color:var(--selected-text)}
+:scope .composer-options-project-switch .composer-option[aria-selected=true]:not(:disabled):hover{background:color-mix(in srgb,var(--selected-bg) 72%,var(--hover))}
+/* 会话预览与待办详情共用尺寸；头部、摘要和底栏固定，仅正文滚动。 */
+:scope .dialog:is(.session-preview-dialog,.todo-detail-dialog){display:flex;flex-direction:column;width:90%;min-width:0;max-width:1120px;height:calc(100% - 50px);max-height:calc(100% - 50px);padding:0;overflow:hidden;border-radius:16px}
+:scope .dialog.session-preview-dialog>.dialog-head{height:72px;min-height:72px;flex:none;padding:0 24px;margin:0;gap:16px;border-bottom:1px solid var(--line)}
+:scope .dialog.session-preview-dialog>.dialog-head h2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-ui,inherit);font-size:20px}
+:scope .dialog.session-preview-dialog>.dialog-head>button{flex:none}
+:scope :is(.session-preview-summary,.todo-detail-summary){flex:none;min-width:0;padding:16px 24px 0}
+:scope .session-preview-status{flex:none;font-size:11px;line-height:1.6;padding:2px 7px;border-radius:5px;background:var(--panel);color:var(--muted);white-space:nowrap}
+:scope .session-preview-status.running{background:var(--selected-bg);color:var(--selected-text)}
+:scope .session-preview-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:var(--muted)}
+:scope .session-preview-meta>span{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%}
+:scope .session-preview-meta>span>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .session-preview-meta svg{width:13px;height:13px;flex:none}
+:scope .session-preview-body{flex:1;min-width:0;min-height:0;padding:20px 24px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+:scope .session-preview-dialog .preview-messages{max-height:none;overflow:visible;border:0;margin:0;padding:0;gap:20px}
+:scope .session-preview-dialog .preview-role>span{width:24px;height:24px;font-size:10px;background:var(--panel)}
+:scope .session-preview-dialog .preview-message[data-role=user] .preview-role>span{background:var(--selected-bg);color:var(--selected-text)}
+:scope .session-preview-dialog .preview-text{margin-left:32px;line-height:1.85}
+:scope .session-preview-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:144px;gap:8px;text-align:center;color:var(--muted);font-size:12px}
+:scope .session-preview-empty>svg{width:24px;height:24px;margin-bottom:4px}
+:scope .session-preview-empty strong{font-size:13px;font-weight:500;color:var(--text)}
+:scope .session-preview-empty p{margin:0;overflow-wrap:anywhere}
+:scope .dialog.session-preview-dialog>footer,:scope .dialog.session-preview-dialog>.dialog-footer{display:flex;align-items:center;justify-content:flex-end;flex:none;gap:8px;margin:0;padding:12px 24px;border-top:1px solid var(--line)}
+@container workbase (max-width:650px){:scope .dialog.session-preview-dialog>.dialog-head{height:60px;min-height:60px;padding:0 18px}:scope :is(.session-preview-summary,.todo-detail-summary){padding:16px 18px 0}}
+@container workbase (max-width:480px){:scope .session-preview-body{padding:16px}:scope .dialog.session-preview-dialog>footer,:scope .dialog.session-preview-dialog>.dialog-footer{padding:12px 16px}}
+/* 路径四圆点与名称共用一行：图标固定尺寸，文字独立收缩，详情不再叠加外置文件夹。 */
+:scope .directory-name{display:inline-flex;align-items:center;gap:2px;min-width:0;max-width:100%;font-size:14px;line-height:18px}
+:scope .directory-name .directory-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .directory-name svg{width:14px;height:14px;flex:none;margin:0;vertical-align:initial}
 :scope .theme-select-value{display:inline-flex;align-items:center;gap:4px}
 :scope .theme-select-value svg{width:8px;height:8px;flex:none}
-/* 详情页行首 folder 图标：容器以内联 flex 居中，避免 svg 溢出导致的错位。 */
-:scope .detail-folder-icon{display:inline-flex;align-items:center;justify-content:center}
+:scope .project-list .path-copy,:scope .project-summary .path-copy{font-size:14px;line-height:18px}
+:scope .detail-project-info .theme-select-project-switch .theme-select-trigger{font-size:14px;line-height:18px;gap:6px;max-width:100%}
+:scope .detail-project-info .theme-select-project-switch .theme-select-value{flex:0 1 auto;min-width:0}
+:scope .theme-select-project-switch .theme-select-value .directory-name{display:flex}
+:scope .theme-select-project-switch .theme-select-value .directory-name svg{width:14px;height:14px;flex:none}
+:scope .theme-select-project-switch .theme-select-trigger>svg{width:12px;height:12px;flex:none}
+:scope .composer-option-copy .directory-name svg{width:14px;height:14px;margin:0;vertical-align:initial}
 :scope .stats-item-copy small svg{width:10px;height:10px;margin:0 4px;vertical-align:-1px}
 :scope .composer-picked svg,:scope .composer-option-copy>span>svg{width:11px;height:11px;margin-right:4px;vertical-align:-1.5px}
 /* 加载骨架：模拟首页布局的占位块，读取完成后替换。 */
@@ -883,6 +1091,7 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 /* 输入框 shell：外层主题色渐变卡（含下方分支条），内层白色输入卡，配色全部来自主题令牌。 */
 :scope .home-composer.composer-shell,:scope .home-main .home-composer.composer-shell{border-radius:20px;background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 14%,var(--surface)),color-mix(in srgb,var(--accent) 5%,var(--surface)));border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));box-shadow:none}
 :scope .composer-shell .composer-body{background:var(--surface);border-radius:16px;padding:8px 10px 4px;display:flex;flex-direction:column}
+:scope .composer-shell .composer-body[data-file-drag="true"]{box-shadow:inset 0 0 0 2px var(--accent)}
 :scope .composer-shell .composer-actions{display:flex!important;justify-content:space-between!important;padding-top:2px}
 :scope .composer-shell .composer-leading{display:flex!important;flex:1 1 auto!important;justify-content:flex-start!important;align-items:center!important;gap:4px!important;min-width:0}
 :scope .composer-shell .composer-trailing{display:flex!important;flex:0 0 auto!important;align-items:center!important}
@@ -901,5 +1110,281 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .worktree-toggle[aria-checked=true]{background:color-mix(in srgb,var(--accent) 16%,var(--hover))}
 :scope .wt-box{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:3px;border:1.5px solid var(--muted);background:transparent;color:var(--surface)}
 :scope .worktree-toggle[aria-checked=true] .wt-box{background:var(--text);border-color:var(--text)}
+/* 全局文字角色：集中覆盖历史组件与窄屏字号，主题仅决定字体族。
+   正文/操作 14px，辅助信息 12px，分区标题 16px，弹窗标题 20px。
+   统计数字、快捷键与角色图标保留独立语义；完整路径保留等宽字体。 */
+:scope:is(.a,.b,.c){
+ --type-body:14px;--type-meta:12px;--type-section:16px;--type-dialog:20px;--type-page:28px;
+ --type-regular:400;--type-medium:500;--type-semibold:600;
+ font-family:var(--font-ui);font-size:var(--type-body);line-height:1.6;font-weight:var(--type-regular)
+}
+:scope:is(.a,.b,.c) :is(button,input,textarea,select,.home-composer .composer-trigger,.home-composer .composer-picker,.workspace-settings .setting-row>.settings-text-control){
+ font-family:var(--font-ui);font-size:var(--type-body);line-height:20px;font-weight:var(--type-regular)
+}
+:scope:is(.a,.b,.c) :is(.project-open,.project-grid .project-open,.project-list .project-open,.project-summary .project-open,.session-title,.recent-copy strong,.recent-shortcuts[data-layout="buttons"] .recent-copy strong,.todo-title,.hit-title,.stats-item-copy strong,.composer-option-copy>span,.composer-options-project-switch .composer-option-copy>span,.session-preview-empty strong,.settings-empty strong){
+ font-family:var(--font-ui);font-size:var(--type-body);line-height:22px;font-weight:var(--type-medium)
+}
+:scope:is(.a,.b,.c) :is(.workspace-settings .setting-row strong,.workspace-settings label.field,.workspace-settings .theme-choice strong,.dialog label.field,.agent-permission .agent-info strong,.read-detail-field strong,.search-placeholder strong,.stat-label,.menu>button,.settings-group-title){
+ font-family:var(--font-ui);font-size:var(--type-body);line-height:20px;font-weight:var(--type-medium)
+}
+:scope:is(.a,.b,.c) :is(.tabs button,.project-toolbar .tabs button,.search-panel .tabs button,.workspace-settings .settings-nav>button,.workspace-settings .settings-subtabs>button,.detail-panel-tabs button){
+ font-size:var(--type-body);line-height:20px;font-weight:var(--type-medium)
+}
+:scope:is(.a,.b,.c) :is(.tabs button.active,.workspace-settings .settings-nav>button[aria-selected=true],.workspace-settings .settings-subtabs>button[aria-selected=true],.detail-panel-tabs button[aria-selected=true]){
+ font-weight:var(--type-semibold)
+}
+:scope:is(.a,.b,.c) :is(.home-composer textarea,.chat-message,.preview-text,.session-preview-dialog .preview-text,.read-detail-text,.read-detail-field p,.tool-result,.migration-entry,.toast,.count,.project-list .list-session,.project-summary-latest button,.no-session,.branch-static,.worktree-toggle,.sort){
+ font-size:var(--type-body);font-weight:var(--type-regular)
+}
+:scope:is(.a,.b,.c) :is(.home-composer textarea,.chat-message,.preview-text,.session-preview-dialog .preview-text,.read-detail-text,.read-detail-field p){line-height:1.8}
+:scope:is(.a,.b,.c) :is(
+ small,.header-caption,.sync,.heading p,.eyebrow,.list-head,.footnote,
+ .activity,.project-list .project-list-cell .activity,.project-grid .project-footer .activity,.project-summary-head .activity,
+ .status,.project-list .project-list-cell .status,.project-grid .project-footer .status,.project-summary-title .status,
+ .count span,.detail-meta,.detail-project-info .detail-meta,.section-title .number,.section-title .section-hint,
+ .session-meta,.session-sub,.recent-time,.recent-meta,.recent-heading>span,.recent-copy small,
+ .todo-meta,.todo-priority,.todo-image-count,.todo-attachment-count,
+ .group-title,.agent-info,.agent-permission .agent-info p,.todos-heading .agent-permission summary,
+ .composer-hint,.composer-actions label,.composer-error,.composer-notice,.composer-option-copy small,
+ .search-group,.hit-meta,.hit-excerpt,.hit-badges,.search-foot,.search-notice,.search-placeholder,
+ .dialog-description,.dialog .path-preview,.inline-error,.merge-stats div,.banner,.empty p,.readonly-pill,
+ .stats-notice,.stat-detail,.stats-summary span,.stats-empty,.stats-diagnostic-state p,
+ .workspace-settings .setting-row small,.workspace-settings .theme-choice small,.workspace-settings .settings-panel>.dialog-description,
+ .workspace-settings .settings-panel>small,.settings-inline-note,.settings-save-note,.theme-mode-note,
+ .fields-menu .fields-scope,.fields-menu .fields-note,.project-list-cell .list-field-label,.project-summary-metric small,.project-summary-latest>small,
+ .archive-mark,.directory-options-note,.preview-role,.session-preview-status,.session-preview-meta,.session-preview-empty,.chat-message b
+){
+ font-size:var(--type-meta);line-height:18px;font-weight:var(--type-regular)
+}
+:scope #todo-results:is([data-layout="cards"],[data-layout="list"]) .todo-meta{font-size:var(--type-meta);line-height:18px;font-weight:var(--type-regular)}
+:scope:is(.a,.b,.c) :is(h2,h3,.home-composer h2,.project-toolbar h2,.home-main>.recent-sessions .recent-heading h2,.detail-content h2,.workspace-settings .settings-panel h3,.dialog h3,.session-preview-title h3){
+ font-family:var(--font-heading);font-size:var(--type-section);line-height:24px;font-weight:var(--type-semibold)
+}
+:scope:is(.a,.b,.c) .session-preview-title h3{font-family:var(--font-ui)}
+:scope:is(.a,.b,.c) :is(.dialog-head h2,.workspace-settings .dialog-head h2,.dialog.session-preview-dialog>.dialog-head h2){
+ font-family:var(--font-heading);font-size:var(--type-dialog);line-height:28px;font-weight:var(--type-semibold)
+}
+:scope:is(.a,.b,.c) .dialog.session-preview-dialog>.dialog-head h2{font-family:var(--font-ui)}
+:scope:is(.a,.b,.c) h1{font-size:var(--type-page);line-height:1.35;font-weight:var(--type-semibold)}
+:scope:is(.a,.b,.c) .detail-project-line .breadcrumb>.detail-project-name{
+ font-family:var(--font-heading);font-size:var(--type-section);line-height:24px;font-weight:var(--type-semibold)
+}
+:scope:is(.a,.b,.c) .detail-project-line .breadcrumb>[data-action="overview"]{font-size:var(--type-body);line-height:20px;font-weight:var(--type-medium)}
+:scope:is(.a,.b,.c) .fields-menu h3{font-family:var(--font-ui);font-size:var(--type-body);line-height:20px;font-weight:var(--type-medium)}
+:scope:is(.a,.b,.c) :is(.directory-name,.project-list .path-copy,.project-summary .path-copy,.detail-project-info .theme-select-project-switch .theme-select-trigger){
+ font-family:var(--font-ui);font-size:var(--type-body);line-height:20px
+}
+:scope:is(.a,.b,.c) :is(.path,.read-detail-path,.composer-options-project-switch .composer-option-copy>small){
+ font-size:var(--type-meta);line-height:1.7
+}
+:scope:is(.a,.b,.c) .project .path{font-family:var(--font-ui)}
+:scope:is(.a,.b,.c) .project-summary-metric strong{font-size:18px;font-weight:var(--type-semibold)}
+:scope:is(.a,.b,.c) .stat-value{font-weight:var(--type-semibold)}
+:scope .todo-create-row{display:flex;align-items:stretch;gap:8px;margin-bottom:12px;min-width:0;flex:none}
+:scope .todo-create-row .todo-input{flex:1;min-width:0;margin:0}
+:scope .todo-create-row .todo-full-create{display:flex;align-items:center;justify-content:center;gap:6px;flex:none;margin:0;height:40px;min-height:40px;padding:6px 12px;border:1px solid var(--control-line,var(--line));border-radius:var(--control-radius,7px);background:var(--surface);color:var(--text);font-size:var(--type-body);line-height:20px;white-space:nowrap}
+:scope .todo-create-row .todo-full-create:hover:not(:disabled){background:var(--hover);border-color:var(--control-line,var(--line))}
+:scope .todo-create-row .todo-full-create>svg{width:14px;height:14px;flex:none}
+:scope .todo-shared-toolbar .todo-toolbar-face{display:flex;align-items:stretch;gap:8px;flex:1;min-width:0;height:40px;margin:0;transform-origin:center;backface-visibility:hidden}
+:scope .todo-action-slot{position:relative;flex:none;height:40px}
+:scope .todo-shared-toolbar[data-mode=search] .todo-full-create{visibility:hidden;pointer-events:none}
+:scope .todo-action-slot .theme-select-todo-filter{position:absolute;inset:0;width:100%;min-width:0}
+:scope .todo-action-slot .theme-select-trigger{width:100%;min-width:0;height:40px;padding:6px 8px;font-size:12px}
+:scope .todo-action-slot .theme-select-value{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .todo-action-slot .theme-select-trigger>svg{width:14px;height:14px;flex:none}
+:scope .todo-create-row>.todo-search-toggle{width:34px;min-width:34px;height:40px;min-height:40px;padding:8px;margin:0;border:1px solid var(--control-line,var(--line));background:var(--surface);color:var(--muted);border-radius:7px;flex:none}
+:scope .todo-create-row>.todo-search-toggle:hover{background:var(--hover);color:var(--text)}
+:scope .todo-search-leading{display:flex;align-items:center;flex:none;color:var(--accent)}
+:scope .todo-toolbar-face[data-phase=out]{animation:wb-todo-flip-out 130ms cubic-bezier(.4,0,1,1) both}
+:scope .todo-toolbar-face[data-phase=in]{animation:wb-todo-flip-in 170ms cubic-bezier(0,0,.2,1) both}
+@keyframes wb-todo-flip-out{from{transform:perspective(700px) rotateX(0deg);opacity:1}to{transform:perspective(700px) rotateX(calc(var(--todo-flip-direction,1)*90deg));opacity:.25}}
+@keyframes wb-todo-flip-in{from{transform:perspective(700px) rotateX(calc(var(--todo-flip-direction,1)*-90deg));opacity:.25}to{transform:perspective(700px) rotateX(0deg);opacity:1}}
+@media(prefers-reduced-motion:reduce){:scope .todo-toolbar-face[data-phase]{animation:none}}
+:scope .todo-priority{display:inline-flex;flex-shrink:0;border-radius:5px;padding:2px 6px;font-size:var(--type-meta);background:var(--hover);color:var(--muted)}
+:scope .todo-priority.high{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
+:scope .todo-priority.medium{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
+:scope .todo-image-count{font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+:scope .todo-meta-line{flex-wrap:wrap;justify-content:flex-start}
+:scope .todo-attachment-count{display:inline-flex;align-items:center;gap:4px;font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+:scope .todo-detail-dialog>.dialog-head{height:72px;min-height:72px;padding:0 24px;border-bottom:1px solid var(--line);margin:0;flex:none}
+:scope .todo-detail-dialog>.dialog-head h2{font-family:var(--font-ui);font-size:20px;font-weight:600}
+:scope .todo-detail-form{display:flex;flex-direction:column;flex:1;min-height:0;gap:0;margin:0}
+:scope .todo-detail-body{flex:1;min-height:0;min-width:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+:scope .todo-detail-section{padding:24px 28px}
+:scope .todo-detail-section+.todo-detail-section{padding-top:0}
+:scope .todo-compact-fields{display:flex;align-items:flex-end;gap:16px}
+:scope .todo-detail-form .todo-title-field{display:flex;flex:1;min-width:0;flex-direction:column;gap:6px;margin:0}
+:scope .todo-title-field>span,:scope .todo-priority-field>span{font-size:12px;color:var(--muted)}
+:scope .todo-title-field input{height:40px;font-size:16px;font-weight:500}
+:scope .todo-priority-field{display:flex;flex:none;flex-direction:column;gap:6px;width:160px}
+:scope :is(.theme-select-todo-priority,.theme-select-edit-priority) .theme-select-trigger{height:40px;width:100%;font-size:13px}
+:scope .theme-select-todo-priority .theme-select-value,:scope .composer-options-todo-priority .composer-option-copy>span{display:flex;align-items:center;gap:8px}
+:scope .todo-priority-dot{display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:var(--muted)}
+:scope .todo-priority-dot.high{background:var(--danger)}
+:scope .todo-priority-dot.medium{background:var(--accent)}
+:scope .todo-priority-dot.low{background:var(--success)}
+:scope .todo-detail-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:0;color:var(--muted);font-size:12px}
+:scope .todo-detail-meta>span{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;overflow-wrap:anywhere}
+:scope .todo-detail-meta svg{width:13px;height:13px;flex:none}
+:scope .todo-status{padding:2px 7px;border-radius:5px;background:var(--panel)}
+:scope .todo-status.done{color:var(--success);background:color-mix(in srgb,var(--success) 10%,var(--panel))}
+:scope .todo-detail-form :is(input,textarea,select){max-width:100%;min-width:0}
+:scope .todo-detail-form textarea{width:100%;min-height:176px;resize:vertical;line-height:1.8}
+:scope .todo-note-tabs{display:flex;align-items:center;gap:8px}
+:scope .todo-note-tabs{margin-bottom:8px}
+:scope .todo-note-tabs strong{margin-right:auto;font-size:17px;font-weight:600}
+:scope .todo-note-tabs button{border:0;background:transparent;color:var(--muted);font-size:12px;min-height:28px;padding:4px 0}
+:scope .todo-note-tabs button:hover{color:var(--accent)}
+:scope .todo-markdown{min-height:176px;overflow:auto;overflow-wrap:anywhere;padding:14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);line-height:1.85}
+:scope .todo-markdown:has(>.wb-help:only-child){display:flex;align-items:center;justify-content:center}
+:scope .todo-markdown pre{overflow:auto;white-space:pre-wrap}
+:scope .todo-markdown :is(img,table){max-width:100%}
+:scope .todo-image-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+:scope .todo-image-picker{position:relative;color:var(--accent);cursor:pointer}
+:scope .todo-image-picker input{position:absolute;inset:0;opacity:0;cursor:pointer}
+:scope .todo-image-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
+:scope .todo-image-card{display:flex;flex-direction:column;gap:6px;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px}
+:scope .todo-image-card img{display:block;width:100%;height:120px;object-fit:contain;border-radius:6px}
+:scope .todo-image-card span{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .todo-attachment-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+:scope .todo-attachment-heading strong{font-size:17px;font-weight:600}
+:scope .todo-attachment-heading>span,:scope .todo-attachment-heading strong>span{font-size:12px;font-weight:400;color:var(--muted)}
+:scope .todo-attachment-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+:scope .todo-attachment-grid:not(:empty){margin-bottom:8px}
+:scope .todo-attachment-card{position:relative;min-width:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+:scope .todo-attachment-card img,:scope .todo-file-preview{display:flex;align-items:center;justify-content:center;width:100%;height:100px;object-fit:contain;color:var(--muted)}
+:scope .todo-attachment-card>span,:scope .todo-attachment-card>small{display:block;padding:4px 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+:scope .todo-attachment-card>small{padding-top:0;font-size:var(--type-meta);color:var(--muted)}
+:scope .todo-attachment-card>.wb-icon{position:absolute;top:4px;right:4px;width:24px;height:24px;min-height:24px;padding:3px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted)}
+:scope .todo-attachment-card small button{border:0;padding:0;font-size:11px;background:transparent;color:var(--accent)}
+:scope .todo-attachment-card a{color:var(--accent)}
+:scope .todo-detail-form .todo-attachment-picker{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:8px;margin:0;min-height:52px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer}
+:scope .todo-attachment-picker:hover{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 4%,transparent)}
+:scope .todo-attachment-picker input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+:scope .todo-detail-form>footer{display:flex;align-items:center;justify-content:space-between;flex:none;gap:12px;min-height:72px;padding:16px 24px;margin:0;border-top:1px solid var(--line);background:var(--surface)}
+:scope .todo-save-state{font-size:12px;color:var(--muted)}
+:scope .todo-primary-actions,:scope .todo-session-action{display:flex;align-items:center}
+:scope .todo-primary-actions{gap:12px}
+:scope .todo-session-action{gap:0}
+:scope .todo-detail-form .todo-mode-button{width:28px;height:36px;min-height:36px;border:1px solid var(--line);border-radius:8px 0 0 8px;padding:0}
+:scope .todo-detail-form .todo-session-start{height:36px;min-height:36px;border-radius:0 8px 8px 0;border-left:0}
+:scope .todo-primary-actions>.wb-primary{font-weight:600}
+@container workbase (max-width:650px){:scope .overlay:has(:is(.todo-detail-dialog,.session-preview-dialog)){padding:0}:scope .dialog:is(.todo-detail-dialog,.session-preview-dialog){width:100%;max-width:none}:scope .todo-detail-dialog>.dialog-head{height:60px;min-height:60px;padding:0 18px}:scope .todo-detail-section{padding:20px 18px}:scope .todo-detail-section+.todo-detail-section{padding-top:0}:scope .todo-detail-form>footer{min-height:64px;padding:14px 18px}:scope .todo-compact-fields{gap:12px}:scope .todo-priority-field{width:140px}}
+@container workbase (max-width:480px){:scope .todo-compact-fields{flex-wrap:wrap}:scope .todo-detail-form .todo-title-field{flex-basis:100%}:scope .todo-priority-field>span{display:none}}
+@container workbase (max-width:400px){:scope .todo-save-state{display:none}:scope .todo-primary-actions{margin-left:auto}:scope .todo-detail-form>footer{gap:8px}}
+/* 弹窗底栏操作共用尺寸；菜单项保持独立行高与圆角。 */
+:scope:is(.a,.b,.c) :is(input,textarea,select):not(:where([type=checkbox],[type=radio],[type=file],.todo-input input,.stats-group-search input,.home-composer textarea)),:scope:is(.a,.b,.c) .theme-select-trigger:not(:where(.theme-select-project-switch *,.composer-branchbar *,.theme-select-todo *)){border-radius:var(--control-radius)}
+/* 普通表单下拉与文本输入共用中性焦点；紧凑导航和宿主分支控件保留独立规格。 */
+:scope:is(.a,.b,.c) .theme-select-trigger:not(:where(.theme-select-project-switch *,.composer-branchbar *,.theme-select-todo *)):focus{outline:none;border-color:var(--focus-tone);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus-tone) 12%,transparent)}
+:scope :is(.dialog,.workspace-settings) :is(footer,.dialog-footer) button:not(:where(.menu *)){box-sizing:border-box;flex:none;width:auto;height:36px;min-height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px}
+:scope .dialog .todo-detail-form>footer .todo-mode-button{width:28px;padding:0;border-radius:8px 0 0 8px}
+:scope .dialog .todo-detail-form>footer .todo-session-start{border-radius:0 8px 8px 0}
+/* 技能、MCP、RSS 共用管理面板；复用统计抽屉、二级页签、表单与主题令牌。 */
+:scope .integration-manager{display:flex;flex-direction:column;flex:1;min-height:0;min-width:0}
+:scope .integration-heading{display:flex;align-items:center;gap:12px;flex:none}
+:scope .stats-drawer .integration-heading h3{flex:1;min-width:0;margin:0;font-size:16px;line-height:24px}
+:scope .integration-heading .number{margin-left:8px;font-size:12px}
+:scope .integration-caption{font-size:12px;line-height:20px;color:var(--muted);margin:8px 0 0}
+:scope .integration-manager .settings-subtabs{flex:none;margin:16px 0;overflow:auto;gap:24px;white-space:nowrap}
+:scope .integration-workspace{display:grid;grid-template-columns:168px minmax(0,1fr);gap:20px;flex:1;min-height:0;min-width:0}
+:scope .integration-workspace[data-grouped="false"]{grid-template-columns:minmax(0,1fr)}
+:scope .integration-groups{min-width:0;min-height:0;overflow:auto;border-right:1px solid var(--line);padding-right:12px}
+:scope .integration-group-title{font-size:12px;color:var(--muted);margin:16px 8px 6px}
+:scope .integration-group-title:first-child{margin-top:0}
+:scope .integration-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+:scope .integration-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;flex:none}
+:scope .integration-toolbar .stats-group-search{margin:0;flex:1;min-width:140px}
+:scope .integration-toolbar button,:scope .integration-heading button{height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px;flex:none}
+:scope .integration-toolbar .theme-select{width:140px}
+:scope .integration-toolbar .theme-select-trigger{height:36px;padding:7px 10px;border-radius:8px}
+:scope .integration-mobile-group{display:none}
+:scope .integration-records{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}
+:scope .integration-record{display:flex;align-items:center;gap:12px;padding:16px 12px;border-bottom:1px solid var(--line);min-width:0}
+:scope .integration-record:last-of-type{border-bottom:0}
+:scope .integration-record-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:var(--hover);color:var(--muted);flex:none}
+:scope .integration-record-icon svg{width:18px;height:18px}
+:scope .integration-record-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+:scope .integration-record-title{display:flex;align-items:center;gap:8px;min-width:0}
+:scope .integration-record-title>button{font-size:14px;line-height:20px;font-weight:500;border:0;background:transparent;padding:0;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left}
+:scope .integration-record-title>button:hover{text-decoration:underline}
+:scope .integration-record-copy p,:scope .integration-record-copy small{margin:0;color:var(--muted);font-size:12px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:scope .integration-state{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:18px;color:var(--muted);flex:none}
+:scope .integration-state svg{width:12px;height:12px}
+:scope .integration-state[data-state="ok"]{color:var(--success)}
+:scope .integration-state[data-state="error"]{color:var(--danger-text)}
+:scope .integration-record-actions{display:flex;gap:4px;flex:none;align-items:center}
+:scope .integration-record-actions button{width:28px;height:28px;padding:5px;border:0;background:transparent;color:var(--muted);border-radius:7px}
+:scope .integration-record-actions button:hover{background:var(--hover);color:var(--text)}
+:scope .integration-empty{min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:24px;color:var(--muted)}
+:scope .integration-empty svg{width:28px;height:28px}
+:scope .integration-empty strong{font-size:14px;color:var(--text);font-weight:500}
+:scope .integration-empty p{font-size:12px;line-height:20px;margin:0}
+:scope .integration-status-line{display:flex;align-items:center;gap:8px;flex:none;margin:0 0 12px;font-size:12px;line-height:20px;color:var(--muted)}
+:scope .integration-status-line svg{width:14px;height:14px;flex:none}
+:scope .integration-detail{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;margin:0;background:var(--surface)}
+:scope .integration-detail-head{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--line)}
+:scope .integration-detail .integration-detail-head h3{flex:1;min-width:0;margin:0;font-size:16px;line-height:24px}
+:scope .integration-detail-head button{height:36px;padding:7px 12px;flex:none;font-size:14px;line-height:20px;border-radius:8px}
+:scope .integration-detail-body{flex:1;min-height:0;min-width:0;padding:20px 16px;overflow:auto;overscroll-behavior:contain}
+:scope .integration-detail .integration-detail-summary{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px;color:var(--muted);line-height:20px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+:scope .integration-detail .integration-detail-summary span{display:inline-flex;gap:6px;align-items:center}
+:scope .integration-detail-identity{display:flex;align-items:center;gap:12px;margin-bottom:16px;min-width:0}
+:scope .integration-detail-identity>div{flex:1;min-width:0}
+:scope .integration-detail .integration-detail-identity h3{margin:0;overflow-wrap:anywhere}
+:scope .integration-tools{border-top:1px solid var(--line);margin-top:24px}
+:scope .integration-tools>summary{display:flex;align-items:center;gap:8px;padding:16px 0;cursor:pointer;font-size:16px;line-height:24px;font-weight:600;list-style:none}
+:scope .integration-tools>summary::-webkit-details-marker{display:none}
+:scope .integration-tools>summary small{margin-left:auto;color:var(--muted);font-size:12px;line-height:20px;font-weight:400}
+:scope .integration-tools>summary>svg{transition:transform .15s}
+:scope .integration-tools[open]>summary>svg{transform:rotate(90deg)}
+:scope .integration-tools-search{display:flex;align-items:center;gap:8px;height:36px;padding:0 10px;border:1px solid var(--control-line);border-radius:8px;margin-bottom:12px}
+:scope .integration-tools-search svg{width:15px;height:15px;color:var(--muted)}
+:scope .integration-tools-search:focus-within{border-color:var(--focus-tone);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus-tone) 12%,transparent)}
+:scope .integration-detail .integration-tools-search input{border:0;background:transparent;padding:0;height:34px;box-shadow:none}
+:scope .integration-tool-item{border-bottom:1px solid var(--line);padding:12px 0}
+:scope .integration-tool-head{display:flex;align-items:center;gap:12px}
+:scope .integration-tool-head>details{flex:1;min-width:0}
+:scope .integration-tool-head summary{cursor:pointer;font-size:14px;line-height:20px;overflow-wrap:anywhere}
+:scope .integration-tool-head>label{flex:none}
+:scope .integration-tool-item p{font-size:12px;line-height:20px;color:var(--muted);margin:6px 0 0;overflow-wrap:anywhere}
+:scope .integration-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+:scope .integration-form-grid>.integration-span{grid-column:1/-1}
+:scope .integration-detail .field{margin:0 0 8px;font-size:14px;line-height:20px;font-weight:500}
+:scope .integration-detail :is(input:not([type=checkbox]),textarea){width:100%;font:14px/20px var(--font-ui);padding:9px 12px;border:1px solid var(--control-line);border-radius:7px;background:var(--surface);color:var(--text)}
+:scope .integration-detail textarea{min-height:160px;resize:vertical}
+:scope .integration-detail textarea.integration-code{font:12px/20px ui-monospace,SFMono-Regular,monospace;min-height:180px}
+:scope .integration-detail .theme-select{width:100%}
+:scope .integration-detail .theme-select-trigger{width:100%;height:40px}
+:scope .integration-help{font-size:12px;line-height:20px;color:var(--muted);margin:8px 0 0}
+:scope .integration-detail h3{font-size:16px;line-height:24px;margin:24px 0 12px;font-weight:600}
+:scope .integration-reading{font:14px/1.8 var(--font-ui);color:var(--text);white-space:pre-wrap;overflow-wrap:anywhere;max-width:760px;margin:0 auto}
+:scope .integration-code-view{font:12px/20px ui-monospace,SFMono-Regular,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--hover);border:1px solid var(--line);border-radius:8px;padding:16px;margin:12px 0}
+:scope .integration-file-list{font-size:12px;line-height:24px;color:var(--muted);margin:0;padding-left:20px}
+:scope .integration-import-items{margin-top:20px;border-top:1px solid var(--line)}
+:scope .integration-import-items .setting-row{padding:12px 0}
+:scope .integration-form-error{font-size:12px;line-height:20px;color:var(--danger-text);margin:16px 0 0}
+:scope .integration-danger{color:var(--danger-text)}
+:scope .settings-layout[hidden],:scope .dialog-footer[hidden],:scope .integration-manager [hidden],:scope .integration-detail [hidden]{display:none}
+:scope .integration-detail .dialog-footer{margin:0;min-height:0;padding:12px 16px;flex-wrap:wrap;gap:8px}
+:scope #stat-cards-note[data-limit="true"]{color:var(--danger-text)}
+@media (prefers-reduced-motion:reduce){:scope .integration-tools>summary>svg{transition:none}}
+@container workbase (max-width:850px){:scope .integration-workspace{grid-template-columns:140px minmax(0,1fr);gap:12px}:scope .integration-toolbar{gap:8px}:scope .integration-record{gap:8px}}
+@container workbase (max-width:650px){
+ :scope .stats-drawer .settings-panel:has(.integration-manager){height:100%;min-height:0}
+ :scope .stats-drawer:has(.integration-manager) .settings-content{overflow:hidden}
+ :scope .integration-workspace{display:flex;flex-direction:column;min-height:0}
+ :scope .integration-groups{display:none}
+ :scope .integration-mobile-group{display:block;flex:none;margin-bottom:12px}
+ :scope .integration-mobile-group .theme-select,:scope .integration-mobile-group .theme-select-trigger{width:100%}
+ :scope .integration-detail-body{padding:16px}
+ :scope .integration-form-grid{grid-template-columns:minmax(0,1fr);gap:16px}
+ :scope .integration-record{padding:16px 8px}
+ :scope .integration-record-title{flex-wrap:wrap;gap:4px 8px}
+ :scope .integration-record-title>button{max-width:100%}
+ :scope .integration-record-icon{display:none}
+ :scope .integration-manager .settings-subtabs{gap:20px}
+ :scope .integration-toolbar .theme-select{width:116px}
+ :scope .integration-toolbar .stats-group-search{flex-basis:100%}
+}
 
 }

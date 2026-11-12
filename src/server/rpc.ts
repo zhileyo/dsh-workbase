@@ -13,7 +13,10 @@ export async function dispatch(service: WorkbaseService, payload: unknown, owner
       case 'snapshot': value = await service.snapshot(signal); break;
       case 'create': value = await service.createTodo(command, undefined, signal); break;
       case 'update': value = await service.updateTodo(command, undefined, signal); break;
+      case 'remove-todo-image': value = await service.removeTodoImage(command, undefined, signal); break;
+      case 'remove-todo-attachment': value = await service.removeTodoAttachment(command, undefined, signal); break;
       case 'delete': value = await service.deleteTodo(command, undefined, signal); break;
+      case 'restore-deleted-todo': value = await service.restoreDeletedTodo(command, undefined, signal); break;
       case 'rename': value = await service.renameProject(command.projectId, command.title); break;
       case 'permission': value = await service.setAgentStatus(command.projectId, command.allowed); break;
       case 'binding': value = await service.resolveBinding(command); break;
@@ -25,8 +28,10 @@ export async function dispatch(service: WorkbaseService, payload: unknown, owner
       case 'search-sessions': value = await service.searchSessions(command.query, signal); break;
       case 'launch-catalog': value = await service.launchCatalog(); break;
       case 'begin-session': value = await service.beginSession(command.projectId, command.preset); break;
+      case 'configure-session-model': value = await service.configureSessionModel(command, signal); break;
       case 'submit-message': value = await service.submitMessage(command, signal); break;
       case 'rename-session': value = await service.renameSession(command.projectId, command.sessionId, command.title); break;
+      case 'delete-session': value = await service.deleteSession(command.projectId, command.sessionId); break;
       case 'reveal-directory': value = await service.revealDirectory(command.projectId); break;
       case 'session-preview': value = await service.sessionPreview(command, signal); break;
       case 'archive-project': value = await service.archiveProject(command); break;

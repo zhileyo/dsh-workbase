@@ -34,3 +34,26 @@ test('剪枝后规则块仍然配平，且保留原型注释与关键帧', () =>
   assert.match(css, /@keyframes/);
   assert.match(css, /\/\* 自动从 docs\/ui\/ui-directions\.html 同步/);
 });
+
+test('标题和视图工具栏的图标宽度不得传播到嵌套菜单项', () => {
+  for (const [, selectors, declarations] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/(?:^|;)\s*(?:min-)?width\s*:/.test(declarations!)) continue;
+    assert.doesNotMatch(selectors!, /\.(?:heading-actions|view-switch)\s+button(?=[\s:,.]|$)/,
+      '固定图标尺寸只能应用于直属按钮，避免菜单项收缩为图标宽度');
+  }
+});
+
+test('待办删除按钮保留占位，仅对应行悬停或聚焦时可点，触屏可见', () => {
+  assert.match(css, /\.todo-row \.todo-delete\{[^}]*opacity:0[^}]*pointer-events:none/);
+  assert.match(css, /\.todo-row:hover \.todo-delete,.*\.todo-row:focus-within \.todo-delete\{[^}]*opacity:1[^}]*pointer-events:auto/);
+  assert.match(css, /@media\(hover:none\)\{[^}]*\.todo-delete\{[^}]*opacity:1/);
+});
+
+test('待办共用工具区保留控件占位，搜索按钮不参与翻转', () => {
+  assert.match(css, /\.todo-shared-toolbar\[data-mode=search\] \.todo-full-create\{visibility:hidden;pointer-events:none\}/);
+  assert.match(css, /\.todo-action-slot \.theme-select-todo-filter\{position:absolute;inset:0;width:100%/);
+  assert.match(css, /\.todo-create-row>\.todo-search-toggle\{width:34px;min-width:34px;height:40px/);
+  assert.match(css, /\.todo-toolbar-face\[data-phase=out\]\{animation:wb-todo-flip-out 130ms/);
+  assert.match(css, /\.todo-toolbar-face\[data-phase=in\]\{animation:wb-todo-flip-in 170ms/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)\{[^}]*todo-toolbar-face/);
+});

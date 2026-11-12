@@ -1,7 +1,37 @@
 import type { Command } from '../shared/commands.js';
 import { RPC_CHANNEL, RPC_ENDPOINT } from '../shared/commands.js';
 import type { Snapshot } from '../shared/model.js';
+import type { ReactNode } from 'react';
+import type { DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { Todo } from '../shared/model.js';
+import type { TodoImage, TodoAttachment } from '../shared/todo.js';
+export interface ComposerBridge {
+  sessionId: string;
+  change(text: string): void;
+  /** 委托宿主导入文件／图片／目录；失败返回提示，保留已有草稿。 */
+  addFiles(files: readonly File[], directories?: ReadonlySet<File>): string | null;
+  toggle(start: number, end: number): void;
+  key(key: string, composing: boolean): boolean;
+  submit(): Promise<boolean>;
+}
+export interface ComposerMenuProps {
+  workspaceId: string; preset: string; disabled: boolean;
+  modelTarget?: HTMLElement | null;
+  onModelState?(state: { ready: boolean; busy: boolean }): void;
+  onReady(bridge: ComposerBridge | null): void;
+  onState(draft: string, attachments: boolean, busy: boolean): void;
+}
+export interface ComposerProjectProps {
+  projects: Snapshot['projects']; value: string; disabled: boolean;
+  onChange(projectId: string): void;
+}
 export interface ClientPort {
+  uploadTodoAttachment?(todo: Todo, file: File): Promise<Todo>;
+  readTodoAttachment?(todo: Todo, attachment: TodoImage | TodoAttachment, signal?: AbortSignal): Promise<Blob>;
+  renderMarkdown?(text: string): ReactNode;
+  uploadTodoImage?(todo: Todo, file: File): Promise<Todo>;
+  readTodoImage?(todo: Todo, image: TodoImage, signal?: AbortSignal): Promise<Blob>;
+  openTodoSession?(todo: Todo, preset: string): Promise<void>;
   call(command: Command, signal?: AbortSignal): Promise<unknown>;
   openSession(id: string): void;
   newSession(workspaceId: string): Promise<void>;
@@ -14,6 +44,10 @@ export interface ClientPort {
   requestWorktree(sessionId: string, from: string): Promise<boolean>;
   addProject(path: string): Promise<boolean>;
   archiveSession(id: string, archived: boolean): Promise<void>;
+  renderComposerMenu?(props: ComposerMenuProps): ReactNode;
+  renderComposerProject?(props: ComposerProjectProps): ReactNode;
+  /** 常驻后台更新任务的忙状态，不随设置页或更新弹窗卸载。 */
+  pluginUpdateBusy?: { getSnapshot(): boolean; subscribe(listener: () => void): () => void };
   subscribe(listener: () => void): () => void;
 }
 export interface RpcPort {
@@ -36,7 +70,8 @@ export interface DetailMemory {
 export class UiMemory {
   readonly details = new Map<string, DetailMemory>();
   private values = { homeScroll: 0, search: '' };
-  composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false, pending: null as null | {
+  composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
+    nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeDraft: null as DraftSnapshot | null, pending: null as null | {
     projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string;
   } };
   targetTodo?: string;

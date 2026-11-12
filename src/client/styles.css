@@ -1,4 +1,61 @@
 /* 仅处理宿主容器和 React 接线。视觉规则来自自动同步的 prototype.css。 */
+/* 官方插件页和 body-portal 弹窗在 .wb 之外，使用宿主组件及其原生令牌适配。 */
+.wb-plugin-update-anchor{display:inline-flex;flex:none;align-items:center}
+.wb-plugin-update-trigger{gap:6px!important;white-space:nowrap}
+.wb-plugin-update-dialog{width:min(860px,100%);height:min(620px,100%);max-height:100%;overflow:hidden;container:plugin-update/inline-size;color:var(--dsw-alias-label-primary)}
+.wb-plugin-update-content{flex:1;min-height:0;overflow:hidden}
+.wb-plugin-update-content>div:first-child,.wb-plugin-update-dialog>div:last-child{flex:none}
+.wb-plugin-update-content>div:first-child h2{font-size:20px;font-weight:600}
+.wb-plugin-update-content>div:last-child{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+.wb-plugin-update-body{display:flex;flex:1;flex-direction:column;gap:12px;min-height:0;min-width:0;overflow:hidden}
+.wb-plugin-update-summary{flex:none}
+.wb-plugin-update-groups{display:flex;flex:1;flex-direction:column;gap:8px;min-height:0;overflow:hidden}
+.wb-plugin-update-group{display:flex;flex:none;flex-direction:column;min-height:0;overflow:hidden}
+.wb-plugin-update-group[data-open="true"]{flex:1}
+.wb-plugin-update-group-heading{display:flex;flex:none;align-items:center;gap:8px;min-height:36px;border:0;border-radius:6px;padding:4px 0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.wb-plugin-update-group-heading strong{font-size:14px;font-weight:500}
+.wb-plugin-update-group-heading span{font-size:12px;color:var(--dsw-alias-label-tertiary)}
+.wb-plugin-update-group[data-open="true"] .wb-plugin-update-group-heading>svg{transform:rotate(90deg)}
+.wb-plugin-update-group-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.wb-plugin-update-group-scroll[hidden]{display:none}
+.wb-plugin-update-group-heading:focus-visible,.wb-plugin-update-group-scroll:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:-2px}
+.wb-plugin-update-empty{margin:auto;text-align:center;font-size:14px;color:var(--dsw-alias-label-secondary)}
+.wb-plugin-update-footer{display:flex;flex:1;min-width:0;flex-direction:column;gap:12px}
+.wb-plugin-update-actions{display:flex;justify-content:flex-end;gap:8px}
+.wb-plugin-update-actions>button{box-sizing:border-box;flex:none;width:auto;height:36px;min-height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px}
+.wb-plugin-update-summary{display:flex;align-items:flex-start;gap:12px}
+.wb-plugin-update-summary>div{min-width:0}
+.wb-plugin-update-summary strong{font-size:14px;font-weight:500;line-height:20px}
+.wb-plugin-update-summary p{margin:2px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;overflow-wrap:anywhere}
+.wb-plugin-update-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));align-items:stretch;gap:8px;list-style:none;margin:0;padding:4px 0}
+.wb-plugin-update-list>li{min-width:0;border:1px solid var(--dsw-alias-border-l3);border-radius:8px;background:var(--dsw-alias-bg-module-platform);padding:8px}
+.wb-plugin-update-row{display:flex;align-items:center;gap:8px;min-width:0}
+.wb-plugin-update-copy{display:flex;flex:1;flex-direction:column;gap:2px;min-width:0}
+.wb-plugin-update-copy strong{font-size:14px;line-height:20px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-plugin-update-version{font-family:var(--ds-font-family-code);font-size:13px;line-height:20px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+.wb-plugin-update-status{flex:none;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.wb-plugin-update-detail{margin:6px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+.wb-plugin-update-notice{margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.wb-plugin-update-versions{display:flex;align-items:center;justify-content:center;gap:8px;min-height:28px;padding:4px 8px;margin:4px 0;border-radius:6px;background:var(--dsw-alias-bg-base);font-family:var(--ds-font-family-code);font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.wb-plugin-update-versions>span{min-width:0}
+.wb-plugin-update-versions>[data-old]{color:var(--dsw-alias-label-tertiary)}
+.wb-plugin-update-versions>svg{flex:none;color:var(--dsw-alias-label-tertiary)}
+.wb-plugin-update-source{display:flex;gap:8px;margin:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.wb-plugin-update-source dt{flex:none}
+.wb-plugin-update-source dt{color:var(--dsw-alias-label-tertiary)}
+.wb-plugin-update-source dd{flex:1;min-width:0;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-plugin-update-steps{display:flex;flex-wrap:wrap;gap:6px 12px;margin:8px 0 0;padding:0;list-style:none}
+.wb-plugin-update-steps>li{display:flex;align-items:center;gap:4px;font-size:12px;line-height:18px}
+.wb-plugin-update-error,.wb-plugin-update-list>li:is([data-status="failed"],[data-status="unknown"]) .wb-plugin-update-detail{color:var(--dsw-alias-state-error-primary)}
+.wb-plugin-update-error{font-size:12px;line-height:18px;margin:0;overflow-wrap:anywhere}
+.wb-plugin-update-output-toggle{margin:8px 0 0;border:0;background:none;padding:0;font:inherit;font-size:12px;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.wb-plugin-update-output-toggle:focus-visible{outline:2px solid var(--dsw-focus-ring-color);outline-offset:2px}
+.wb-plugin-update-output{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform);max-height:200px;font-family:var(--ds-font-family-code);color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;padding:10px 12px;font-size:12px;line-height:16px;overflow:auto}
+/* 官方菜单锚定原输入卡；按钮位置和尺寸沿用工作台工具行。 */
+.wb .composer-body{position:relative}
+.wb .wb-command-popup{position:fixed;inset:auto;margin:0;padding:0;border:0;background:transparent;color:var(--text);overflow:visible}
+.wb .wb-command-popup [data-trigger-menu]{position:static!important;inset:auto!important;width:100%;max-height:var(--wb-command-max-height,400px)!important;margin:0}
+.wb .wb-composer-attachments{display:flex;gap:4px;max-width:120px;overflow:auto}
 .wb{box-sizing:border-box;container:workbase/inline-size;display:flex;flex-direction:column;height:100%;min-height:0!important;width:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font:14px/1.6 "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;position:relative;color-scheme:light}
 .wb.dark{color-scheme:dark}
 .wb *{box-sizing:border-box}
@@ -29,21 +86,29 @@
 .wb .wb-danger{color:var(--danger-text)}
 .wb .wb-tabs>button.wb-active{background:var(--selected-bg);color:var(--selected-text)}
 .wb .wb-target{background:var(--selected-bg);outline:1px solid var(--focus-tone);outline-offset:4px}
-.wb .wb-saving{position:absolute;right:32px;bottom:6px;font-size:11px;color:var(--muted);z-index:10}
+.wb .wb-saving{position:absolute;right:32px;bottom:6px;font-size:var(--type-meta,12px);color:var(--muted);z-index:10}
 .wb .wb-error{color:var(--danger-text)}
 .wb .wb-warning{color:var(--danger-text);font-size:12px;overflow-wrap:anywhere}
 .wb .wb-help{font-size:12px;color:var(--muted)}
 .wb .wb-feedback{flex:none;margin:12px 32px}
 .wb .wb-binding{flex:none;margin:12px 32px 0}
-.wb .wb-binding button{font-size:12px}
+.wb .wb-binding button{font-size:var(--type-body,14px)}
 .wb .wb-fulltext{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.85;user-select:text}
 .wb .wb-overlay{position:absolute;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px;background:#0d152364;backdrop-filter:blur(3px);overflow:hidden;-webkit-app-region:no-drag}
 .wb .wb-dialog{position:relative;padding:26px;width:520px;max-width:100%;max-height:85%;overflow:auto;margin:0;inset:auto;background:var(--surface);color:var(--text);border:1px solid var(--line)}
-.wb .wb-dialog label:not(.setting-row):not(.theme-choice){display:flex;flex-direction:column;font-size:12px;margin:16px 0 7px;gap:7px}
+.wb .wb-dialog:is(.todo-detail-dialog,.session-preview-dialog){width:90%;max-width:1120px;padding:0;max-height:calc(100% - 50px);overflow:hidden}
+@container workbase (max-width:650px){
+  .wb .wb-overlay:has(:is(.todo-detail-dialog,.session-preview-dialog)){padding:0}
+  .wb .wb-dialog:is(.todo-detail-dialog,.session-preview-dialog){width:100%;max-width:none;padding:0}
+}
+.wb .wb-dialog label:not(.setting-row):not(.theme-choice):not(.stats-group-search){display:flex;flex-direction:column;font-size:var(--type-body,14px);margin:16px 0 7px;gap:7px}
 .wb .wb-dialog input,.wb .wb-dialog textarea{width:100%;min-width:0;font-size:14px}
 .wb .wb-dialog form:has(textarea)>footer{margin-top:32px}
 .wb .wb-dialog textarea{resize:vertical;white-space:pre-wrap}
 .wb .wb-dialog footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:26px}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form label.todo-title-field{margin:0;gap:6px}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form label.todo-attachment-picker{margin:0;flex-direction:row;gap:8px;font-size:12px}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form>footer{margin:0;justify-content:space-between;gap:12px}
 .wb .wb-dialog dl{display:grid;grid-template-columns:80px minmax(0,1fr);gap:12px;font-size:12px;margin-top:20px}
 .wb .wb-dialog dd{margin:0}
 .wb .wb-dialog dt{color:var(--muted)}
@@ -53,7 +118,7 @@
    章节分隔永远大于区块内缝隙，标题才贴近自己的内容。
    0.2.37 用固定 40/24/40/48/48；0.2.38 换成随窗口高度伸缩的 clamp：
    高屏（≥1200 高）到顶 72/64/88，短屏（≤800 高）收到地板 48/44/56，
-   同一套值在笔记本与 4K 上都不会显得空荡或拥挤。hero 内部固定 28，保持「输入框 + 会话」成组。 */
+   同一套值在笔记本与 4K 上都不会显得空荡或拥挤。卡片形态保留 28px；按钮形态单独贴近输入框。 */
 .wb .home-main.main{padding-top:clamp(48px,6vh,72px);padding-bottom:clamp(48px,6vh,72px)}
 .wb .home-stats{margin-top:clamp(44px,5vh,64px);margin-bottom:clamp(56px,7vh,88px)}
 .wb .home-main:has(.recent-sessions) .home-composer{margin-bottom:28px}
@@ -66,6 +131,10 @@
   .wb .home-main:has(.recent-sessions) .home-composer{margin-bottom:20px}
   .wb .home-main>.recent-sessions{margin-bottom:20px}
 }
+/* 官方输入容器默认有20px下边距；按钮形态归零，由真源令牌统一定义12px间隔。
+   只匹配实际相邻的最近会话按钮，不改变卡片形态或隐藏最近会话时的排布。 */
+.wb .home-main:has(>.recent-sessions[data-layout="buttons"])>.wb-native-composer{margin-bottom:0}
+.wb .home-main>.wb-native-composer+.recent-sessions[data-layout="buttons"]{margin-top:var(--home-shortcuts-gap)}
 /* 输入框 v3 布局强制：皮肤插件（guizang-design / maid-atelier）会以同位规则覆盖卡片、
    动作行与按钮样式，导致右聚与按钮变形；此处以更高特异度 + !important 压回。
    composer-shell / composer-body 为插件自有类名，皮肤无从预先针对。
@@ -124,23 +193,24 @@
 .wb .add-project-pane[data-active=false]{visibility:hidden;pointer-events:none}
 .wb .directory-picker input{padding-right:42px}
 .wb .directory-picker button{position:absolute;right:4px;top:4px;bottom:4px;padding:5px 7px}
-.wb .directory-picker input{cursor:pointer}
+.wb .directory-picker input{cursor:text}
 .wb .directory-field>.wb-warning{margin-top:8px}
 /* 会话页使用公开导航插槽，系统控件预留量由宿主发布。 */
-[data-conversation-header-leading]:has(.wb-return){padding-inline-start:max(0px,calc(var(--dsh-frame-leading-clearance,0px) - 20px));padding-inline-end:8px}
-[data-conversation-header-leading]:has(.wb-return)+*{padding-inline-start:0}
-.wb-return{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:28px;padding:0 8px;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,#68717d);font:13px/1.4 "Avenir Next","PingFang SC","Microsoft YaHei",sans-serif;white-space:nowrap;cursor:pointer;-webkit-app-region:no-drag}
+/* 常驻 root 插槽也覆盖无 Session 的新建页；只调整布局，不占用宿主侧栏 corner。 */
+header[data-window-drag]:has(>[data-conversation-header-leading] .wb-return){grid-template-columns:minmax(0,1fr) auto;padding-inline-end:12px}
+[data-conversation-header-leading]:has(.wb-return){grid-area:1/2;padding-inline-start:8px;padding-inline-end:0;border-inline-start:1px solid var(--dsw-alias-border-l3,#e1e4e8)}
+[data-conversation-header-leading]:has(.wb-return)+*,[data-conversation-header-leading]:has(.wb-return)+[data-slot="conversation.session.header"]>div:first-child{grid-column:1;grid-row:1}
+header:has(>[data-conversation-header-leading] .wb-return) [data-conversation-header-corner]{margin-inline-end:0}
+.wb-return{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,#68717d);cursor:pointer;-webkit-app-region:no-drag}
 .wb-return:hover{background:var(--dsw-alias-interactive-bg-hover,#eff1f4);color:var(--dsw-alias-label-primary,#202832)}
 .wb-return:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#8260b4);outline-offset:2px}
-[data-platform=darwin] [data-sidebar-collapsed] .wb-return{width:28px;padding:0;gap:0}
-[data-platform=darwin] [data-sidebar-collapsed] .wb-return span{display:none}
 .wb .wb-overlay-drawer{align-items:flex-end;padding:50px 0 0;backdrop-filter:none;animation:wb-settings-mask-in .2s ease-out both}
-.wb .wb-drawer{width:90%;max-width:90%;height:100%;max-height:100%;inset:auto;margin:0;padding:0;overflow:hidden;border-radius:16px 16px 0 0;border-bottom:0}
+.wb .wb-drawer{width:90%;max-width:min(90%,var(--wb-drawer-max-width,1120px));height:100%;max-height:100%;inset:auto;margin:0;padding:0;overflow:hidden;border-radius:16px 16px 0 0;border-bottom:0}
 .wb .wb-drawer[open]{display:flex;flex-direction:column}
-.wb dialog.wb-drawer.workspace-settings{width:90%;max-width:90%;height:100%;max-height:100%}
+.wb dialog.wb-drawer.workspace-settings{width:90%;max-width:min(90%,var(--wb-drawer-max-width,1120px));height:100%;max-height:100%}
 .wb .wb-settings{display:flex;flex-direction:column;flex:1;min-height:0}
 .wb .wb-drawer .dialog-head{height:72px;min-height:72px;flex:none;margin:0;padding:0 24px;border-bottom:1px solid var(--line)}
-.wb .wb-drawer .dialog-head h2{font-size:18px}
+.wb .wb-drawer .dialog-head h2{font-size:var(--type-dialog,20px)}
 .wb .wb-drawer .dialog-footer{margin:0;min-height:72px;padding:16px 24px;border-top:1px solid var(--line);flex:none}
 .wb .wb-drawer label.setting-row{margin:0}
 .wb .wb-drawer .setting-row>div{flex:1;min-width:0}
@@ -153,7 +223,7 @@
    下方 composer 的 position:relative 控件会按 DOM 顺序绘制在弹层之上；展开弹层时提升整个搜索容器。 */
 .wb .app-header .global-search:has(.wb-search-popover){z-index:2}
 .wb .search-panel{position:absolute;top:calc(100% + 8px);left:0;transform:none;width:100%;max-width:100%}
-.wb .toast{position:absolute;max-width:calc(100% - 32px)}
+.wb .toast{position:absolute;max-width:min(520px,calc(100% - 32px))}
 .wb .search-foot small{font-size:10px}
 .wb .search-hit .hit-content{display:block}
 .wb .wb-sync{cursor:pointer}

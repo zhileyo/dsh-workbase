@@ -2,10 +2,11 @@ import { useId, useRef, useState } from 'react';
 import { Icon } from './ui.js';
 
 /** 复用宿主原生目录选择，不用浏览器上传接口伪造绝对路径。 */
-export function DirectoryInput({ label, value, onChange, pickDirectory, disabled = false, required = false, autoFocus = false, onPickingChange }: {
+export function DirectoryInput({ label, value, onChange, pickDirectory, disabled = false, required = false, autoFocus = false, placeholder = '输入文件夹的绝对路径', onPickingChange, describedBy }: {
   label: string; value: string; onChange(value: string): void;
   pickDirectory(): Promise<string | null>; disabled?: boolean; required?: boolean; autoFocus?: boolean;
-  onPickingChange?(picking: boolean): void;
+  placeholder?: string; onPickingChange?(picking: boolean): void;
+  describedBy?: string;
 }) {
   const id = useId();
   const [picking, setPicking] = useState(false);
@@ -27,12 +28,12 @@ export function DirectoryInput({ label, value, onChange, pickDirectory, disabled
     <label className="field" htmlFor={id}>{label}</label>
     <div className="directory-picker" aria-busy={picking}>
       <input id={id} autoFocus={autoFocus} required={required} value={value} disabled={disabled || picking}
-        maxLength={4096} placeholder="点击选择本地文件夹，或输入绝对路径"
-        title="点击选择本地文件夹；也可用键盘输入，Alt + ↓ 打开选择器"
-        aria-describedby={error ? `${id}-error` : undefined}
-        onClick={() => void choose()} onChange={e => onChange(e.target.value)}
+        maxLength={4096} placeholder={placeholder}
+        title="输入或粘贴路径；点击右侧图标或按 Alt + ↓ 选择"
+        aria-describedby={[describedBy, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
+        onChange={e => { setError(''); onChange(e.target.value); }}
         onKeyDown={e => { if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); void choose(); } }}/>
-      <button type="button" className="flat" title="选择本地文件夹" aria-label={`选择${label}文件夹`}
+      <button type="button" className="flat" title={`选择${label}`} aria-label={`选择${label}`}
         disabled={disabled || picking} onClick={() => void choose()}><Icon name="folder"/></button>
     </div>
     {error && <p id={`${id}-error`} role="alert" className="wb-warning">{error}</p>}
