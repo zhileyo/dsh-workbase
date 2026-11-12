@@ -7,6 +7,10 @@ import { WorkbaseService } from './service.js';
 import { createHost } from './host.js';
 import { handleRequest } from './http.js';
 import { registerTools } from './tools.js';
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
+import { BackupManager } from './backup.js';
+import { createBackupSources, backupBusy } from './backup-sources.js';
+import { RestoreManager } from './restore.js';
 import { todoFetchRoutes } from './todo-images.js';
 
 export const name = 'dsh-workbase';
@@ -56,9 +60,30 @@ export async function apply(ctx: Context) {
     const modernized = modernizeHomeState(current);
     if (modernized !== current) await domain.global.set(modernized);
   } catch { /* 旧域读取失败不阻塞启动；新域继续以初始状态服务。 */ }
-  const service = new WorkbaseService({
+  const host = createHost(ctx);
+  const startupKey = Symbol.for('dsh-workbase.backup-startup');
+  const runtime = globalThis as typeof globalThis & { [startupKey]?: boolean };
+  const backup: BackupManager = new BackupManager({
+    home: resolveDshHome(), settings: () => domain.global.get().preferences.backup,
+    state: () => service.exportBackupState(), sources: createBackupSources(ctx, resolveDshHome(), host),
+    busy: backupBusy(ctx, host),
+    claimStartup: () => {
+      if (runtime[startupKey]) return false;
+      runtime[startupKey] = true;
+      return true;
+    },
+  });
+  ctx.effect(() => () => backup.dispose());
+  const restore: RestoreManager = new RestoreManager({
+    home: resolveDshHome(), backup,
+    state: () => service.exportBackupState(), inspect: value => service.inspectRestore(value),
+    apply: (value, revision, beforeWrite) => service.applyRestore(value, revision, beforeWrite),
+    roots: async () => (await createBackupSources(ctx, resolveDshHome(), host)()).flatMap(source => source.path ? [source.path] : []),
+  });
+  ctx.effect(() => () => restore.dispose());
+  const service: WorkbaseService = new WorkbaseService({
     get: () => domain.global.get(), set: next => domain.global.set(next),
-  }, createHost(ctx), randomUUID);
+  }, host, randomUUID, Date.now, backup, restore);
   ctx.effect(() => ctx.connection.fetch.register({
     path: `${RPC_CHANNEL}/${RPC_ENDPOINT}`, methods: ['POST'], requestBody: 'streaming',
     // 精确Fetch路由由Connection强制只允许owner；沿用官方RPC线上封装。

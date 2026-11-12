@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "observedOn": "2026-11-10",
+  "stage": "P0",
+  "discoveryCompleted": true,
+  "backupImplementationReady": false,
+  "consistency": "live-metadata-observations-not-a-snapshot",
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "dshVersion": "0.2.2-rc.1",
+    "runtimeNodeVersion": "24.21.0",
+    "homeTemplate": "~/.dsh",
+    "activeProfileObserved": "desktop",
+    "runtimeEnvironmentOverridesVerified": false
+  },
+  "profiles": [
+    {
+      "name": "desktop",
+      "configEvidence": "app-bundles-user-patches-and-live-open-files",
+      "cliDump": "refused-managed-exclusively-by-electron",
+      "plugins": [
+        {"name": "@michengai/dsh-archive-manager", "version": "1.3.1", "coverage": "domain-settings-client-state"},
+        {"name": "@michengai/dsh-skills-manager", "version": "1.4.0", "coverage": "manager-state-external-and-project-skills"},
+        {"name": "billion-context", "version": "0.1.213", "coverage": "external-xdg-config-data-state-cache"},
+        {"name": "dsh-context", "version": "0.83.1", "coverage": "overview-cache-session-and-client-state"},
+        {"name": "dsh-pet", "version": "0.4.7", "coverage": "home-config-assets-and-independent-client"},
+        {"name": "dsh-workbase", "version": "0.3.1", "coverage": "domain-and-client-state", "installationSource": "local-tarball"},
+        {"name": "dshmarket", "version": "1.73.17", "coverage": "profile-state-config-and-update-journal"}
+      ],
+      "installedTree": {"allocatedKiB": 266212, "symlinks": 9, "brokenSymlinks": 0, "linksOutsideNodeModules": 0}
+    },
+    {
+      "name": "web",
+      "configEvidence": "official-cli-composed-config-and-installed-bundles",
+      "plugins": [
+        {"name": "@nonamelego/dsh-catppuccin", "version": "0.5.3", "coverage": "settings-client-state-and-tui-themes"},
+        {"name": "dsh-better-sidebar", "version": "0.19.1", "coverage": "profile-config-and-client-state", "activation": "dynamic-duplicate-guard"},
+        {"name": "dsh-session-recycle-bin", "version": "0.4.3", "coverage": "workspace-session-and-legacy-trash-candidates", "runtimeCompatibilityVerified": false},
+        {"name": "dshmarket", "version": "1.50.0", "coverage": "profile-state-and-config"}
+      ],
+      "installedTree": {"allocatedKiB": 352488, "symlinks": 20, "brokenSymlinks": 7, "linksOutsideNodeModules": 0}
+    },
+    {
+      "name": "tui",
+      "configEvidence": "installed-bundle-static-patch",
+      "cliDump": "empty-object-not-proof-of-no-storage",
+      "plugins": [
+        {"name": "@deepseek-harness-tui/dsh-tui", "version": "0.10.0", "coverage": "shared-dsh-storage-and-external-tui-state", "runtimeCompatibilityVerified": false}
+      ],
+      "installedTree": {"allocatedKiB": 65068, "symlinks": 217, "brokenSymlinks": 0, "linksOutsideNodeModules": 0}
+    }
+  ],
+  "records": [
+    {"id": "sessions", "path": "~/.dsh/sessions", "observed": "present", "policy": "required", "metrics": {"sessionDirectories": 13, "v4ZstdLogs": 13, "logBytes": 164215, "lockFiles": 13}, "restoreRule": "all-generations-and-relations-no-live-lock-identity"},
+    {"id": "workspace", "path": "~/.dsh/storages/workspace.json", "observed": "present", "policy": "required", "metrics": {"workspaces": 3, "archivedSessionIds": 0, "pinnedSessionIds": 1, "existingProjectDirectories": 3}},
+    {"id": "workbase", "path": "~/.dsh/storages/dsh_workbase.json", "observed": "present", "policy": "required", "metrics": {"bytes": 3141, "bindings": 3, "todos": 1, "worktreeSessions": 0}},
+    {"id": "workbench-legacy", "path": "~/.dsh/storages/dsh_workbench.json", "observed": "present", "policy": "migration-rollback-material", "metrics": {"bytes": 1621}},
+    {"id": "archive-favorites", "path": "~/.dsh/storages/archive_manager_favorites.json", "observed": "present", "policy": "required", "metrics": {"bytes": 200}},
+    {"id": "archive-settings", "path": "~/.dsh/archive-manager/settings.json", "observed": "default-root-not-materialized", "policy": "required-if-present"},
+    {"id": "projection-cache", "path": "~/.dsh/storages/session_projcache", "legacyPath": "~/.dsh/storages/session_projcache.json", "observed": "both-present", "policy": "retain-until-rebuild-verified", "rebuildDocumented": true, "rebuildVerified": false},
+    {"id": "context-overview", "path": "~/.dsh/storages/dsh-context/overview-cache.v1.json", "observed": "present", "policy": "rebuild-candidate", "metrics": {"bytes": 5737}},
+    {"id": "image-objects", "path": "~/.dsh/attachments/v1/objects", "observed": "default-root-not-materialized", "policy": "required-if-present", "override": "attachment-local.config.dshHome"},
+    {"id": "file-objects", "path": "~/.dsh/attachments/v1/file-objects", "observed": "default-root-not-materialized", "policy": "required-if-present"},
+    {"id": "file-reference-links", "path": "~/.dsh/attachments/v1/files", "observed": "default-root-not-materialized", "policy": "required-if-present", "restoreRule": "validated-hardlinks-or-equivalent-name-paths"},
+    {"id": "attachment-request-cache", "path": "~/.dsh/cache/attachments/request-images", "observed": "default-root-not-materialized", "policy": "documented-rebuildable"},
+    {"id": "profiles", "path": "~/.dsh/profiles/{desktop,web,tui}", "observed": "present", "policy": "required-config-lockfile-and-plugin-payload"},
+    {"id": "market-profile-state", "path": "~/.dsh/profiles/{desktop,web}/.dsh-market", "observed": "present", "policy": "mixed-state-and-cache-needs-file-classification", "sensitivity": "may-contain-pinned-environment"},
+    {"id": "market-build-markers", "path": "~/.dsh/dsh-market/printed-build-keys.json", "observed": "present", "policy": "noncritical-marker"},
+    {"id": "agent-presets", "path": "~/.dsh/.agent-presets", "observed": "present", "policy": "required", "metrics": {"presetDirectories": 2, "allocatedKiB": 108}},
+    {"id": "credentials", "path": "~/.dsh/.credentials.yaml", "observed": "present", "policy": "optional-encrypted", "metrics": {"bytes": 487}, "contentsRead": false},
+    {"id": "legacy-settings", "path": "~/.dsh/settings.yaml.imported", "observed": "present", "policy": "sensitive-migration-material", "metrics": {"bytes": 1223}, "contentsRead": false},
+    {"id": "remote-devices", "path": "~/.dsh/remote-web-ui-devices.json", "observed": "present", "policy": "identity-material-explicit-restore-policy", "metrics": {"bytes": 2}, "contentsRead": false},
+    {"id": "skills-manager", "path": "~/.dsh/skills-manager", "observed": "default-root-not-materialized", "policy": "required-if-present", "persistentChildren": ["state.json", "roots.json", "repositories.json", "trash"]},
+    {"id": "dsh-user-skills", "path": "~/.dsh/skills", "observed": "default-root-not-materialized", "policy": "required-if-present"},
+    {"id": "shared-agent-skills", "path": "~/.agents/skills", "observed": "present", "policy": "external-shared-root-explicit-scope", "metrics": {"regularFiles": 2691, "bytesWithoutLinkTargets": 44126605, "symlinks": 8, "brokenSymlinks": 4}},
+    {"id": "project-skills", "path": "<registered-project>/.dsh/skills", "observed": "absent-in-3-registered-projects", "policy": "explicit-external-dependency-if-present"},
+    {"id": "bili-config", "path": "~/.config/billion-context", "observed": "present", "policy": "required-sensitive-config", "overrides": ["XDG_CONFIG_HOME", "BILI_CONFIG_FILE"], "metrics": {"files": 1, "bytes": 25}},
+    {"id": "bili-data", "path": "~/.local/share/billion-context", "observed": "present", "policy": "mixed-persistent-and-secret-data", "overrides": ["XDG_DATA_HOME", "BILI_SESSIONS_DIR"], "metrics": {"files": 14, "bytes": 832815}},
+    {"id": "bili-sessions", "path": "~/.local/share/billion-context/sessions", "observed": "present", "policy": "required-shared-dataset", "database": "index.db", "restoreRule": "stop-all-writers-preserve-committed-sqlite-state-and-history"},
+    {"id": "bili-ca", "path": "~/.local/share/billion-context/ca", "observed": "present", "policy": "optional-encrypted", "privateKeyObserved": true, "privateKeyMode": "0600", "contentsRead": false},
+    {"id": "bili-state", "path": "~/.local/state/billion-context", "observed": "present", "policy": "mixed-mapping-log-and-live-lease-classification-required", "override": "XDG_STATE_HOME", "metrics": {"files": 11, "bytes": 4179835}},
+    {"id": "bili-cache", "path": "~/.cache/billion-context", "observed": "present", "policy": "mixed-download-and-update-state-not-blanket-excluded", "override": "XDG_CACHE_HOME", "metrics": {"files": 10, "bytes": 1291162}},
+    {"id": "tui-state", "path": "~/.dsh-tui", "observed": "present", "policy": "persistent-external-root", "metrics": {"files": 12, "bytes": 72116}, "restoreRule": "no-effect-ledger-replay"},
+    {"id": "pet-config-assets", "path": "~/.dsh/dsh-pet", "observed": "present", "policy": "required-config-and-user-assets-exclude-confirmed-log", "metrics": {"allocatedKiB": 52}},
+    {"id": "pet-legacy", "path": "~/.dsh/pet.json", "observed": "present", "policy": "unclassified-migration-material", "metrics": {"bytes": 477}},
+    {"id": "desktop-client", "path": "~/Library/Application Support/@deepseek-ai/dsh-desktop", "observed": "present", "policy": "structured-export-preferred-no-whole-profile-copy", "clientData": ["Local Storage/leveldb", "Session Storage", "desktop/settings.json", "desktop/locale-cache"], "valuesRead": false},
+    {"id": "pet-client", "path": "~/Library/Application Support/dsh-pet-electron-helper", "observed": "present", "policy": "client-state-adapter-required", "valuesRead": false},
+    {"id": "task-board", "path": "~/.dsh/task-board", "observed": "present", "policy": "unclassified-persistent-owner-not-confirmed", "metrics": {"files": 3, "bytes": 354}, "persistentChildren": ["ledger-v2.json", "scheduler-v2.json"]},
+    {"id": "skin-state", "path": "~/.dsh/skin-center-active.json", "observed": "present", "policy": "unclassified-persistent-owner-not-confirmed", "metrics": {"bytes": 238}},
+    {"id": "skin-resources", "path": "~/.dsh/skin-center", "observed": "present", "policy": "retain-until-regeneration-and-owner-confirmed", "metrics": {"allocatedKiB": 7540}},
+    {"id": "voice-models", "path": "~/.dsh/speech-to-text/sensevoice", "observed": "default-root-not-materialized", "policy": "rebuildable-model-candidate"},
+    {"id": "recycle-bin-legacy", "path": "~/.dsh/trash", "additionalCandidate": "~/.dsh/profiles/web/trash", "observed": "both-absent", "policy": "required-if-present-version-adapter-needed"}
+  ],
+  "blockersBeforeCompleteBackupGuarantee": [
+    "resolved-runtime-roots-and-overrides-not-fully-observed",
+    "billion-context-shared-sqlite-state-and-private-key-policy",
+    "external-skill-targets-and-4-broken-links",
+    "web-installed-tree-has-7-broken-links",
+    "tui-composition-and-recycle-bin-runtime-compatibility",
+    "task-board-and-skin-state-ownership-unconfirmed",
+    "client-structured-export-and-cache-rebuild-unverified",
+    "offline-plugin-payload-and-update-transaction-recovery-unverified"
+  ],
+  "exclusions": {
+    "projectSource": "not-in-first-release",
+    "otherAgentReadOnlySkillRoots": "not-implicitly-included",
+    "externalSymlinkTargets": "not-followed-during-inventory",
+    "sessionBodies": "not-read-during-inventory",
+    "credentialsAndPrivateKeys": "contents-not-read",
+    "browserValues": "not-read"
+  }
+}

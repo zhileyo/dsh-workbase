@@ -11,6 +11,14 @@ export async function dispatch(service: WorkbaseService, payload: unknown, owner
     let value: unknown;
     switch (command.op) {
       case 'snapshot': value = await service.snapshot(signal); break;
+      case 'backup-status': value = await service.backupStatus(); break;
+      case 'backup-start': value = await service.startBackup('manual'); break;
+      case 'backup-startup': value = await service.startBackup('startup'); break;
+      case 'restore-status': value = await service.restoreStatus(); break;
+      case 'restore-catalog': value = await service.restoreCatalog(); break;
+      case 'restore-preview': value = await service.previewRestore({ archive: command.archive, keyPath: command.keyPath }); break;
+      case 'restore-confirm': value = await service.confirmRestore(command); break;
+      case 'restore-discard': value = await service.discardRestore(command.token); break;
       case 'create': value = await service.createTodo(command, undefined, signal); break;
       case 'update': value = await service.updateTodo(command, undefined, signal); break;
       case 'remove-todo-image': value = await service.removeTodoImage(command, undefined, signal); break;

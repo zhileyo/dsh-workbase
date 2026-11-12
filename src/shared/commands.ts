@@ -20,6 +20,15 @@ const preferencesPatchSchema = preferencesSchema.extend({
 }).partial().strict();
 export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('snapshot') }).strict(),
+  z.object({ op: z.literal('backup-status') }).strict(),
+  z.object({ op: z.literal('backup-start') }).strict(),
+  z.object({ op: z.literal('backup-startup') }).strict(),
+  z.object({ op: z.literal('restore-status') }).strict(),
+  z.object({ op: z.literal('restore-catalog') }).strict(),
+  restoreInputSchema.extend({ op: z.literal('restore-preview') }).strict(),
+  z.object({ op: z.literal('restore-confirm'), token: z.string().uuid(), mode: z.enum(['workbase', 'directory']),
+    directory: z.string().min(1).max(4096).optional() }).strict(),
+  z.object({ op: z.literal('restore-discard'), token: z.string().uuid() }).strict(),
   z.object({ op: z.literal('create'), projectId, title: z.string().trim().min(1).max(500), note: z.string().max(10000).optional(), priority: prioritySchema.optional() }).strict(),
   z.object({ op: z.literal('update'), projectId, id: todoId, expectedVersion: z.number().int().positive(),
     title: z.string().trim().min(1).max(500).optional(), note: z.string().max(10000).optional(), done: z.boolean().optional(), priority: prioritySchema.optional() }).strict(),

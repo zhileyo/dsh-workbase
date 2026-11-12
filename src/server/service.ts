@@ -46,7 +46,95 @@ export class WorkbaseService {
   constructor(
     private readonly persistence: Persistence, private readonly host: HostPort,
     private readonly uuid: () => string, private readonly now: () => number = Date.now,
+    private readonly backup?: BackupPort,
+    private readonly restore?: RestorePort,
   ) {}
+  async backupStatus() {
+    if (!this.backup) throw new WorkbaseError('unsupported', '当前宿主未启用备份服务');
+    return this.backup.status();
+  }
+  async startBackup(trigger: 'manual' | 'startup') {
+    if (!this.backup) throw new WorkbaseError('unsupported', '当前宿主未启用备份服务');
+    return this.backup.start(trigger);
+  }
+  exportBackupState() {
+    return this.serial(async () => structuredClone(this.persistence.get()));
+  }
+  restoreStatus() {
+    if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
+    return this.restore.status();
+  }
+  restoreCatalog() {
+    if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
+    return this.restore.catalog();
+  }
+  previewRestore(input: { archive: string; keyPath: string }) {
+    if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
+    return this.restore.preview(input);
+  }
+  confirmRestore(input: { token: string; mode: 'workbase' | 'directory'; directory?: string }) {
+    if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
+    return this.restore.confirm(input);
+  }
+  discardRestore(token: string) {
+    if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
+    return this.restore.discard(token);
+  }
+  private restoredState(input: unknown, workspaces: HostWorkspace[]) {
+    const value = stateSchema.parse(input), blockers: string[] = [];
+    const projects = new Set<string>(), todos = new Set<string>(), paths = new Set<string>();
+    for (const binding of value.bindings) {
+      if (projects.has(binding.projectId)) blockers.push('备份项目标识重复');
+      projects.add(binding.projectId);
+      if (binding.retired || binding.removed) continue;
+      if (paths.has(binding.path)) blockers.push('备份存在重复的活跃项目目录');
+      paths.add(binding.path);
+      const matches = workspaces.filter(w => w.path === binding.path);
+      if (matches.length !== 1) blockers.push(`当前宿主没有唯一匹配项目：${binding.path}`);
+      else binding.workspaceId = matches[0]!.workspaceId;
+    }
+    for (const todo of value.todos) {
+      if (!projects.has(todo.projectId) || todos.has(todo.id)) blockers.push('待办归属或标识不完整');
+      todos.add(todo.id);
+    }
+    if (value.worktreeSessions.some(s => !projects.has(s.projectId))) blockers.push('工作树会话缺少项目归属');
+    const current = this.persistence.get();
+    if (value.worktreeSessions.some(s => !current.worktreeSessions.some(c => c.sessionId === s.sessionId
+      && current.bindings.find(b => b.projectId === c.projectId)?.path === value.bindings.find(b => b.projectId === s.projectId)?.path)))
+      blockers.push('工作树会话无法与当前宿主的项目关联核实');
+    return { value, blockers: [...new Set(blockers)] };
+  }
+  inspectRestore(input: unknown) {
+    return this.serial(async () => {
+      const restored = this.restoredState(input, await this.host.workspaces());
+      return { revision: this.persistence.get().revision, blockers: restored.blockers };
+    });
+  }
+  /** 回滚归档必须在写入之前完成；预览后任何状态写入都使确认失效。 */
+  applyRestore(input: unknown, expectedRevision: number, beforeWrite: (before: State) => Promise<void>) {
+    return this.serial(async () => {
+      const before = structuredClone(this.persistence.get());
+      if (before.revision !== expectedRevision) throw new WorkbaseError('conflict', '预览后工作台数据已变化，请重新预览');
+      const restored = this.restoredState(input, await this.host.workspaces());
+      if (restored.blockers.length) throw new WorkbaseError('binding-conflict', restored.blockers.join('；'));
+      const next = restored.value;
+      next.revision = before.revision + 1;
+      // 备份位置与自动任务属于当前环境，恢复不能重启旧环境的自动安装或备份配置。
+      next.preferences.backup = { ...before.preferences.backup };
+      next.preferences.pluginAutoUpdate = false;
+      await beforeWrite(before);
+      try { await this.persistence.set(next); }
+      catch (error) {
+        if (JSON.stringify(this.persistence.get()) !== JSON.stringify(before)) {
+          try { await this.persistence.set({ ...before, revision: before.revision + 2 }); }
+          catch { throw new WorkbaseError('rollback-failed', '恢复写入及自动回滚均失败，请使用保留的加密回滚副本'); }
+        }
+        throw error;
+      }
+      this.deletedTodo = null;
+      return { revision: next.revision };
+    });
+  }
   private serial<T>(run: () => Promise<T>): Promise<T> {
     const pending = this.queue.then(run);
     this.queue = pending.catch(() => undefined);
