@@ -1,4 +1,13 @@
-import type { ClientPort, UiMemory } from './api.js';
+import type { ClientPort, ComposerBridge, UiMemory } from './api.js';
+
+/** 官方选择器已配置当前会话；发送时不再调用 selectModel 覆盖推理强度。 */
+export async function submitNativeMessage(api: ClientPort, memory: UiMemory, bridge: Pick<ComposerBridge, 'sessionId' | 'submit'>, baseBranch?: string) {
+  if (baseBranch && !await api.requestWorktree(bridge.sessionId, baseBranch)) throw new Error('工作树请求失败，请重试');
+  if (!await bridge.submit()) return false;
+  Object.assign(memory.composer, { nativeSessionId: '', nativeDraft: null, draft: '' });
+  memory.save();
+  return true;
+}
 
 /** 保存宿主返回的会话后再提交；失败重试保持同一消息的完整参数。 */
 export async function launchMessage(api: ClientPort, memory: UiMemory, input: {
