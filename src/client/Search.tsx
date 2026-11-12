@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Command } from '../shared/commands.js';
 import { defaultDetail, type SessionSearch, type Snapshot } from '../shared/model.js';
 import { readSnapshot, type ClientPort, type UiMemory } from './api.js';
-import { Icon, Tabs } from './ui.js';
+import { Icon, popupIndex, Tabs } from './ui.js';
 
 export function Search({ snapshot, api, memory, mutate, notify }: {
   snapshot: Snapshot | null; api: ClientPort; memory: UiMemory;
@@ -68,7 +68,7 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
       if (!p) throw new Error('项目已移除，请更新搜索结果');
       if (hit.kind === 'session') {
         if (!p.sessions.some(s => s.sessionId === hit.id)) throw new Error('会话已删除或不可访问');
-        if (hit.body) notify('Harness 当前不支持定位匹配消息，已打开原会话。正文检索只提供摘录，不提供命中次数。');
+        if (hit.body) notify('已打开原会话，暂不支持自动定位匹配消息');
         api.openSession(hit.id);
       } else if (hit.kind === 'todo') {
         const todo = p.todos.find(t => t.id === hit.id);
@@ -90,22 +90,25 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
     parts.push(value.slice(start)); return parts;
   };
   const labels = { project: '项目', session: '会话', todo: '待办' };
-  return <div className={`wb-search global-search ${query ? 'has-query' : ''}`} ref={root} onKeyDown={e => {
+  return <div className={`wb-search global-search ${query ? 'has-query' : ''}`} ref={root} onBlur={e => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false);
+  }} onKeyDown={e => {
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
     // 从结果按钮返回输入框会触发 onFocus，最后关闭以免被它重新打开。
     if (e.key === 'Escape') { e.preventDefault(); input.current?.focus(); setOpen(false); }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); setIndex(n => hits.length ? (n + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length : 0); }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); setIndex(n => popupIndex(e.key, n, hits.length)); }
     if (e.key === 'Enter' && e.target === input.current && open && hits[selected]) { e.preventDefault(); void show(hits[selected]!); }
   }}>
     <div className="search"><Icon name="search"/><input ref={input} role="combobox" aria-autocomplete="list" aria-label="搜索项目、会话和待办" placeholder="搜索项目、会话全文、待办…" value={text} maxLength={500}
-      aria-expanded={open} aria-controls="wb-global-results" onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
+      aria-expanded={open} aria-controls="wb-global-listbox" aria-activedescendant={open && hits[selected] ? `wb-search-hit-${selected}` : undefined} onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
       onChange={e => { setText(e.target.value); memory.search = e.target.value; setOpen(true); }}/><kbd>⌘ K</kbd></div>
     {open && <section className="wb-search-popover search-panel" id="wb-global-results" aria-label="搜索结果">
       <Tabs value={kind} options={[{ value: 'all', label: '全部' }, { value: 'project', label: '项目' }, { value: 'session', label: '会话' }, { value: 'todo', label: '待办' }]} onChange={value => { setKind(value); setIndex(0); }}/>
-      <div className="wb-search-scroll search-results" role="listbox" aria-label="全局搜索结果">
+      <div className="wb-search-scroll search-results" id="wb-global-listbox" role="listbox" aria-label="全局搜索结果">
         {!query && <p className="search-placeholder">搜索项目名称、目录、会话标题与正文、待办标题与备注</p>}
         {hits.map((hit, i) => <div key={hit.key}>
           {(i === 0 || hits[i-1]?.kind !== hit.kind) && <div className="search-group"><span>{labels[hit.kind]}</span><span>{hits.filter(item => item.kind === hit.kind).length} 条</span></div>}
-          <button type="button" role="option" className="wb-search-hit search-hit" aria-selected={i === selected} data-selected={i === selected} onClick={() => void show(hit)} onFocus={() => setIndex(i)}>
+          <button type="button" role="option" id={`wb-search-hit-${i}`} className="wb-search-hit search-hit" aria-selected={i === selected} data-selected={i === selected} onClick={() => void show(hit)} onFocus={() => setIndex(i)}>
             <span className="hit-icon"><Icon name={hit.kind === 'project' ? 'folder' : hit.kind === 'session' ? 'message' : 'check'}/></span><span className="hit-content"><span className="hit-title">{highlight(hit.title)}</span><span className="hit-meta">{highlight(hit.context)}</span>{hit.excerpt && <span className="hit-excerpt">{highlight(hit.excerpt)}</span>}<span className="hit-badges"><span>{hit.reason}</span>{hit.state && <span>{hit.state}</span>}</span></span>
           </button>
         </div>)}

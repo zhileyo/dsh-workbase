@@ -4,11 +4,11 @@
 
 ## 项目是什么
 
-DeepSeek Harness（DSH）的工作台插件：管理项目、会话与待办，并向宿主注册三个 Agent 工具。单个 npm 包同时提供宿主服务端入口与浏览器客户端入口。
+DeepSeek Harness（DSH）的工作台插件：管理项目、会话与待办，并向宿主注册 Agent 工具（定义见 `src/server/tools.ts`）。单个 npm 包同时提供宿主服务端入口与浏览器客户端入口。
 
 | 项 | 值 |
 | --- | --- |
-| 包名 / 版本 | `dsh-workbase`，`0.2.38`（版本号即发布单元） |
+| 包名 / 版本 | `dsh-workbase`，版本以 `package.json` 为准（版本号即发布单元） |
 | 技术栈 | TypeScript + React 18、esbuild、Cordis 插件、zod |
 | 模块形态 | `type: "module"`；tsconfig 为 `strict` + `noUncheckedIndexedAccess` |
 | 运行要求 | Node 22+（`build.mjs` 客户端 target `node22`／`es2022`）；`package.json` 未声明 `engines` |
@@ -19,7 +19,7 @@ DeepSeek Harness（DSH）的工作台插件：管理项目、会话与待办，�
 ```sh
 npm ci                 # 安装依赖
 npm run typecheck      # tsc --noEmit（src + test，无 lint 配置，别找 .eslintrc）
-npm test               # tsx --test test/*.test.ts，17 个测试文件
+npm test               # tsx --test test/*.test.ts
 npm run build          # node build.mjs：先同步原型资产，再打包两端
 npx semantic-release --dry-run  # 看这次会发哪个版本（版本号由提交 type 推断，见「发版」）
 ```
@@ -48,6 +48,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 
 ## 硬性约束
 
+- **界面改动先读 [UI 规范第0节](docs/UI-DESIGN.md#0-共用一致性规则)。** 输入、选择器、按钮、弹窗、主题与焦点按用途复用现有组件和共享样式；同排控件等高，不自行新增字号、圆角或密度变体。共用规则只在该文档维护，调整时同步视觉真源及全部同类使用处，新增例外必须在同节说明场景与理由。`DirectoryInput`、`Picker`、`Menu`、`TodoToolbar`及宿主输入组件分别沿用已定义交互，不复制另一套控件。文档里的现行差异不代表全部视觉已验收，完成前核对最终样式与验收边界。
 - **不要手改 `src/client/prototype.css` 或 `prototype-icons.ts`。** 每次构建都会重新生成，手改内容会被抹掉。改样式请改 `docs/ui/ui-directions.html`。
 - **`:scope.c` 是活代码。** 它对应「温暖阅读」主题（`Workbase.tsx` 里 `chosenTheme === 'warm' ? 'c' : 'a'`），不在死选择器清单里；`:scope.b` 没有任何主题产出，已被剪除。
 - **`src/client/styles.css` 是唯一手写样式**，只做宿主容器适配与必要覆盖。145 个规则块里有 32 个用了 `!important`（共 144 次），分两类，都不要「顺手清理」：
