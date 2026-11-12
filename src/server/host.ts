@@ -14,6 +14,7 @@ import { extractConversation } from '../shared/session.js';
 import { z } from 'zod';
 import type { HostPort } from './service.js';
 import type { GitBranches } from '../shared/model.js';
+import { createDiagnostics } from './diagnostics.js';
 import { AttachmentId, type AttachmentStore, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import { todoImageSchema, todoAttachmentSchema, MAX_TODO_ATTACHMENT_BYTES } from '../shared/todo.js';
 const titleProjection = z.object({ title: z.string() });
@@ -48,6 +49,7 @@ export function createHost(ctx: Context): HostPort {
   // 没有投影时重新折叠，避免把手工改名永久留在旧缓存中。
   const titleCache = new Map<string, { stamp: string; title: string }>();
   return {
+    ...createDiagnostics(ctx),
     async saveTodoAttachment(data, mediaType, name) {
       const store = ctx.get('attachments') as AttachmentStore | undefined;
       if (!store) throw new WorkbaseError('unsupported', '宿主未启用附件服务');

@@ -219,8 +219,90 @@ export class WorkbaseService {
         const old = state.bindings.find(b => !b.retired && b.path === w.path);
         return old ? [{ projectId: old.projectId, workspaceId: w.workspaceId, path: w.path, title: w.title }] : [];
       });
-      return structuredClone({ revision: state.revision, projects, conflicts,
+      const diagnostics = await this.collectDiagnostics(workspaces, state, signal ?? new AbortController().signal, sessions);
+      return structuredClone({ revision: state.revision, projects, conflicts, diagnostics,
         preferences: state.preferences, sessionMarks: state.sessionMarks, syncedAt: this.now() });
+    });
+  }
+  private async collectDiagnostics(workspaces: HostWorkspace[], state: State, signal: AbortSignal, sessions: HostSession[] = []): Promise<Diagnosis> {
+    signal.throwIfAborted();
+    let host: HostDiagnosis = { checks: [
+      { kind: 'cache', status: 'unsupported', message: '宿主未提供会话缓存检测能力' },
+      { kind: 'orphan', status: 'unsupported', message: '宿主未提供孤儿子代理检测能力' },
+      { kind: 'empty', status: 'unsupported', message: '宿主未提供空会话检测能力' },
+    ], issues: [], repair: { cache: false, orphan: false, empty: false } };
+    if (this.host.diagnose) {
+      try { host = await this.host.diagnose(signal); }
+      catch (error) {
+        signal.throwIfAborted();
+        const message = error instanceof Error ? error.message : '会话诊断失败';
+        host.checks = (['cache', 'orphan', 'empty'] as const).map(kind => ({ kind, status: 'error', message }));
+      }
+    }
+    signal.throwIfAborted();
+    const bound = workspaces.flatMap(w => {
+      const binding = state.bindings.find(b => b.workspaceId === w.workspaceId && !b.retired && !b.removed && b.path === w.path);
+      return binding ? [{ ...w, projectId: binding.projectId, archived: binding.archived }] : [];
+    });
+    const issues: Diagnosis['issues'] = bound.filter(w => !w.available).map(w => ({
+      id: `directory:${w.projectId}`, kind: 'directory', title: '目录不可用', detail: w.path,
+      projectId: w.projectId, projectTitle: w.title, path: w.path,
+    }));
+    for (const issue of host.issues) {
+      const worktree = state.worktreeSessions.find(w => w.sessionId === issue.sessionId);
+      const w = bound.find(w => w.sessionIds.includes(issue.sessionId)) ??
+        bound.find(w => w.projectId === worktree?.projectId) ?? bound.find(w => w.path === issue.path);
+      const session = sessions.find(s => s.sessionId === issue.sessionId);
+      issues.push({
+        ...issue, id: `${issue.kind}:${issue.sessionId}`, projectId: w?.projectId ?? null,
+        projectTitle: w?.title ?? '未分组会话', path: w?.path ?? issue.path,
+        readOnly: w?.archived ?? false,
+        title: issue.kind === 'cache' ? `${session?.title ?? issue.sessionId} · 列表缓存异常`
+          : issue.kind === 'empty' ? '空会话' : '孤儿子代理残留',
+        detail: issue.kind === 'cache' ? `会话 ${issue.sessionId} 缺少可用的官方列表缓存`
+          : issue.kind === 'empty' ? '未开始对话且没有用户消息的普通冷会话'
+          : `子代理 ${issue.sessionId} · 母会话 ${issue.parentSessionId ?? '未知'} 已不存在${issue.sizeBytes === undefined ? ' · 日志大小未知' : ` · 日志约 ${(issue.sizeBytes / 1024).toFixed(1)} KB`}`,
+      });
+    }
+    return { checkedAt: this.now(), checks: [{ kind: 'directory', status: 'ok' }, ...host.checks], issues, repair: host.repair };
+  }
+  /** 显式重新检测不折叠标题，不为检查而读取会话正文。 */
+  async diagnose(signal: AbortSignal = new AbortController().signal): Promise<Diagnosis> {
+    await this.change(() => undefined, signal);
+    return this.serial(async () => this.collectDiagnostics(await this.host.workspaces(), this.persistence.get(), signal));
+  }
+  async repairDiagnostics(input: { kind: DiagnosticRepairKind; items: DiagnosticCandidate[] }, signal: AbortSignal): Promise<DiagnosticRepairResult> {
+    return this.serial(async () => {
+      signal.throwIfAborted();
+      if (!this.host.repairDiagnostics) throw new WorkbaseError('unsupported', '宿主未提供诊断修复能力');
+      const report = await this.collectDiagnostics(await this.host.workspaces(), this.persistence.get(), signal);
+      const items = [...new Map(input.items.map(i => [i.sessionId, i])).values()];
+      const eligible: DiagnosticCandidate[] = [], skipped: string[] = [];
+      for (const item of items) {
+        const issue = report.issues.find(i => i.kind === input.kind && i.sessionId === item.sessionId && i.identity === item.identity);
+        if (!issue) {
+          if (input.kind === 'empty') { skipped.push(item.sessionId); continue; }
+          throw new WorkbaseError('stale-diagnostic', '诊断结果已变化，请重新检测后操作');
+        }
+        const binding = this.persistence.get().bindings.find(b => b.projectId === issue.projectId);
+        if (binding) assertWritable(binding);
+        eligible.push(item);
+      }
+      if (!eligible.length) return { succeeded: [], skipped, failures: [] };
+      if (!report.repair[input.kind]) throw new WorkbaseError('unsupported', '请先安装并启用 dsh-archive-manager 归档管理插件');
+      signal.throwIfAborted();
+      // 下游共享工作区队列会再次核验活动状态、父子关系；缓存重建还校验生命周期见证。
+      // 请求发出后即使前端取消也保留实际结果，避免将已完成的物理清理报告为取消。
+      const result = await this.host.repairDiagnostics(input.kind, eligible);
+      result.skipped.push(...skipped);
+      if (input.kind !== 'cache' && result.succeeded.length) {
+        const next = structuredClone(this.persistence.get());
+        for (const id of result.succeeded) delete next.sessionMarks[id];
+        next.worktreeSessions = next.worktreeSessions.filter(w => !result.succeeded.includes(w.sessionId));
+        next.revision++;
+        await this.persistence.set(stateSchema.parse(next));
+      }
+      return result;
     });
   }
   async createTodo(input: { projectId: string; title: string; note?: string; priority?: Priority }, actor = userActor, signal?: AbortSignal) {

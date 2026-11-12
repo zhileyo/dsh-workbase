@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Home, type HomeProps } from '../src/client/Home.js';
+import { Home, fitRecentButtons, type HomeProps } from '../src/client/Home.js';
 import { UiMemory, type ClientPort } from '../src/client/api.js';
 import { initialState, emptyMark, type Snapshot } from '../src/shared/model.js';
 
@@ -25,7 +25,7 @@ function render(snapshot: Snapshot) {
   const noop = () => {};
   const props: HomeProps = {
     snapshot, api: { forgeAvailable: () => false } as unknown as ClientPort, memory: new UiMemory(), busy: false,
-    mutate: async () => true, navigate: noop, rename: noop, removeProject: noop, notify: noop,
+    mutate: async () => true, navigate: noop, rename: noop, removeProject: noop, notify: noop, refresh: async () => {},
   };
   return renderToStaticMarkup(createElement(Home, props));
 }
@@ -50,7 +50,7 @@ test('实际首页组件支持四模块全部16组合，关闭模块不残留内
   }
 });
 
-test('最近卡片只取5条未归档会话，按钮只取3条，统计开启强制按钮', t => {
+test('最近卡片只取5条未归档会话，按钮保留候选供宽度计算，统计开启强制按钮', t => {
   serverWarnings(t);
   const s = fixture();
   s.preferences.home.projects = false;
@@ -61,14 +61,50 @@ test('最近卡片只取5条未归档会话，按钮只取3条，统计开启强
   assert.ok(!html.includes('会话0-2'));
   s.preferences.home.recentStyle = 'buttons';
   html = render(s);
-  assert.equal((html.match(/class="wb-recent-copy recent-copy"/g) ?? []).length, 3);
+  assert.equal((html.match(/class="wb-recent-copy recent-copy"/g) ?? []).length, 8);
   s.preferences.home.recentStyle = 'cards';
   s.preferences.home.stats = true;
   html = render(s);
   assert.ok(html.includes('wb-recent-buttons'));
-  assert.equal((html.match(/class="wb-recent-copy recent-copy"/g) ?? []).length, 3);
+  assert.equal((html.match(/class="wb-recent-copy recent-copy"/g) ?? []).length, 8);
   assert.equal((html.match(/class="wb-stat-card stat-card"/g) ?? []).length, 4);
   assert.ok(!html.includes('最近活动：'), '卡片最近活动不带前缀，避免截断');
+});
+
+test('最近会话按钮按实际宽度和间距显示完整前缀，宽屏可以超过3条', () => {
+  assert.equal(fitRecentButtons(500, [80, 90, 100, 110, 120]), 4);
+  assert.equal(fitRecentButtons(600, [80, 90, 100, 110, 120]), 5);
+  assert.equal(fitRecentButtons(200, [80, 90, 100]), 2);
+  assert.equal(fitRecentButtons(50, [80, 30]), 0);
+  assert.equal(fitRecentButtons(178, [80, 90]), 2);
+  assert.equal(fitRecentButtons(0, []), 0);
+});
+
+test('诊断卡汇总异常数量，完整检查才显示正常，旧快照明确未完成', t => {
+  serverWarnings(t);
+  const s = fixture();
+  const card = () => render(s).match(/<button[^>]*data-stat-tab="diagnostic"[\s\S]*?<\/button>/)![0];
+  let html = card();
+  assert.match(html, /data-state="unknown"/);
+  assert.match(html, /检查未完成/);
+  s.diagnostics = { checkedAt: s.syncedAt, checks: [{ kind: 'directory', status: 'ok' }, { kind: 'cache', status: 'ok' }, { kind: 'orphan', status: 'ok' }],
+    issues: [], repair: { cache: true, orphan: true } };
+  assert.match(card(), /data-state="unknown"/, '旧三项检查结果不能冒充已完成空会话检测');
+  s.diagnostics.checks.push({ kind: 'empty', status: 'ok' });
+  html = card();
+  assert.match(html, /data-state="normal"/);
+  assert.match(html, /class="stat-value">0<\/strong>/);
+  assert.match(html, /class="stat-detail"[^>]*>检查正常<\/span>/);
+  s.projects[0]!.available = false;
+  s.projects[1]!.available = false;
+  s.diagnostics.issues = s.projects.filter(p => !p.available).map(p => ({
+    id: `directory:${p.projectId}`, kind: 'directory', title: '目录不可用', detail: p.path,
+    projectId: p.projectId, projectTitle: p.title, path: p.path,
+  }));
+  html = card();
+  assert.match(html, /data-state="error"/);
+  assert.match(html, /class="stat-value">2<\/strong>/);
+  assert.match(html, /class="stat-detail"[^>]*>目录 2<\/span>/);
 });
 
 test('归档项目只出现在归档范围，活跃范围不含归档项目', t => {
