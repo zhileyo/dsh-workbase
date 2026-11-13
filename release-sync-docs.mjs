@@ -6,7 +6,9 @@
  *    所以 `.agents/notes/dev-log.md` 只在「## 日志」分界之前替换。
  * 2. 不写死哈希：本地打包的 SHA-256 与 registry 上的 tarball 不一定逐字节相同
  *    （gzip 头含时间戳），改为指向 registry 的 integrity。
- * 3. 任一规则未命中即抛错，让整次发版中止——文档版本与 registry 不一致比不发版更糟。
+ * 3. 正则完全匹配不到才抛错，让整次发版中止——文档版本与 registry 不一致比不发版更糟。
+ *    但「已经写成本次版本」属于幂等：文档先于发版就写成目标版本时，替换后文本不变，
+ *    这种情况不能报未命中，否则发版在 publish 之前就中止（1.0.0 首次发版即卡在这里）。
  *    因此每条规则的正则都要同时匹配「首次改写」和「已改写过」两种形态。
  * 4. README 不参与同步：安装命令用 `<版本>` 占位，版本字面量已从 README 移除，
  *    发版只改开发日志，少一处漂移。
@@ -74,7 +76,8 @@ export async function prepare(_pluginConfig, { nextRelease }) {
     const [head, tail] = scope === 'current' ? splitCurrentState(text) : [text, ''];
     const nextHead = head.replace(pattern, replacement);
 
-    if (nextHead === head) {
+    // 去掉 g 标志做纯匹配判定：带 g 的 test() 会推进 lastIndex，重复调用结果不稳定。
+    if (!new RegExp(pattern.source, pattern.flags.replace('g', '')).test(head)) {
       throw new Error(
         `[sync-docs] ${name} 未命中「${label}」，无法写入版本 ${version}。请先核对文档标记。`,
       );
