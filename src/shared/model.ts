@@ -102,6 +102,10 @@ export interface HostWorkspace {
 export interface HostSession {
   sessionId: string; title: string; updatedAt: number; archived: boolean; running: boolean;
 }
+export interface SessionSearchStatus {
+  enabled: boolean;
+  showDependency: boolean;
+}
 export interface SessionSearch {
   items: { sessionId: string; snippet: string }[];
   hasMore: boolean;
@@ -133,6 +137,7 @@ export interface Snapshot {
   revision: number; projects: Project[]; conflicts: BindingConflict[];
   preferences: Preferences; sessionMarks: Record<string, Mark>; syncedAt: number;
   diagnostics?: Diagnosis;
+  sessionSearch?: SessionSearchStatus;
 }
 export type Actor = { kind: 'user' } | { kind: 'agent'; workspaceId: string };
 export const userActor: Actor = { kind: 'user' };

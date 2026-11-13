@@ -1,7 +1,7 @@
 import {
   type State, type HostWorkspace, type HostSession, type Snapshot, type Binding, type Actor,
   type Preferences, stateSchema, todoSchema, emptyMark, userActor, WorkbaseError,
-  type LaunchCatalog, type SessionSearch, type SessionPreview, type SessionPreviewMessage, type GitBranches, type Todo,
+  type LaunchCatalog, type SessionSearch, type SessionSearchStatus, type SessionPreview, type SessionPreviewMessage, type GitBranches, type Todo,
 } from '../shared/model.js';
 import type { Diagnosis, DiagnosticCandidate, DiagnosticRepairKind, DiagnosticRepairResult, HostDiagnosis } from '../shared/diagnostics.js';
 import type { BackupPort } from '../shared/backup.js';
@@ -20,7 +20,8 @@ export interface HostPort {
   remove?(workspaceId: string): Promise<void>;
   register?(path: string, title?: string): Promise<HostWorkspace>;
   createDirectory?(root: string, name: string): Promise<string>;
-  search?(query: string, signal: AbortSignal): Promise<SessionSearch>;
+  search?(query: string, signal: AbortSignal, sessionIds: readonly string[]): Promise<SessionSearch>;
+  searchStatus?(): SessionSearchStatus;
   catalog?(): Promise<LaunchCatalog>;
   begin?(workspaceId: string, preset: string): Promise<{ sessionId: string }>;
   configureModel?(sessionId: string, provider: string, model: string): Promise<void>;
@@ -221,6 +222,7 @@ export class WorkbaseService {
       });
       const diagnostics = await this.collectDiagnostics(workspaces, state, signal ?? new AbortController().signal, sessions);
       return structuredClone({ revision: state.revision, projects, conflicts, diagnostics,
+        sessionSearch: this.host.searchStatus?.() ?? { enabled: false, showDependency: false },
         preferences: state.preferences, sessionMarks: state.sessionMarks, syncedAt: this.now() });
     });
   }
@@ -625,8 +627,9 @@ export class WorkbaseService {
   }
   async searchSessions(query: string, signal: AbortSignal): Promise<SessionSearch> {
     if (!this.host.search) throw new WorkbaseError('unsupported', '当前宿主不支持会话全文检索');
-    const [results, snapshot] = await Promise.all([this.host.search(query, signal), this.snapshot(signal)]);
+    const snapshot = await this.snapshot(signal);
     const visible = new Set(snapshot.projects.flatMap(p => p.sessions.map(s => s.sessionId)));
+    const results = await this.host.search(query, signal, [...visible]);
     return { items: results.items.filter(item => visible.has(item.sessionId)), hasMore: results.hasMore };
   }
   async launchCatalog() {

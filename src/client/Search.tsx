@@ -19,6 +19,9 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const query = text.trim().toLocaleLowerCase();
+  const sessionKind = kind === 'all' || kind === 'session';
+  const bodyEnabled = snapshot?.sessionSearch?.enabled === true;
+  const searchBody = sessionKind && bodyEnabled;
   useEffect(() => {
     const shortcut = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !document.querySelector('dialog[open]')) {
@@ -31,7 +34,7 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
   }, []);
   useEffect(() => {
     setRemote({ items: [], hasMore: false }); setError(''); setIndex(-1);
-    if (!open || !query) { setLoading(false); return; }
+    if (!open || !query || !searchBody) { setLoading(false); return; }
     const controller = new AbortController(); setLoading(true);
     const timer = setTimeout(() => {
       void api.call({ op: 'search-sessions', query: text.trim() }, controller.signal).then(value => {
@@ -40,10 +43,10 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 220);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, query, retry, snapshot?.revision, api]);
+  }, [open, query, searchBody, retry, snapshot?.revision, api]);
   type Hit = { key: string; id: string; projectId: string; kind: 'project' | 'session' | 'todo'; title: string; context: string; rank: number; body: boolean; reason: string; excerpt?: string; state?: string };
   const match = (value: string) => value.toLocaleLowerCase().includes(query);
-  const snippets = new Map(remote.items.map(item => [item.sessionId, item.snippet]));
+  const snippets = new Map((searchBody ? remote.items : []).map(item => [item.sessionId, item.snippet]));
   const hits: Hit[] = query && snapshot ? snapshot.projects.flatMap(p => {
     const project: Hit[] = match(`${p.title} ${p.path}`) ? [{ key: `p:${p.projectId}`, id: p.projectId, projectId: p.projectId, kind: 'project', title: p.title, context: p.path, rank: match(p.title) ? 0 : 1, body: false, reason: match(p.title) ? '项目名称' : '目录路径' }] : [];
     const sessions: Hit[] = p.sessions.filter(s => match(s.title) || snippets.has(s.sessionId)).map(s => ({
@@ -54,7 +57,7 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
     const todos: Hit[] = p.todos.filter(t => match(`${t.title} ${t.note}`)).map(t => ({
       key: `t:${t.id}`, id: t.id, projectId: p.projectId, kind: 'todo', title: t.title,
       context: p.title, state: t.done ? '已完成' : '待处理', excerpt: !match(t.title) ? t.note.slice(Math.max(0, t.note.toLocaleLowerCase().indexOf(query) - 30), t.note.toLocaleLowerCase().indexOf(query) + query.length + 100) : undefined,
-      rank: match(t.title) ? 0 : 1, body: false, reason: match(t.title) ? '待办标题' : '待办备注',
+      rank: match(t.title) ? 0 : 1, body: false, reason: match(t.title) ? '待办标题' : '待办描述',
     }));
     return [...project, ...sessions, ...todos];
   }).filter(hit => kind === 'all' || hit.kind === kind).sort((a,b) => ['project','session','todo'].indexOf(a.kind) - ['project','session','todo'].indexOf(b.kind) || a.rank - b.rank) : [];
@@ -99,25 +102,26 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); setIndex(n => popupIndex(e.key, n, hits.length)); }
     if (e.key === 'Enter' && e.target === input.current && open && hits[selected]) { e.preventDefault(); void show(hits[selected]!); }
   }}>
-    <div className="search"><Icon name="search"/><input ref={input} role="combobox" aria-autocomplete="list" aria-label="搜索项目、会话和待办" placeholder="搜索项目、会话全文、待办…" value={text} maxLength={500}
+    <div className="search"><Icon name="search"/><input ref={input} role="combobox" aria-autocomplete="list" aria-label="搜索项目、会话和待办" placeholder={bodyEnabled ? '搜索项目、会话全文、待办…' : '搜索项目、会话标题、待办…'} value={text} maxLength={500}
       aria-expanded={open} aria-controls="wb-global-listbox" aria-activedescendant={open && hits[selected] ? `wb-search-hit-${selected}` : undefined} onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
       onChange={e => { setText(e.target.value); memory.search = e.target.value; setOpen(true); }}/><kbd>⌘ K</kbd></div>
     {open && <section className="wb-search-popover search-panel" id="wb-global-results" aria-label="搜索结果">
       <Tabs value={kind} options={[{ value: 'all', label: '全部' }, { value: 'project', label: '项目' }, { value: 'session', label: '会话' }, { value: 'todo', label: '待办' }]} onChange={value => { setKind(value); setIndex(0); }}/>
       <div className="wb-search-scroll search-results" id="wb-global-listbox" role="listbox" aria-label="全局搜索结果">
-        {!query && <p className="search-placeholder">搜索项目名称、目录、会话标题与正文、待办标题与备注</p>}
+        {!query && <p className="search-placeholder">搜索项目名称、目录、{bodyEnabled ? '会话标题与正文' : '会话标题'}、待办标题与描述</p>}
         {hits.map((hit, i) => <div key={hit.key}>
           {(i === 0 || hits[i-1]?.kind !== hit.kind) && <div className="search-group"><span>{labels[hit.kind]}</span><span>{hits.filter(item => item.kind === hit.kind).length} 条</span></div>}
           <button type="button" role="option" id={`wb-search-hit-${i}`} className="wb-search-hit search-hit" aria-selected={i === selected} data-selected={i === selected} onClick={() => void show(hit)} onFocus={() => setIndex(i)}>
             <span className="hit-icon"><Icon name={hit.kind === 'project' ? 'folder' : hit.kind === 'session' ? 'message' : 'check'}/></span><span className="hit-content"><span className="hit-title">{highlight(hit.title)}</span><span className="hit-meta">{highlight(hit.context)}</span>{hit.excerpt && <span className="hit-excerpt">{highlight(hit.excerpt)}</span>}<span className="hit-badges"><span>{hit.reason}</span>{hit.state && <span>{hit.state}</span>}</span></span>
           </button>
         </div>)}
-        {loading && <p className="wb-help" role="status">正在检索会话正文…</p>}
-        {error && <p className="wb-warning" role="alert">标题、项目与待办结果仍可用。{error}<button type="button" onClick={() => setRetry(n => n + 1)}>重试全文检索</button></p>}
-        {query && !loading && !hits.length && <p className="search-placeholder">{error ? '当前可搜索范围没有匹配结果' : '没有匹配结果'}</p>}
-        {remote.hasMore && <p className="wb-help">宿主只返回前 20 条正文结果，请缩小搜索范围。</p>}
+        {searchBody && loading && <p className="wb-help" role="status">正在检索会话正文…</p>}
+        {searchBody && error && <p className="wb-warning" role="alert">标题、项目与待办结果仍可用。{error}<button type="button" onClick={() => setRetry(n => n + 1)}>重试全文检索</button></p>}
+        {query && !(searchBody && loading) && !hits.length && <p className="search-placeholder">{searchBody && error ? '当前可搜索范围没有匹配结果' : '没有匹配结果'}</p>}
+        {searchBody && remote.hasMore && <p className="wb-help">仅显示前 20 条正文结果，请缩小搜索范围。</p>}
+        {sessionKind && !bodyEnabled && snapshot?.sessionSearch?.showDependency && <p className="wb-help">会话正文搜索依赖官方「历史会话搜索」实验套件（@deepseek-ai/dsh-experimental-session-search），需在宿主插件页添加并启用；标题搜索不受影响。</p>}
       </div>
-      <div className="search-foot"><span>↑ ↓ 选择 · Enter 打开 · Esc 关闭</span><span>跨项目搜索 · 全文与备注匹配</span></div>
+      <div className="search-foot"><span>↑ ↓ 选择 · Enter 打开 · Esc 关闭</span><span>跨项目搜索 · {bodyEnabled ? '正文与描述匹配' : '标题与描述匹配'}</span></div>
     </section>}
   </div>;
 }

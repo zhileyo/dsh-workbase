@@ -14,7 +14,7 @@ import { RestoreManager } from './restore.js';
 import { todoFetchRoutes } from './todo-images.js';
 
 export const name = 'dsh-workbase';
-export const inject = ['workspaceRegistry', 'sessionController', 'agentPresets', 'storageDomain', 'connection', 'tools', 'sessionQuery'];
+export const inject = ['workspaceRegistry', 'sessionController', 'agentPresets', 'storageDomain', 'connection', 'tools'];
 export const workbaseDomain = defineDomain({
   // 存储域随包名统一为 dsh_workbase；旧域 dsh_workbench 仅用于一次性迁移读取，
   // 迁移后旧文件保留作回滚备份。目标宿主的 single JSON 后端仍严格比较版本，

@@ -16,6 +16,7 @@ import type { HostPort } from './service.js';
 import type { GitBranches } from '../shared/model.js';
 import { createDiagnostics } from './diagnostics.js';
 import { createSessionMaintenance } from './session-maintenance.js';
+import { createSessionSearch } from './session-search.js';
 import { AttachmentId, type AttachmentStore, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import { todoImageSchema, todoAttachmentSchema, MAX_TODO_ATTACHMENT_BYTES } from '../shared/todo.js';
 const titleProjection = z.object({ title: z.string() });
@@ -50,6 +51,7 @@ export function createHost(ctx: Context): HostPort {
   // 没有投影时重新折叠，避免把手工改名永久留在旧缓存中。
   const titleCache = new Map<string, { stamp: string; title: string }>();
   const maintenance = createSessionMaintenance(ctx);
+  const searchSessions = createSessionSearch(ctx);
   return {
     ...createDiagnostics(ctx, maintenance),
     async saveTodoAttachment(data, mediaType, name) {
@@ -101,7 +103,7 @@ export function createHost(ctx: Context): HostPort {
       const stale = items.filter(s => !s.projections || titleCache.get(s.sessionId)?.stamp !== stamp(s));
       if (stale.length) {
         try {
-          const observations = await ctx.sessionQuery.readTitleSnapshots(stale.map(s => s.sessionId), signal);
+          const observations = await ctx.get('sessionQuery')?.readTitleSnapshots(stale.map(s => s.sessionId), signal) ?? [];
           for (const observation of observations) {
             const session = stale.find(s => s.sessionId === observation.sessionId);
             if (!session) continue;
@@ -132,17 +134,8 @@ export function createHost(ctx: Context): HostPort {
         available: await workspace.status() === 'ok', sessionIds: [...workspace.sessionIds] };
     },
     createDirectory: createProjectDirectory,
-    async search(query, signal) {
-      try {
-        const result = await ctx.sessionController.search({ query }, signal);
-        return { items: result.items.map(item => ({ ...item })), hasMore: result.hasMore };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message.includes('search is disabled') || message.includes('SESSION_QUERY_SEARCH_DISABLED'))
-          throw new WorkbaseError('search-disabled', '宿主尚未启用会话正文索引。请将会话搜索插件的 openAt 配置为 first-search 或 startup 后重启宿主。');
-        throw error;
-      }
-    },
+    search: searchSessions,
+    searchStatus: searchSessions.status,
     async catalog() {
       const [roster, catalog] = await Promise.all([ctx.agentPresets.remoteExportList(), ctx.sessionController.modelCatalog()]);
       return {
