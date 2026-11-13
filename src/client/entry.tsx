@@ -110,41 +110,17 @@ export function apply(ctx: Context) {
     }
     catch { /* 配置读取失败保留当前入口；工作台自身显示同步错误。 */ }
   };
-  // remote.forgePanel 由 client-ui-forge 经 remote.$mount 异步挂载（官方侧为
-  // ctx.remote.forgePanel 属性访问 + remote.forgePanel 注入别名并存）；挂载时机
-  // 晚于首帧且解析路径不止一种，逐路径探测，任一命中即可用。
-  // 该面板的挂载状态即平台对 @deepseek-ai/dsh-experimental-forge-bundle 的启用状态：
-  // 开关关闭时整个 bundle 不加载，面板不会出现；因此分支条显隐以它为准。
-  const pickForge = (candidate: unknown): unknown => {
-    if (!candidate || typeof candidate !== 'object') return null;
-    const direct = (candidate as { forgePanel?: unknown }).forgePanel;
-    if (direct) return direct;
-    // 命名空间内的键名随版本可能变化（forge / forge*），按名兜底扫描。
-    for (const key of Object.keys(candidate as Record<string, unknown>)) {
-      if (!/forge/i.test(key)) continue;
-      const value = (candidate as Record<string, unknown>)[key];
-      if (value && typeof value === 'object') return value;
-    }
-    return null;
-  };
-  const findForgePanel = (): unknown => {
-    try {
-      const panel = pickForge((ctx as unknown as { remote?: unknown }).remote);
-      if (panel) return panel;
-    } catch { /* 属性访问不可达，尝试下一路径 */ }
-    try {
-      const panel = pickForge(ctx.get('remote'));
-      if (panel) return panel;
-    } catch { /* 服务不可达，尝试下一路径 */ }
-    try {
-      const panel = (ctx as unknown as { get(key: string): unknown }).get('remote.forgePanel');
-      if (panel && typeof panel === 'object') return panel;
-    } catch { /* 注入别名不存在 */ }
-    for (const name of ['forgePanel', 'forge']) {
+  // 只认官方面板的准确接点，不把其他含 forge 的服务当成套件已启用。
+  const findForgePanel = () => {
+    type Panel = { requestWorktree(sessionId: string, from: string): Promise<{ ok: boolean }> };
+    for (const read of [
+      () => (ctx.remote as unknown as { forgePanel?: Panel }).forgePanel,
+      () => (ctx as unknown as { get(name: string): Panel | undefined }).get('remote.forgePanel'),
+    ]) {
       try {
-        const panel = ctx.get(name);
-        if (panel && typeof panel === 'object') return panel;
-      } catch { /* 该服务名不存在 */ }
+        const panel = read();
+        if (typeof panel?.requestWorktree === 'function') return panel;
+      } catch { /* 官方面板尚未挂载或已卸载。 */ }
     }
     return null;
   };
@@ -263,21 +239,11 @@ export function apply(ctx: Context) {
       ctx.layout.selectPanel(null);
     },
     pickDirectory: () => ctx.uiWorkspace.pickDirectory(),
-    forgeAvailable() {
-      // experimental-forge-bundle 启用时 client-ui-forge 经 remote.$mount 挂载 forgePanel；
-      // 挂载异步且晚于首帧，每次调用时逐路径重探，随插件页的启停即时生效。
-      return findForgePanel() !== null;
-    },
+    forgeAvailable: () => findForgePanel() !== null,
     async requestWorktree(sessionId, from) {
-      // 官方链路：注册工作树请求后，首条消息入队等待，宿主在回合开始前从基准分支创建工作树
-      // 并切换会话工作目录（.agents/worktrees/dsh-<id8>-<rand4>）。
-      try {
-        const forgePanel = findForgePanel() as {
-          requestWorktree?(sessionId: string, from: string): Promise<{ ok: boolean }>;
-        } | null;
-        if (typeof forgePanel?.requestWorktree !== 'function') return false;
-        return (await forgePanel.requestWorktree(sessionId, from)).ok;
-      } catch { return false; }
+      const panel = findForgePanel();
+      if (!panel) return false;
+      return (await panel.requestWorktree(sessionId, from)).ok;
     },
     async revealDirectory(projectId) {
       // 打开目录由服务端完成：平台 SessionController.openWorkspacePath 优先，缺失时服务端本机回退。

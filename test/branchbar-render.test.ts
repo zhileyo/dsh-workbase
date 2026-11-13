@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { BranchBar, type BranchBarProps } from '../src/client/BranchBar.js';
 
-// 本测试锁死分支条的三件事：显隐只跟平台插件开关（forge）走、Git 信息缺失时降级、
+// 本测试锁死分支条的三件事：跟随官方 Forge 显隐、Git 信息缺失时降级、
 // 勾选工作树后切换为基准分支选择器。渲染为 SSR 输出，不代表浏览器视觉验收。
 function serverWarnings(t: TestContext) {
   const original = console.error;
@@ -21,13 +21,13 @@ function render(overrides: Partial<BranchBarProps> = {}) {
   return renderToStaticMarkup(createElement(BranchBar, props));
 }
 
-test('插件开关关闭时分支条整体不渲染', t => {
+test('官方 Forge 关闭时分支与工作树整体隐藏', t => {
   serverWarnings(t);
-  const html = render({ forge: false, branches: { git: true, current: 'main', branches: ['main'] } });
+  const html = render({ forge: false, worktree: true, branches: { git: true, current: 'main', branches: ['main'] } });
   assert.equal(html, '');
 });
 
-test('插件开关开启时非 Git 项目也保留分支条并降级提示', t => {
+test('非 Git 项目也保留分支条并降级提示', t => {
   serverWarnings(t);
   const html = render({ branches: { git: false, current: '', branches: [] } });
   assert.ok(html.includes('class="composer-branchbar"'));

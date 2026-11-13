@@ -38,9 +38,9 @@ export interface ClientPort {
   pickDirectory(): Promise<string | null>;
   /** 在系统文件管理器中显示项目目录；平台接口不可用且本机回退失败时返回 false。 */
   revealDirectory(projectId: string): Promise<boolean>;
-  /** 宿主 forge 面板是否可用（experimental-forge-bundle 启用时挂载）。 */
+  /** 官方 experimental-forge-bundle 是否已挂载 forgePanel。 */
   forgeAvailable(): boolean;
-  /** 经官方 forgePanel 注册工作树请求：首条消息入队后、回合开始前由宿主运行时创建工作树。 */
+  /** 经官方 forgePanel 登记请求，首消息入队后由 Forge 在回合开始前创建。 */
   requestWorktree(sessionId: string, from: string): Promise<boolean>;
   addProject(path: string): Promise<boolean>;
   archiveSession(id: string, archived: boolean): Promise<void>;

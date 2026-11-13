@@ -37,6 +37,27 @@ test('首消息保留用户原始换行与空格，纯空白被合同拒绝', ()
   assert.equal(commandSchema.safeParse({ ...command, text: '  \n ' }).success, false);
 });
 
+test('官方工作树请求失败保留已创建会话，重试先登记请求再发送', async () => {
+  const memory = new UiMemory();
+  memory.composer.draft = '保留';
+  const calls: string[] = [];
+  let fail = true;
+  const api = { call: async (command: Command) => {
+    calls.push(command.op);
+    return command.op === 'begin-session' ? { sessionId: 'same' } : { accepted: true };
+  }, requestWorktree: async (id: string) => {
+    assert.equal(id, 'same'); calls.push('worktree');
+    if (fail) throw new Error('创建失败'); return true;
+  } } as unknown as ClientPort;
+  const input = { projectId: 'p', preset: 'coding', provider: 'provider', model: 'model', text: '保留', worktree: true, baseBranch: 'main' };
+  await assert.rejects(launchMessage(api, memory, input), /创建失败/);
+  assert.equal(memory.composer.pending?.sessionId, 'same');
+  assert.equal(memory.composer.draft, '保留');
+  fail = false;
+  await launchMessage(api, memory, input);
+  assert.deepEqual(calls, ['begin-session', 'worktree', 'worktree', 'submit-message']);
+});
+
 test('本机搜索词、草稿、分组滚动及首页位置跨重新初始化恢复', () => {
   let value = '';
   const storage = { getItem: () => value, setItem: (_key: string, next: string) => { value = next; }, removeItem: (_key: string) => {} };

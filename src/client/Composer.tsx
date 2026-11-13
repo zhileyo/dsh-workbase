@@ -28,6 +28,7 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   const [branch, setBranch] = useState(saved.branch);
   const [worktree, setWorktree] = useState(saved.worktree);
   const [branches, setBranches] = useState<GitBranches | null>(null);
+  const [forge, setForge] = useState(() => api.forgeAvailable?.() ?? false);
   const [catalog, setCatalog] = useState<LaunchCatalog | null>(null);
   const [error, setError] = useState('');
   const errorId = useId();
@@ -94,19 +95,15 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
     } catch (e) { setError(e instanceof Error ? e.message : '文件添加失败，草稿仍保留'); }
   };
   const modelReady = api.renderComposerMenu ? nativeModel.ready : !!selectedModel;
-  // 分支条显隐跟随平台插件开关：@deepseek-ai/dsh-experimental-forge-bundle 启用时
-  // client-ui-forge 经 remote.$mount 挂载 forgePanel，开关关闭时整个 bundle 不加载。
-  // 挂载晚于首帧：未命中时每 500ms 重探（30s 封顶），窗口重新获得焦点时补探一次。
-  const [forge, setForge] = useState(() => api.forgeAvailable());
   useEffect(() => {
-    if (forge) return;
-    const probe = () => { if (api.forgeAvailable()) setForge(true); };
+    const probe = () => setForge(api.forgeAvailable?.() ?? false);
+    // 官方面板异步挂载；持续探测启停，关闭后同样隐藏，不永久缓存首次命中。
     const timer = window.setInterval(probe, 500);
-    const cap = window.setTimeout(() => window.clearInterval(timer), 30000);
+    const unsubscribe = api.subscribe(probe);
     window.addEventListener('focus', probe);
-    return () => { window.clearInterval(timer); window.clearTimeout(cap); window.removeEventListener('focus', probe); };
-  }, [api, forge]);
-  // 工作树开关只在 Git 项目且 forge 可用时出现；forge 丢失或非 Git 项目时勾选态静默失效。
+    probe();
+    return () => { window.clearInterval(timer); unsubscribe(); window.removeEventListener('focus', probe); };
+  }, [api]);
   const worktreeOn = worktree && forge && !!branches?.git;
   const send = async () => {
     if (locked.current || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;

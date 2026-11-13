@@ -218,7 +218,7 @@ test('输入卡真实事件回调接入导入桥：普通粘贴放行，混合�
     const memory = new UiMemory(); memory.composer.preset = 'standard';
     if (blocked) memory.composer.pending = { projectId: 'p', sessionId: 's', provider: 'p', model: 'm', text: 'x', requestId: 'r' };
     const calls: unknown[] = [];
-    const api = { forgeAvailable: () => false, renderComposerMenu: (props: any) => {
+    const api = { renderComposerMenu: (props: any) => {
       props.onReady({ change: (text: string) => calls.push(text), addFiles: (...args: unknown[]) => { calls.push(args); return null; } });
       return null;
     } };

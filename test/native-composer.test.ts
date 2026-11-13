@@ -173,7 +173,7 @@ test('官方添加菜单接入后保留原 textarea、左右按钮与分支条�
   const memory = new UiMemory(); memory.composer.preset = 'standard';
   const snapshot: Snapshot = { revision: 0, syncedAt: 0, conflicts: [], sessionMarks: {}, preferences: initialState().preferences,
     projects: [{ projectId: 'p', workspaceId: 'w', path: '/project', title: '项目', available: true, archived: false, sessionIds: [], sessions: [], todos: [], mark: emptyMark(), updatedAt: 0, agentCanChangeStatus: true }] };
-  const api = { forgeAvailable: () => true, renderComposerMenu: () => createElement('button', { 'aria-label': '官方添加菜单' }) } as unknown as ClientPort;
+  const api = { renderComposerMenu: () => createElement('button', { 'aria-label': '官方添加菜单' }) } as unknown as ClientPort;
   const html = renderToStaticMarkup(createElement(Composer, { api, memory, snapshot }));
   assert.match(html, /<textarea[^>]*id="quick-input"/);
   assert.match(html.match(/<textarea[^>]*>/)?.[0] ?? '', /disabled/, '输入服务加载与交接期间不能编辑尚未绑定的草稿');

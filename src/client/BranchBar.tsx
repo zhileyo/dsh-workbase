@@ -2,7 +2,7 @@ import type { GitBranches } from '../shared/model.js';
 import { Icon, Picker } from './ui.js';
 
 export interface BranchBarProps {
-  /** 平台插件开关：@deepseek-ai/dsh-experimental-forge-bundle 是否已挂载 forgePanel。 */
+  /** 官方 experimental-forge-bundle 的 forgePanel 是否已挂载。 */
   forge: boolean;
   branches: GitBranches | null;
   worktree: boolean;
@@ -15,8 +15,7 @@ export interface BranchBarProps {
 }
 
 /**
- * 输入卡下方的分支条：显隐只由平台插件开关（experimental-forge-bundle）决定，
- * 不再以“项目是 Git 仓库”为前提——否则非 Git 项目会把整个分支条吞掉。
+ * 分支条显隐跟随官方 experimental-forge-bundle，非 Git 项目保留提示。
  *
  * 右侧两枚控件逐项对齐宿主「新对话」输入行的官方实现
  * （@deepseek-ai/dsh-experimental-client-ui-forge 的 WorktreeToggle）：
