@@ -79,7 +79,7 @@ test('空会话批量操作位于列表滚动区域外，能力缺失时禁用�
   const html = render([issue], true);
   assert.match(html, /class="diagnostic-list-header"><strong>全部异常 · 1<\/strong><button[\s\S]*?删除全部空会话（1）<\/button><\/div><div class="stats-group-results"/);
   assert.doesNotMatch(html, /diagnostic-toolbar/);
-  assert.match(render([issue]), /class="diagnostic-list-header">[\s\S]*?<button[^>]*disabled=""[^>]*title="[^"]*归档管理/);
+  assert.match(render([issue]), /class="diagnostic-list-header">[\s\S]*?<button[^>]*disabled=""[^>]*title="[^"]*底层能力/);
   assert.doesNotMatch(render([]), /删除全部/);
 });
 test('诊断卡摘要只列有异常的类型，空会话不会被零值项挤出', () => {
@@ -108,7 +108,7 @@ test('诊断页展示三类状态、未分组问题、刷新及按能力禁用�
   assert.match(html, /未分组会话/);
   assert.match(html, /class="stats-page-header"><h3 class="stats-page-heading">项目诊断<\/h3><button[^>]*class="diagnostic-refresh"[\s\S]*?重新检查<\/button><\/div>/);
   assert.match(html, /重建列表缓存/);
-  assert.match(html, /disabled=""[^>]*title="[^"]*归档管理[^"]*"[^>]*>清理残留/);
+  assert.match(html, /disabled=""[^>]*title="[^"]*底层能力[^"]*"[^>]*>清理残留/);
   assert.equal((html.match(/class="wb-stat-item stats-item diagnostic-item"/g) ?? []).length, 3);
   assert.match(html, /全部异常/);
   assert.match(html, /data-diagnostic-group="directory"/);

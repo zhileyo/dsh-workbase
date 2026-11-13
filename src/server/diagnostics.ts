@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { WorkbaseError } from '../shared/model.js';
 import { diagnosticRepairResult, type DiagnosticCandidate, type DiagnosticRepairResult,
   type HostDiagnosis, type HostDiagnosticIssue } from '../shared/diagnostics.js';
+import { createSessionMaintenance } from './session-maintenance.js';
 
 // 不绑定某个 JSONL 后端或缓存插件版本；兼容边界只接受检测实际用到的能力。
 const headerSchema = z.object({
@@ -23,11 +24,6 @@ interface Persistence {
 }
 interface Cache { cachedSnapshot(header: Header): { values: object } | undefined }
 interface Sessions { get(id: string): unknown; list(): { id: string }[] }
-interface RepairRegistry {
-  rebuildSessionCaches?(input: { items: DiagnosticCandidate[] }): Promise<unknown>;
-  cleanOrphanSubagents?(input: { sessionIds: string[] }): Promise<unknown>;
-  deleteSession?(id: string): Promise<{ deleted: boolean }>;
-}
 const identity = (h: Header) => JSON.stringify([h.version, h.createdAt, h.cwd ?? null, h.isSeeded]);
 const detail = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 500);
 const segment = (id: string) => id === '.' ? '~002E' : id === '..' ? '~002E~002E'
@@ -40,10 +36,9 @@ async function exists(target: string) {
   }
 }
 
-/** 检测与修复分离：检测不读正文；重建和物理删除委托归档插件的生命周期安全实现。 */
-export function createDiagnostics(ctx: Context) {
+/** 检测不读正文；修复在工作台自己的维护模块中复查候选并持久化。 */
+export function createDiagnostics(ctx: Context, maintenance = createSessionMaintenance(ctx)) {
   const get = <T>(name: string) => (ctx as unknown as { get(name: string): T | undefined }).get(name);
-  const registry = () => ctx.workspaceRegistry as unknown as RepairRegistry;
   const emptyIssue = async (row: z.infer<typeof storedSchema>[number], parents: ReadonlySet<string>,
     signal: AbortSignal): Promise<HostDiagnosticIssue | undefined> => {
     signal.throwIfAborted();
@@ -66,14 +61,10 @@ export function createDiagnostics(ctx: Context) {
       identity: JSON.stringify([identity(h), row.revision ?? null, asOfSeq ?? null]),
       path: h.cwd ?? '', ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
   };
-  return {
+  const diagnostics = {
     async diagnose(signal: AbortSignal): Promise<HostDiagnosis> {
       signal.throwIfAborted();
-      const repair = {
-        cache: typeof registry().rebuildSessionCaches === 'function',
-        orphan: typeof registry().cleanOrphanSubagents === 'function',
-        empty: typeof registry().deleteSession === 'function',
-      };
+      const repair = maintenance.capabilities();
       const persistence = get<Persistence>('sessionPersistence');
       const cache = get<Cache>('sessionProjectionCache');
       const sessions = get<Sessions>('sessions');
@@ -174,33 +165,40 @@ export function createDiagnostics(ctx: Context) {
       return report;
     },
     async repairDiagnostics(kind: HostDiagnosticIssue['kind'], items: DiagnosticCandidate[]): Promise<DiagnosticRepairResult> {
-      const r = registry();
-      let result: unknown;
-      if (kind === 'cache' && typeof r.rebuildSessionCaches === 'function') {
-        const raw = await r.rebuildSessionCaches({ items }) as Record<string, unknown>;
-        result = { succeeded: raw?.rebuiltSessionIds, skipped: raw?.skippedSessionIds, failures: raw?.failures };
-      } else if (kind === 'orphan' && typeof r.cleanOrphanSubagents === 'function') {
-        const raw = await r.cleanOrphanSubagents({ sessionIds: items.map(item => item.sessionId) }) as Record<string, unknown>;
-        result = { succeeded: raw?.cleanedSessionIds, skipped: raw?.skippedSessionIds, failures: raw?.failures };
-      } else if (kind === 'empty' && typeof r.deleteSession === 'function') {
+      if (!maintenance.capabilities()[kind])
+        throw new WorkbaseError('unsupported', '宿主缺少诊断修复所需的底层能力，请更新宿主');
+      const result = await maintenance.exclusive(async () => {
         const value: DiagnosticRepairResult = { succeeded: [], skipped: [], failures: [] };
         for (const item of [...new Map(items.map(i => [i.sessionId, i])).values()]) {
           try {
-            // 逐项重取当前头部和投影；不调用删除接口清理未知或已变化的会话。
-            const persistence = get<Persistence>('sessionPersistence');
-            if (!persistence) throw new WorkbaseError('unsupported', '宿主未提供会话存储检测能力');
-            const rows = storedSchema.parse(await persistence.list());
-            const row = rows.find(row => row.header.id === item.sessionId);
-            const issue = row && await emptyIssue(row,
-              new Set(rows.flatMap(row => row.header.parentSession ? [row.header.parentSession] : [])), new AbortController().signal);
-            if (!issue || issue.identity !== item.identity) { value.skipped.push(item.sessionId); continue; }
-            const removed = await r.deleteSession(item.sessionId);
-            if (removed?.deleted !== true) throw new WorkbaseError('delete-unconfirmed', '宿主未确认空会话删除结果');
-            value.succeeded.push(item.sessionId);
+            const validate = async () => {
+              if (kind === 'empty') {
+                const persistence = get<Persistence>('sessionPersistence');
+                if (!persistence) throw new WorkbaseError('unsupported', '宿主未提供会话存储检测能力');
+                const rows = storedSchema.parse(await persistence.list());
+                const row = rows.find(row => row.header.id === item.sessionId);
+                const issue = row && await emptyIssue(row,
+                  new Set(rows.flatMap(row => row.header.parentSession ? [row.header.parentSession] : [])), new AbortController().signal);
+                return issue?.identity === item.identity;
+              }
+              const report = await diagnostics.diagnose(new AbortController().signal);
+              if (report.issues.some(issue => issue.kind === kind && issue.sessionId === item.sessionId && issue.identity === item.identity))
+                return true;
+              if (report.issues.some(issue => issue.kind === kind && issue.sessionId === item.sessionId))
+                return false;
+              if (report.checks.find(check => check.kind === kind)?.status !== 'ok')
+                throw new WorkbaseError('diagnostic-incomplete', '候选复查未完成，已停止修复');
+              return false;
+            };
+            if (!await validate()) { value.skipped.push(item.sessionId); continue; }
+            const succeeded = kind === 'cache'
+              ? await maintenance.rebuildWithinQueue(item.sessionId, item.identity)
+              : await maintenance.deleteWithinQueue(item.sessionId, { coldOnly: true, validate });
+            (succeeded ? value.succeeded : value.skipped).push(item.sessionId);
           } catch (error) { value.failures.push({ sessionId: item.sessionId, message: detail(error) }); }
         }
-        result = value;
-      } else throw new WorkbaseError('unsupported', '请先安装并启用 dsh-archive-manager 归档管理插件，再执行诊断修复');
+        return value;
+      });
       const parsed = diagnosticRepairResult.parse(result);
       const ids = [...parsed.succeeded, ...parsed.skipped, ...parsed.failures.map(f => f.sessionId)];
       const requested = new Set(items.map(i => i.sessionId));
@@ -209,4 +207,5 @@ export function createDiagnostics(ctx: Context) {
       return parsed;
     },
   };
+  return diagnostics;
 }

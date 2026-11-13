@@ -15,6 +15,7 @@ import { z } from 'zod';
 import type { HostPort } from './service.js';
 import type { GitBranches } from '../shared/model.js';
 import { createDiagnostics } from './diagnostics.js';
+import { createSessionMaintenance } from './session-maintenance.js';
 import { AttachmentId, type AttachmentStore, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import { todoImageSchema, todoAttachmentSchema, MAX_TODO_ATTACHMENT_BYTES } from '../shared/todo.js';
 const titleProjection = z.object({ title: z.string() });
@@ -48,8 +49,9 @@ export function createHost(ctx: Context): HostPort {
   // updatedAt 仅随用户消息变化；标题缓存必须同时跟踪官方投影水位。
   // 没有投影时重新折叠，避免把手工改名永久留在旧缓存中。
   const titleCache = new Map<string, { stamp: string; title: string }>();
+  const maintenance = createSessionMaintenance(ctx);
   return {
-    ...createDiagnostics(ctx),
+    ...createDiagnostics(ctx, maintenance),
     async saveTodoAttachment(data, mediaType, name) {
       const store = ctx.get('attachments') as AttachmentStore | undefined;
       if (!store) throw new WorkbaseError('unsupported', '宿主未启用附件服务');
@@ -178,13 +180,8 @@ export function createHost(ctx: Context): HostPort {
       titleCache.delete(id);
     },
     async deleteSession(id) {
-      // dsh-archive-manager overlay 扩展同一个 registry；沿用其持久化屏障、
-      // SUBAGENT 级联、spill/转录清理与 api-session/removed 通知，避免双份删除实现。
-      const registry = ctx.workspaceRegistry as unknown as { deleteSession?(id: string): Promise<{ deleted: boolean }> };
-      if (typeof registry.deleteSession !== 'function')
-        throw new WorkbaseError('unsupported', '请先安装并启用 dsh-archive-manager 归档管理插件，再删除会话');
-      const result = await registry.deleteSession(id);
-      if (result?.deleted !== true) throw new WorkbaseError('delete-failed', '宿主未确认会话删除，请刷新后重试');
+      if (!await maintenance.deleteSession(id))
+        throw new WorkbaseError('delete-failed', '会话状态已变化，请刷新后重试');
       titleCache.delete(id);
     },
     async readSession(sessionId, signal) {

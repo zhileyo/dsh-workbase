@@ -289,7 +289,7 @@ export class WorkbaseService {
         eligible.push(item);
       }
       if (!eligible.length) return { succeeded: [], skipped, failures: [] };
-      if (!report.repair[input.kind]) throw new WorkbaseError('unsupported', '请先安装并启用 dsh-archive-manager 归档管理插件');
+      if (!report.repair[input.kind]) throw new WorkbaseError('unsupported', '宿主缺少诊断修复所需的底层能力，请更新宿主');
       signal.throwIfAborted();
       // 下游共享工作区队列会再次核验活动状态、父子关系；缓存重建还校验生命周期见证。
       // 请求发出后即使前端取消也保留实际结果，避免将已完成的物理清理报告为取消。

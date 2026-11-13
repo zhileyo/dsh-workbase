@@ -35,14 +35,14 @@ test('永久删除检查归属与运行状态，失败保留标记，成功清�
   assert.match(JSON.stringify(await call()), /只读/);
 });
 
-test('宿主删除复用归档管理插件能力，缺失时明确报错', async () => {
+test('宿主删除不调用外部插件扩展，底层能力缺失时拒绝', async () => {
   const deleted: string[] = [];
   const host = createHost({ workspaceRegistry: { deleteSession: async (id: string) => { deleted.push(id); return { deleted: true }; } } } as unknown as Context);
   assert.equal(typeof host.deleteSession, 'function');
-  await host.deleteSession!('s');
-  assert.deepEqual(deleted, ['s']);
+  await assert.rejects(host.deleteSession!('s'), /底层能力/);
+  assert.deepEqual(deleted, []);
   const missing = createHost({ workspaceRegistry: {} } as unknown as Context);
-  await assert.rejects(missing.deleteSession!('s'), /归档管理/);
+  await assert.rejects(missing.deleteSession!('s'), /底层能力/);
 });
 
 test('菜单桥接选择模型须经所有者、项目归属与目录可用性校验', async () => {

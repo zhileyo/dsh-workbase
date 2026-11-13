@@ -128,7 +128,7 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
     if (kind !== 'cache') setConfirmation({ kind, items });
     else void repair(kind, items);
   };
-  const unsupported = '请安装并启用 dsh-archive-manager 归档管理插件以执行修复';
+  const unsupported = '宿主缺少诊断修复所需的底层能力，请更新宿主';
   const entries: StatEntry[] = report.issues.map(issue => {
     const groupId = issue.projectId ?? `unbound:${issue.path}`;
     return {
