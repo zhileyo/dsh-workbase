@@ -88,6 +88,9 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     return () => { mounted.current = false; request.current?.abort(); unsubscribe(); clearInterval(interval); window.removeEventListener('focus', refresh); observer.disconnect(); };
   }, [api, load]);
   useEffect(() => {
+    if (snapshot) memory.theme = snapshot.preferences.theme;
+  }, [snapshot, memory]);
+  useEffect(() => {
     if (!notice) return;
     const duration = notice.undo ? Math.max(0, notice.undo.expiresAt - Date.now())
       : notice.tone === 'success' ? 3500 : Math.min(10000, Math.max(5000, notice.message.length * 120));
@@ -127,10 +130,11 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
   const navigate = (projectId: string | null) => { void mutate({ op: 'preferences', patch: { selectedProject: projectId } }); };
   const selected = snapshot?.projects.find(p => p.projectId === snapshot.preferences.selectedProject);
   const close = () => { setDialog(null); setThemePreview(null); };
-  const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? 'follow';
+  // 只缓存服务端确认的主题，不缓存设置预览或明暗状态。
+  const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? memory.theme ?? 'follow';
   const lastActivity = Math.max(0, ...snapshot?.projects.map(p => p.updatedAt) ?? []);
   return <div className={`wb ${chosenTheme === 'warm' ? 'c' : 'a'} ${chosenTheme} ${dark ? 'dark' : 'light'}`} data-style={chosenTheme === 'follow' ? 'dsh' : chosenTheme} data-theme={chosenTheme} data-dark={dark} style={themeStyle(chosenTheme, dark)}>
-    <header className="wb-header app-header">
+    <header className="wb-header app-header" style={!snapshot && !memory.theme ? { visibility: 'hidden' } : undefined}>
       <Brand/>
       <Search snapshot={snapshot} api={api} memory={memory} mutate={mutate} notify={notify}/>
       {snapshot && <button type="button" className="wb-sync sync flat" disabled={busy} title={`最近同步 ${dateText(snapshot.syncedAt)} · 点击刷新`} onClick={() => { if (!busy) void load().catch(() => {}); }}><i className="sync-dot"/><span>{error ? '同步中断' : '已同步'}</span>{lastActivity > 0 && <span className="header-activity">最近活动 · {dateText(lastActivity)}</span>}</button>}

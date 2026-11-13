@@ -80,6 +80,7 @@ export function apply(ctx: Context) {
   const acceptSnapshot = (snapshot: Snapshot) => {
     if (stopped || snapshot.revision < revision) return false;
     revision = snapshot.revision;
+    memory.theme = snapshot.preferences.theme;
     if (automaticChoice === undefined) {
       automaticChoice = snapshot.preferences.pluginAutoUpdate === true;
       startAutomaticUpdate();

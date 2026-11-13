@@ -10,6 +10,8 @@
 
 启用错误修复后类型检查、构建通过，客户端743093字符；本地0.3.1包包含6项白名单文件，官方desktop CLI remove/add与桌面重启退出0。上一轮742807字符产物虽安装成功，却存在FiberState运行时导入错误，本轮已移除。未自动添加或启用实验套件，未执行测试、真实正文命中或套件启停界面验收；安装成功不代表正文搜索已验收。未提交或推送。
 
+启动主题（2026-11-12）：`UiMemory`在已有`dsh-workbase-ui-v2`键中保存服务端确认的主题，入口接受快照时同步，根组件首帧直接复用。无有效缓存时只显示既有中性骨架，顶栏保留布局但暂不可见；设置预览不持久化，明暗仍读取和订阅宿主属性。类型检查及4个相关文件19项用例通过；首次安装、存储受限及跨设备改主题仍以首次返回的服务端设置为准，未做真实启动视觉验收。
+
 Forge方案恢复（2026-11-12）：按用户最终要求恢复自实现前流程，官方 `dsh-experimental-forge-bundle` 启用并挂载 forgePanel 时显示分支与工作树，禁用或卸载时隐藏，持续探测双向启停。工作树通过官方 `forgePanel.requestWorktree` 登记，首消息入队后由 Forge 在回合开始前创建；已移除工作台工作树创建模块、旁置回执写入、自建降级及新增RPC。项目分支沿用原有只读Git查询；历史自建目录和代码不作物理删除，会话清理和诊断的独立实现保留。下方宿主优先工作树实现与其验证记录属于本次回退前状态。
 
 恢复后验证与安装：`npm run typecheck`、5个相关测试文件的34项用例、构建通过；客户端735640字符，SHA-256为`4aa107ab61b9faf99333cd90a1c05408eedf50dc3f733b2a482d05587e0df6a6`，服务端为`a06ae70d42454699c0d20c6363b77d7fbdd2f65c7a04ee5baa65bddfbb031e74`。当前0.3.1包6项白名单与指定敏感模式扫描通过，SHA-256为`148e02b27743d620ed92d5a3387035f56e6b90aa14993821f4f8e605c8c6698b`。官方desktop CLI remove/add安装后正常重启，主83132／宿主83167运行；`npm run host:check -- --online`退出0，安装文件一致，检查脚本新增官方Forge方法指纹基线。未执行真实套件启停、工作树创建或浏览器视觉验收；未提交或推送。
@@ -390,6 +392,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 **证据**：实际`0.2.2-rc.2`应用包中实验套件README与cordis.patch.yml声明`optional-session-search`隔离`sessionQuery`，索引子节点为`optional-session-query-sqlite`，工具子节点为`optional-tool-session-query`。本地`npm run typecheck && npm run build`退出0，客户端742807字符；`npm pack --ignore-scripts --pack-destination /tmp --json`输出6项白名单文件；官方desktop CLI remove/add及`open -a "DeepSeek Harness"`退出0。
 
 **遗留**：未自动安装或启用实验套件，未执行测试、真实正文命中或插件启停界面验收；官方实验组行标识及公开服务合同发生变化时需按兼容流程更新，未知结构明确提示不可用，不使用主索引兜底。
+
+### 2026-11-12 · 修复启动时默认蓝色主题闪现
+
+**背景**：根组件首帧快照为null，原主题表达式直接回退follow；异步设置返回后才应用用户主题，导致启动闪色。
+
+**决策**：在既有界面记忆键中缓存已确认主题，并由入口快照接收和根组件已接受快照同步；首帧先读缓存。未缓存时隐藏顶栏但保留占位，继续使用中性骨架，避免新建一套加载样式。缓存不包含设置预览和明暗状态，服务端设置保持权威。
+
+**证据**：`npx tsx --test test/loading.test.ts`修改前新增3项失败，修改后`npx tsx --test test/loading.test.ts test/theme.test.ts test/client-launch.test.ts test/client-entry.test.ts`19项通过；`npm run typecheck`通过。`Workbase.tsx`首帧主题回退、`UiMemory.theme`持久化和`entry.tsx`快照接收可复现路径。
+
+**遗留**：未执行桌面启动逐帧录制或浏览器视觉验收；本机缓存与其他设备更新的主题可能不同，首次服务端快照返回后正常同步。安装结果在当前状态补记，未提交或推送。
 
 ### 2026-11-12 · 按官方 Forge 套件启停恢复工作树流程
 

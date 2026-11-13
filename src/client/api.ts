@@ -1,6 +1,6 @@
 import type { Command } from '../shared/commands.js';
 import { RPC_CHANNEL, RPC_ENDPOINT } from '../shared/commands.js';
-import type { Snapshot } from '../shared/model.js';
+import { preferencesSchema, type Preferences, type Snapshot } from '../shared/model.js';
 import type { ReactNode } from 'react';
 import type { DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { Todo } from '../shared/model.js';
@@ -70,6 +70,7 @@ export interface DetailMemory {
 export class UiMemory {
   readonly details = new Map<string, DetailMemory>();
   private values = { homeScroll: 0, search: '' };
+  private savedTheme: Preferences['theme'] | null = null;
   composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
     nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeDraft: null as DraftSnapshot | null, pending: null as null | {
     projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string;
@@ -89,6 +90,8 @@ export class UiMemory {
         }
       }
       const saved = JSON.parse(raw ?? 'null');
+      const theme = preferencesSchema.shape.theme.safeParse(saved?.theme);
+      if (theme.success) this.savedTheme = theme.data;
       if (saved && typeof saved.search === 'string' && Number.isFinite(saved.homeScroll)) {
         this.values = { search: saved.search, homeScroll: saved.homeScroll };
         if (saved.composer && typeof saved.composer.draft === 'string') this.composer = { ...this.composer, ...saved.composer };
@@ -104,8 +107,14 @@ export class UiMemory {
   set homeScroll(value: number) { this.values.homeScroll = value; this.save(); }
   get search() { return this.values.search; }
   set search(value: string) { this.values.search = value; this.save(); }
+  get theme() { return this.savedTheme; }
+  set theme(value: Preferences['theme'] | null) {
+    if (value === this.savedTheme) return;
+    this.savedTheme = value;
+    this.save();
+  }
   save() {
-    try { this.storage?.setItem('dsh-workbase-ui-v2', JSON.stringify({ ...this.values, composer: this.composer, details: Object.fromEntries(this.details) })); }
+    try { this.storage?.setItem('dsh-workbase-ui-v2', JSON.stringify({ ...this.values, theme: this.savedTheme, composer: this.composer, details: Object.fromEntries(this.details) })); }
     catch { /* 浏览器存储受限时仍保留本次会话草稿。 */ }
   }
   private track(detail: DetailMemory) {
