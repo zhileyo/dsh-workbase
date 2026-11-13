@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { Command } from '../shared/commands.js';
 import type { RestoreArchive, RestoreStatus } from '../shared/restore.js';
 import { DirectoryInput } from './DirectoryInput.js';
+import { errorText, languageTag, statusText } from './i18n.js';
 import { Icon, Picker, usePopup } from './ui.js';
 
 export function ArchiveInput({ value, onChange, archives, disabled, refresh, describedBy }: {
@@ -45,11 +46,11 @@ export function ArchiveInput({ value, onChange, archives, disabled, refresh, des
 export function restoreArchiveLabel(item: RestoreArchive) {
   const id = item.name.match(/([0-9a-f]{8})(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\.tar\.age$/i)?.[1];
   const name = item.name.replace(/\.tar\.age$/, '');
-  return `${item.rollback ? '回滚' : '备份'} · ${new Date(item.modifiedAt).toLocaleString()} · ${id ?? (name.length > 20 ? `${name.slice(0, 16)}…` : name)}`;
+  return `${item.rollback ? '回滚' : '备份'} · ${new Date(item.modifiedAt).toLocaleString(languageTag())} · ${id ?? (name.length > 20 ? `${name.slice(0, 16)}…` : name)}`;
 }
 
 export function RestoreExecutionStatus({ status }: { status?: RestoreStatus }) {
-  return status ? <div className="settings-inline-note" role="status" aria-live="polite"><p>{status.message}</p>
+  return status ? <div className="settings-inline-note" role="status" aria-live="polite"><p>{statusText(status.message)}</p>
     {status.result && <p style={{ overflowWrap: 'anywhere' }}>
       {status.result.mode === 'workbase' ? '回滚副本' : '恢复目录'}：{status.result.path}
     </p>}</div> : <p className="settings-inline-note">正在读取恢复状态…</p>;
@@ -128,8 +129,8 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
       })}>预览恢复</button></div>}
     {preview && <>
       <div className="settings-inline-note" role="status">
-        <p>备份时间：{new Date(preview.createdAt).toLocaleString()} · {preview.files} 个文件 · {(preview.bytes / 1024 ** 2).toFixed(1)} MB</p>
-        <p>{preview.projects} 个项目 · {preview.todos} 个待办。预览有效至 {new Date(preview.expiresAt).toLocaleTimeString()}。</p>
+        <p>{`备份时间：${new Date(preview.createdAt).toLocaleString(languageTag())} · ${preview.files} 个文件 · ${(preview.bytes / 1024 ** 2).toFixed(1)} MB`}</p>
+        <p>{`${preview.projects} 个项目 · ${preview.todos} 个待办。预览有效至 ${new Date(preview.expiresAt).toLocaleTimeString(languageTag())}。`}</p>
       </div>
       <div className="setting-row wb-setting-row"><div><strong>恢复范围</strong></div>
         <Picker label="恢复范围" value={mode} disabled={locked} variant="restore-mode" describedBy={error ? errorId : undefined}
@@ -143,9 +144,9 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
           pickDirectory={pickDirectory} disabled={locked} onPickingChange={onPickingChange} describedBy={error ? errorId : undefined}/>
         <p className="settings-inline-note">在所选目录内新建独立目录。会话、附件、SQLite 和 Profile 文件不会自动激活到当前宿主。</p>
       </> : <p className="wb-warning">将替换工作台的项目关联、待办、标记和偏好。替换前保存加密回滚副本，保留当前备份配置并关闭插件自动更新。</p>}
-      {!!preview.workbaseBlockers.length && <p className="wb-warning">工作台替换不可用：{preview.workbaseBlockers.join('；')}</p>}
+      {!!preview.workbaseBlockers.length && <p className="wb-warning">工作台替换不可用：{preview.workbaseBlockers.map(errorText).join(languageTag() === 'en-US' ? '; ' : '；')}</p>}
       <details><summary>备份覆盖明细（{preview.coverage.length} 项）</summary>
-        {preview.coverage.map(item => <p className="settings-inline-note" key={item.id}>{item.id}：{item.message}</p>)}</details>
+        {preview.coverage.map(item => <p className="settings-inline-note" key={item.id}>{item.id}：{errorText(item.message)}</p>)}</details>
       <div className="setting-row wb-setting-row">
         <button type="button" disabled={locked} onClick={() => void execute({ op: 'restore-discard', token: preview.token })}>取消预览</button>
         <button type="button" className="primary" disabled={locked || (mode === 'directory' ? !directory.trim() : !!preview.workbaseBlockers.length)}
@@ -153,7 +154,7 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
             ...(mode === 'directory' ? { directory: directory.trim() } : {}) })}>开始恢复</button>
       </div>
     </>}
-    {error && <p id={errorId} className="wb-warning" role="alert">{error}</p>}
+    {error && <p id={errorId} className="wb-warning" role="alert">{errorText(error)}</p>}
     {showStatus && <RestoreExecutionStatus status={status}/>}
   </div>;
 }

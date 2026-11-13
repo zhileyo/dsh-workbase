@@ -31,9 +31,15 @@ import { defaultNavigation, type Snapshot, type LaunchCatalog } from '../shared/
 import type { Command } from '../shared/commands.js';
 import css from './styles.css';
 import prototypeCss from './prototype.css';
+import { connectLocale, setLanguage, t, onWorkbaseLocaleChange, type HostLocale } from './i18n.js';
 
 export const inject = ['slots', 'layout', 'uiWorkspace', 'workspaces', 'connection', 'remote', 'remote.pluginManager', 'sessions', 'conversation'];
 export function apply(ctx: Context) {
+  // 语言服务按能力探测，兼容不提供 locale 的宿主；缺失时中文兜底。
+  ctx.inject(['locale'], scope => {
+    const locale = (scope as unknown as { get(name: string): HostLocale }).get('locale');
+    scope.effect(() => connectLocale(locale));
+  });
   let storage: Storage | undefined;
   try { storage = window.localStorage; } catch { /* 隐私模式仍可使用工作台。 */ }
   const memory = new UiMemory(storage);
@@ -81,6 +87,7 @@ export function apply(ctx: Context) {
     if (stopped || snapshot.revision < revision) return false;
     revision = snapshot.revision;
     memory.theme = snapshot.preferences.theme;
+    setLanguage(snapshot.preferences.language ?? 'follow');
     if (automaticChoice === undefined) {
       automaticChoice = snapshot.preferences.pluginAutoUpdate === true;
       startAutomaticUpdate();
@@ -337,7 +344,7 @@ export function apply(ctx: Context) {
         order = before === undefined ? (after === undefined ? 0 : after - 1)
           : after === undefined ? before + 1 : before / 2 + after / 2;
       }
-      const label = navigation.sidebarName;
+      const label = navigation.sidebarName === '项目概览' ? t('项目概览') : navigation.sidebarName;
       if (navigation.sidebarVisible ? previous?.label === label && previous.order === order : !previous) return;
       // 注册/移除也会同步通知插槽订阅，避免自己的通知触发递归注册。
       updating = true;
@@ -355,7 +362,8 @@ export function apply(ctx: Context) {
     updateSidebar = update;
     update();
     const stop = ctx.slots.subscribe?.('sidebar.panellist', update);
-    return () => { updateSidebar = undefined; stop?.(); dispose?.(); };
+    const stopLocale = onWorkbaseLocaleChange(update);
+    return () => { updateSidebar = undefined; stopLocale?.(); stop?.(); dispose?.(); };
   });
   ctx.slots.inject('conversation.header.leading', () => {
     let dispose: (() => void) | undefined;

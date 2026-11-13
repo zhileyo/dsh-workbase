@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { priorityLabels, type Priority } from '../shared/todo.js';
 import { Icon, IconButton, Picker } from './ui.js';
+import { t } from './i18n.js';
 
 export interface TodoToolbarProps {
   draft: string; query: string; priority: Priority | 'all'; busy: boolean; archived: boolean;
@@ -98,9 +99,9 @@ export function TodoToolbar(props: TodoToolbarProps) {
           disabled={blocked || search || props.archived || !props.onFullCreate} onClick={props.onFullCreate}><Icon name="plus"/>完整新建</button>
         {search && <Picker variant="todo-filter" label="筛选优先级" title="筛选优先级"
           disabled={blocked} value={props.priority ?? ''} onChange={value => props.onPriorityChange((value || null) as Priority | 'all')}
-          renderValue={() => props.priority === 'all' ? '全部' : props.priority ? priorityLabels[props.priority] : '未设置'}
+          renderValue={() => props.priority === 'all' ? '全部' : props.priority ? t(priorityLabels[props.priority]) : '未设置'}
           options={[{ value: 'all', label: '全部' }, { value: '', label: '未设置' },
-            ...Object.entries(priorityLabels).map(([value, label]) => ({ value, label }))]}/>}
+            ...Object.entries(priorityLabels).map(([value, label]) => ({ value, label: t(label) }))]}/>}
       </div>
     </form>
     <button type="button" ref={searchButton} className="wb-icon flat todo-search-toggle" disabled={props.busy || submitting}

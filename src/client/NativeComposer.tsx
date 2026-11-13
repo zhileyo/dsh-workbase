@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { errorText, useWorkbaseLocale } from './i18n.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
@@ -104,6 +105,7 @@ export function ComposerModelState({ directory, onState, children }: {
 }
 /** 项目列表用宿主同一 Menu，保留工作台归档与目录可用性限制。 */
 export function ComposerProjectPicker({ projects, value, disabled, onChange }: ComposerProjectProps) {
+  useWorkbaseLocale();
   const { Menu: NativeMenu, IconFolderCloseRegular } = require('@deepseek-ai/dsh-client-ui-primitives') as typeof import('@deepseek-ai/dsh-client-ui-primitives');
   const [open, setOpen] = useState(false);
   const menuClass = `wb-composer-project-menu-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -212,6 +214,7 @@ type MenuRender = PropsRenderSlots<'workbase.command-menu' | 'workbase.model-sel
 /** 只挂菜单及输入服务桥接，不渲染官方输入栏或会话布局。 */
 export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, onModelState, onReady, onState, SessionProvider, renderSlot }:
   ComposerMenuProps & MenuRender & { ctx: Context; memory: UiMemory }) {
+  useWorkbaseLocale();
   const [reference, setReference] = useState<SessionReference | null>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -384,10 +387,10 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
         const drafts = conversation.resolveDraftAttachments(ids);
         if (ids[0] && shell.removeAttachment(ids[0])) conversation.releaseDraftAttachments(drafts);
       }}>{a.name}{a.status === 'uploading' ? ' · 上传中' : a.status === 'error' ? ' · 上传失败' : ''} ×</button>
-      {a.status === 'error' && <button type="button" disabled={disabled} title={a.message} onClick={() => {
+      {a.status === 'error' && <button type="button" disabled={disabled} title={a.message ? errorText(a.message) : undefined} onClick={() => {
         if (reference) (ctx.conversation as ConversationController).retryFileUpload(reference.sessionId, a.id as DraftAttachmentId);
       }}>重试上传</button>}
       </span>)}</span>}
-    {error && <span role="alert" className="wb-warning">{error}<button type="button" onClick={() => setRetry(n => n + 1)}>重试</button></span>}
+    {error && <span role="alert" className="wb-warning">{errorText(error)}<button type="button" onClick={() => setRetry(n => n + 1)}>重试</button></span>}
   </>;
 }

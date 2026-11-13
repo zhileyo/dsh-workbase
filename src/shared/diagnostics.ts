@@ -22,6 +22,8 @@ export interface DiagnosticIssue {
   id: string; kind: DiagnosticKind; title: string; detail: string;
   projectId: string | null; projectTitle: string; path: string;
   sessionId?: string; identity?: string; parentSessionId?: string; sizeBytes?: number;
+  /** 用户会话名称与固定诊断标题分开传递，显示翻译不处理用户数据。 */
+  sessionTitle?: string;
   readOnly?: boolean;
 }
 export interface Diagnosis {

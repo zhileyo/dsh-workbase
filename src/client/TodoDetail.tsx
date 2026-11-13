@@ -1,8 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import type { Project, Todo } from '../shared/model.js';
+import type { LaunchCatalog, Project, Todo } from '../shared/model.js';
 import { MAX_TODO_ATTACHMENT_BYTES, MAX_TODO_ATTACHMENTS, todoAttachments, priorityLabels, type Priority, type TodoImage, type TodoAttachment } from '../shared/todo.js';
 import type { ClientPort } from './api.js';
 import { dateText, Icon, IconButton, Menu, Modal, Picker, preventImeSubmit } from './ui.js';
+import { errorText, presetText, t } from './i18n.js';
 
 export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSave = false }: {
   api: ClientPort; project: Project; initial?: Todo; refresh(): Promise<void>; onClose(): void; closeOnSave?: boolean;
@@ -16,7 +17,7 @@ export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSav
   const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [preset, setPreset] = useState('standard');
-  const [presets, setPresets] = useState([{ id: 'standard', name: '标准模式' }]);
+  const [presets, setPresets] = useState<LaunchCatalog['presets']>([{ id: 'standard', get name() { return t('标准模式'); }, builtIn: true, isDefault: true }]);
   const lock = useRef(false);
   const [deleted, setDeleted] = useState(false);
   const latest = todo && project.todos.find(t => t.id === todo.id);
@@ -29,12 +30,14 @@ export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSav
   useEffect(() => {
     const controller = new AbortController();
     api.call({ op: 'launch-catalog' }, controller.signal).then(value => {
-      const items = (value as { presets: { id: string; name: string }[] }).presets;
+      const items = (value as LaunchCatalog).presets;
       if (controller.signal.aborted || !items.length) return;
       setPresets(items); setPreset(current => items.some(p => p.id === current) ? current : items[0]!.id);
     }).catch(() => {});
     return () => controller.abort();
   }, [api]);
+  const selectedPreset = presets.find(p => p.id === preset);
+  const presetName = selectedPreset ? presetText(selectedPreset).name : preset;
   const writable = !project.archived && !deleted;
   const dirty = !todo || title.trim() !== todo.title || note !== todo.note || priority !== todo.priority || pending.length > 0;
   const work = async (run: () => Promise<void>) => {
@@ -106,7 +109,7 @@ export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSav
           {project.archived && <span>项目已归档 · 只读</span>}</div>
       </div>
       <div className="todo-detail-body">
-      {error && <p id={`${id}-error`} className="wb-warning" role="alert">{error}</p>}
+      {error && <p id={`${id}-error`} className="wb-warning" role="alert">{errorText(error)}</p>}
       {conflict && <div id={`${id}-conflict`} className="wb-warning" role="alert">待办已被其他操作修改或删除，编辑内容仍保留。
         {latest && <button type="button" disabled={busy} onClick={() => { setTodo(latest); setDeleted(false); setError(''); }}>使用最新版本继续保存</button>}
       </div>}
@@ -117,7 +120,7 @@ export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSav
       <div className="todo-priority-field"><span>优先级</span><Picker variant="todo-priority" label="待办优先级" value={priority ?? ''} disabled={busy || !writable} describedBy={describedBy}
         onChange={value => setPriority((value || null) as Priority)}
         options={[{ value: '', label: <><i className="todo-priority-dot"/>未设置</> },
-          ...Object.entries(priorityLabels).map(([value, text]) => ({ value, label: <><i className={`todo-priority-dot ${value}`}/>{text}</> }))]}/></div>
+          ...Object.entries(priorityLabels).map(([value, text]) => ({ value, label: <><i className={`todo-priority-dot ${value}`}/>{t(text)}</> }))]}/></div>
       </div>
       </section>
       <section className="todo-detail-section">
@@ -147,8 +150,8 @@ export function TodoDetail({ api, project, initial, refresh, onClose, closeOnSav
       </div>
       <footer><span className="todo-save-state" role="status">{uploading ? `正在上传 ${pending.length} 个附件…` : busy ? '处理中…' : pending.length ? `${pending.length} 个附件待上传` : dirty ? '有未保存修改' : '已保存'}</span>
         {writable && <div className="todo-primary-actions"><div className="todo-session-action">
-          <Menu icon="down" className="todo-mode-button" label={`待办会话模式：${presets.find(p => p.id === preset)?.name ?? preset}`} disabled={busy}
-            heading="会话模式" note="填入会话草稿，由你发送。" items={presets.map(p => ({ label: p.name, checked: preset === p.id, action: () => setPreset(p.id) }))}/>
+          <Menu icon="down" className="todo-mode-button" label={`待办会话模式：${presetName}`} disabled={busy}
+            heading="会话模式" note="填入会话草稿，由你发送。" items={presets.map(p => ({ label: presetText(p).name, checked: preset === p.id, action: () => setPreset(p.id) }))}/>
           <button className="todo-session-start" type="button" disabled={busy || conflict || pending.length > 0 || !api.openTodoSession || !title.trim()} onClick={() => void work(async () => {
             const next = dirty ? await save() : todo!;
             await api.openTodoSession!(next, preset); onClose();
@@ -184,6 +187,6 @@ function TodoAttachmentPreview({ api, todo, attachment }: { api: ClientPort; tod
 }, [api, todo.id, attachment.attachmentId, name, retry, requested, image]);
   return <>{image && url && !failed ? <a href={url} download={name}><img src={url} alt={name} loading="lazy" onError={() => setFailed(true)}/></a>
     : <div className="todo-file-preview"><Icon name="file" size={32}/></div>}
-    <span title={name}>{name}</span><small>{fileSize(attachment.bytes)} {error ? <button type="button" title={error} onClick={() => setRetry(value => value + 1)}>重试</button>
+    <span title={name}>{name}</span><small>{fileSize(attachment.bytes)} {error ? <button type="button" title={errorText(error)} onClick={() => setRetry(value => value + 1)}>重试</button>
       : url ? <a href={url} download={name}>下载</a> : <button type="button" disabled={requested || image} onClick={() => setRequested(true)}>{requested || image ? '读取中…' : '下载'}</button>}</small></>;
 }

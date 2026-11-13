@@ -12,13 +12,18 @@ import { initialState } from '../src/shared/model.js';
 import { todoSchema } from '../src/shared/model.js';
 const nativeRequire = createRequire(import.meta.url);
 // 宿主原子组件由运行时 module loader 提供；此处只验证插件接线，避免加载其浏览器依赖。
-const hostRequire = (name: string) => name === '@deepseek-ai/dsh-client-ui-primitives'
-  ? { MarkdownText: ({ text }: { text: string }) => createElement('pre', null, text) } : nativeRequire(name);
+const hostRequire = (name: string) => name.startsWith('@xterm/') ? {}
+  : name === '@deepseek-ai/dsh-client-ui-primitives'
+    ? { settingsTextField: (field: string) => ({ field }),
+      MarkdownText: ({ text }: { text: string }) => createElement('pre', null, text) } : nativeRequire(name);
+const entryExternal = ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*', '@xterm/*'];
+// 未提供的可选宿主服务保持不可用；终端显示层由独立组件测试负责。
+const optionalServices = { inject() {} };
 
 test('待办会话草稿沿用原生输入，打开前不释放引用，界面接管后释放且从不提交消息', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'], loader: { '.css': 'text' },
+    jsx: 'automatic', write: false, external: entryExternal, loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
   runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error });
@@ -26,6 +31,7 @@ test('待办会话草稿沿用原生输入，打开前不释放引用，界面�
   const events: string[] = [], commands: any[] = [];
   let count = 1, notify = () => {}, releases = 0, draft = '';
   module.exports.apply({
+    ...optionalServices,
     connection: { rpc: { call: async (_channel: string, _endpoint: string, command: any) => {
       commands.push(command); return { ok: true, value: { sessionId: 'session' } };
     } } }, effect() {},
@@ -57,7 +63,7 @@ test('待办会话草稿沿用原生输入，打开前不释放引用，界面�
 test('快捷模型插槽复用官方注入、语言和标签子插槽，热替换及卸载不残留', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
@@ -71,6 +77,7 @@ test('快捷模型插槽复用官方注入、语言和标签子插槽，热替�
     inject: (id: string) => { assert.equal(id, 's'); return { directory, select }; },
     component: () => createElement('button', { 'aria-label': '官方模型选择器' }) };
   module.exports.apply({
+    ...optionalServices,
     connection: { rpc: {} }, effect() {}, layout: {}, uiWorkspace: {},
     on(name: string, listener: () => void) { if (name === 'slots/changed') changed = listener; return () => { changed = () => {}; }; },
     slots: {
@@ -103,7 +110,7 @@ test('快捷模型插槽复用官方注入、语言和标签子插槽，热替�
 test('启动自动更新等待配置与控制器，后台忙状态可订阅，重连和保存不重复触发', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   for (const [delayedOverlay, enabled] of [[false, true], [true, true], [false, false]]) {
@@ -115,6 +122,7 @@ test('启动自动更新等待配置与控制器，后台忙状态可订阅，�
     let overlay!: () => () => void, reset!: () => void, checks = 0, updates = 0, finish!: () => void;
     let preferences = { ...initialState().preferences, pluginAutoUpdate: enabled === true, pluginUpdateVisible: false };
     module.exports.apply({
+      ...optionalServices,
       connection: { rpc: { async call(_channel: string, _endpoint: string, command: any) {
         if (command.op === 'settings') preferences = { ...preferences, ...command.options };
         return { ok: true, value: { revision: 1, preferences } };
@@ -172,7 +180,7 @@ test('启动自动更新等待配置与控制器，后台忙状态可订阅，�
 test('更新入口声明远程子服务注入，检查可穿过宿主权限边界且卸载取消进度订阅', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const module = { exports: {} as { inject: string[]; apply(context: unknown): void } };
@@ -196,6 +204,7 @@ test('更新入口声明远程子服务注入，检查可穿过宿主权限边�
     },
   };
   module.exports.apply({
+    ...optionalServices,
     remote, connection: { rpc: {} }, effect() {}, layout: {}, uiWorkspace: {},
     slots: {
       inject(_name: string, register: () => () => void) { cleanups.push(register()); },
@@ -229,7 +238,7 @@ test('工作台导航为带说明的纯图标，网格同时处理无会话与�
 test('导航配置即时更新真实插槽，旧快照不能恢复已隐藏入口，卸载后不重新注册', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
@@ -238,6 +247,7 @@ test('导航配置即时更新真实插槽，旧快照不能恢复已隐藏入�
   const cleanups: (() => void)[] = [];
   let preferences = initialState().preferences, revision = 1;
   module.exports.apply({
+    ...optionalServices,
     connection: { rpc: { async call(_channel: string, _endpoint: string, command: any) {
       if (command.op === 'settings') { preferences = { ...preferences, ...command.options }; revision++; }
       return { ok: true, value: command.op === 'snapshot' ? { revision, preferences } : { saved: true } };
@@ -283,7 +293,7 @@ test('导航配置即时更新真实插槽，旧快照不能恢复已隐藏入�
 test('侧栏顺序及倒序前三项按实际入口计算，增减入口动态重排且卸载取消订阅', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
@@ -296,6 +306,7 @@ test('侧栏顺序及倒序前三项按实际入口计算，增减入口动态�
   const add = (id: string, order: number) => { entries.set(id, { options: { name: 'sidebar.panellist', id, order } }); emit(); };
   add('first', 10); add('middle', 20); add('last', 30);
   module.exports.apply({
+    ...optionalServices,
     connection: { rpc: { async call(_channel: string, _endpoint: string, command: any) {
       if (command.op === 'settings') { preferences = { ...preferences, ...command.options }; revision++; }
       return { ok: true, value: command.op === 'snapshot' ? { revision, preferences } : { saved: true } };
@@ -342,7 +353,7 @@ test('侧栏顺序及倒序前三项按实际入口计算，增减入口动态�
 test('会话导航插槽可在无会话时返回工作台，保留当前会话并复用宿主目录选择', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
@@ -351,6 +362,7 @@ test('会话导航插槽可在无会话时返回工作台，保留当前会话�
   const selections: unknown[] = [];
   let sessionChanges = 0, picks = 0;
   module.exports.apply({
+    ...optionalServices,
     connection: { rpc: {} },
     effect() {},
     slots: {
@@ -380,7 +392,7 @@ test('会话导航插槽可在无会话时返回工作台，保留当前会话�
 test('桌面启动偏好只导航一次，等待主插槽且尊重后续导航与卸载', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
+    jsx: 'automatic', write: false, external: entryExternal,
     loader: { '.css': 'text' },
   });
   const settle = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -402,6 +414,7 @@ test('桌面启动偏好只导航一次，等待主插槽且尊重后续导航�
       },
     });
     module.exports.apply({
+      ...optionalServices,
       connection: { rpc: { call: (_channel: string, _endpoint: string, command: { op: string }) => {
         if (command.op === 'backup-startup') {
           backupRequests.push(command.op);
@@ -412,6 +425,8 @@ test('桌面启动偏好只导航一次，等待主插槽且尊重后续导航�
       effect(callback: () => void | (() => void)) { const cleanup = callback(); if (cleanup) cleanups.push(cleanup); },
       on(name: string, callback: () => void) { events.set(name, callback); return () => events.delete(name); },
       slots: {
+        entries: () => [],
+        subscribe: () => () => {},
         inject(name: string, register: () => () => void) {
           const invoke = () => { const cleanup = register(); if (cleanup) cleanups.push(cleanup); };
           if (name === 'main' && delayedMain) registerMain = invoke; else invoke();

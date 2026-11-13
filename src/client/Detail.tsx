@@ -5,6 +5,7 @@ import type { ClientPort, UiMemory } from './api.js';
 import { dateText, folderName, Icon, IconButton, Menu, Picker, Tabs } from './ui.js';
 import { priorityLabels, todoAttachments, type Priority } from '../shared/todo.js';
 import { TodoToolbar } from './TodoToolbar.js';
+import { t } from './i18n.js';
 
 export interface DetailProps {
   project: Project; snapshot: Snapshot; api: ClientPort; memory: UiMemory; busy: boolean;
@@ -86,7 +87,7 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
       </button>
       <div className="wb-todo-body todo-copy">
         <button type="button" className="wb-todo-title todo-title wb-ellipsis" disabled={busy} title={p.archived ? `${t.title}（项目已归档，仅可查看）` : t.title} onClick={() => edit(t)}>{t.title}</button>
-        <div className="todo-meta-line">{t.priority && <span className={`todo-priority ${t.priority}`}>{priorityLabels[t.priority]}优先级</span>}
+        <div className="todo-meta-line">{t.priority && <span className={`todo-priority ${t.priority}`}>{priorityLabels[t.priority] === '高' ? '高优先级' : priorityLabels[t.priority] === '中' ? '中优先级' : '低优先级'}</span>}
           <div className="todo-meta" title={`${t.creator === 'agent' ? 'Agent' : '用户'} 创建 · ${dateText(t.updatedAt)}`}>{t.creator === 'agent' ? 'Agent' : '用户'} 创建 · {dateText(t.updatedAt)}</div>
           {todoAttachments(t).length > 0 && <span className="todo-attachment-count" role="img" aria-label={`${todoAttachments(t).length} 个附件`} title={`${todoAttachments(t).length} 个附件`}><Icon name="paperclip" size={12}/><span aria-hidden="true">{todoAttachments(t).length}<span className="todo-attachment-unit"> 个附件</span></span></span>}</div>
       </div>
@@ -149,7 +150,7 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
                 { label: '会话预览', action: () => showSession(s) },
                 { label: s.archived ? '恢复会话' : '归档会话', action: () => { if (s.archived) void run(() => api.archiveSession(s.sessionId, false), '会话已恢复'); else if (!s.running) archive(s); } },
                 { label: '永久删除会话', action: () => { if (s.running) notify('请先停止运行中的会话，再永久删除'); else deleteSession?.(s); }, danger: true },
-              ].filter(item => !(s.running && item.label === '归档会话'))}/>
+              ].filter(item => !(s.running && item.label === t('归档会话')))}/>
             </article>;
           })}
           {!sessions.length && <div className="wb-empty empty"><Icon name="message-circle"/><h3>{prefs.sessionFilter === 'favorite' ? '暂无收藏会话' : '暂无会话'}</h3><p>使用上方「新建会话」开始推进项目。</p></div>}

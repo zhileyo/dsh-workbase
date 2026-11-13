@@ -4,6 +4,7 @@ import type { ClientPort, ComposerBridge, UiMemory } from './api.js';
 import { Icon, Menu, Picker } from './ui.js';
 import { BranchBar } from './BranchBar.js';
 import { launchMessage, submitNativeMessage } from './launch.js';
+import { errorText, presetText } from './i18n.js';
 
 /** 优先读 items 以保留目录身份；同批 files 仅作回退，避免重复添加。 */
 export function composerTransferFiles(data: DataTransfer) {
@@ -185,7 +186,7 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
           : <Picker kind="project" label="会话项目" value={projectId} disabled={editingLocked} onChange={setProject}
           options={snapshot.projects.length ? snapshot.projects.map(p => ({ value: p.projectId, label: p.title, disabled: !p.available || p.archived })) : [{ value: '', label: '暂无可用项目', disabled: true }]}/>}
         <Picker kind="mode" label="Agent 模式" value={preset} disabled={!catalog || editingLocked} onChange={setPreset}
-          options={catalog?.presets.filter(p => !p.broken).map(p => ({ value: p.id, label: p.name, description: p.description })) ?? [{ value: '', label: '读取模式…' }]}/>
+          options={catalog?.presets.filter(p => !p.broken).map(p => { const text = presetText(p); return { value: p.id, label: text.name, description: text.description }; }) ?? [{ value: '', label: '读取模式…' }]}/>
       </div>
       <div className="composer-trailing">
       {api.renderComposerMenu ? <div className="wb-composer-model" ref={setModelTarget} aria-label="会话模型"/>
@@ -196,8 +197,8 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
       </div>
     </div>
     {!project?.available && projectId && <p className="wb-warning">所选项目目录不可用，请选择可用项目。</p>}
-    {catalog?.failures.map(f => <p className="wb-help" key={f.name}>{f.name}：{f.message}</p>)}
-    {error && <p id={errorId} role="alert" className="wb-warning">{error}{!catalog && <button type="button" onClick={() => setAttempt(n => n + 1)}>重新读取</button>}</p>}
+    {catalog?.failures.map(f => <p className="wb-help" key={f.name}>{f.name}：{errorText(f.message)}</p>)}
+    {error && <p id={errorId} role="alert" className="wb-warning">{errorText(error)}{!catalog && <button type="button" onClick={() => setAttempt(n => n + 1)}>重新读取</button>}</p>}
     </div>
     <BranchBar forge={forge} branches={branches} worktree={worktree} branch={branch} busy={busy || nativeBusy} pending={!!pending}
       projectPath={project?.path} onBranch={setBranch} onWorktree={setWorktree}/>

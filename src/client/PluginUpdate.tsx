@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { PluginUpdateController, UpdateItem, UpdateStep } from './plugin-update.js';
+import { errorText, useWorkbaseLocale } from './i18n.js';
 
 export interface UpdateVisibility {
   getSnapshot(): boolean;
@@ -44,6 +45,7 @@ function stepTone(item: UpdateItem, step: UpdateStep, index: number) {
 }
 /** 不覆盖官方 main 面板；在官方工具栏各测量／绘制副本中插入同宽入口。 */
 export function PluginUpdate({ controller, visibility }: { controller: PluginUpdateController; visibility: UpdateVisibility }) {
+  useWorkbaseLocale();
   const { Button, Modal, StateDot, IconDownloadOutlineRegular, IconChevronRightOutlineRegular } = hostUi();
   const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
   const visible = useSyncExternalStore(visibility.subscribe, visibility.getSnapshot, visibility.getSnapshot);
@@ -109,7 +111,7 @@ aria-busy={busy} icon={busy ? <StateDot state="ongoing" size={13}/> : <IconDownl
     <Modal open={state.open} title="更新已安装插件" closeLabel="关闭" className="wb-plugin-update-dialog" contentClassName="wb-plugin-update-content"
       onClose={() => controller.close()} footer={<div className="wb-plugin-update-footer">
         <p className="wb-plugin-update-notice">按顺序更新并保留启用状态；期间插件可能短暂停止，安装失败时会保留或恢复原版本。</p>
-        <div className="wb-plugin-update-actions">{busy ? <><Button variant="outline" onClick={() => controller.close()}>后台{state.phase === 'checking' ? '检查' : '更新'}</Button>
+        <div className="wb-plugin-update-actions">{busy ? <><Button variant="outline" onClick={() => controller.close()}>{state.phase === 'checking' ? '后台检查' : '后台更新'}</Button>
           <Button variant="outline" disabled>{state.phase === 'checking' ? '正在检查…' : '正在更新…'}</Button></>
         : state.phase === 'confirm' ? <><Button variant="outline" onClick={() => controller.close()}>取消</Button>
           <Button variant="primary" onClick={() => { void controller.update(); }}>更新全部（{available}）</Button></>
@@ -123,7 +125,7 @@ aria-busy={busy} icon={busy ? <StateDot state="ongoing" size={13}/> : <IconDownl
             : state.phase === 'confirm' ? '仅更新用户安装的插件，沿用各自的安装源及启用状态。'
             : '仅检查用户安装的插件；本地安装包等不支持在线更新的来源会跳过。'}</p></div>
         </div>
-        {state.error && <p className="wb-plugin-update-error" role="alert">{state.error}</p>}
+        {state.error && <p className="wb-plugin-update-error" role="alert">{errorText(state.error)}</p>}
         <div className="wb-plugin-update-groups">{groups.filter(group => group.items.length).map(group =>
           <section className="wb-plugin-update-group" key={group.id} data-open={expanded === group.id}>
             <button type="button" className="wb-plugin-update-group-heading" aria-expanded={expanded === group.id}
@@ -144,7 +146,7 @@ aria-busy={busy} icon={busy ? <StateDot state="ongoing" size={13}/> : <IconDownl
           <dl className="wb-plugin-update-source"><dt>安装来源</dt>
             <dd title={item.registry ?? item.source ?? '默认安装源'}>{item.registry !== undefined ? registryLabel(item.registry) : item.source?.startsWith('file:') ? '本地安装包' : item.source ?? '默认安装源'}</dd>
           </dl>
-          {['failed', 'unknown', 'restart'].includes(item.status) && <p className="wb-plugin-update-detail">{item.detail}</p>}
+          {['failed', 'unknown', 'restart'].includes(item.status) && <p className="wb-plugin-update-detail">{errorText(item.detail ?? '')}</p>}
           {item.steps.length > 0 && <ol className="wb-plugin-update-steps">{item.steps.map((step, index) => <li key={step}>
             <StateDot state={stepTone(item, step, index)} appearance="step" size={12}/><span>{stepLabels[step]}</span>
           </li>)}</ol>}

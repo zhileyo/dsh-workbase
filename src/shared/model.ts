@@ -57,6 +57,7 @@ const healNavigation = (value: unknown) => {
 const navigationInput = z.preprocess(healNavigation, navigationSchema);
 export const defaultNavigation = () => ({ sidebarName: '项目概览', sidebarVisible: true, headerButtonVisible: true, sidebarPosition: 2 });
 export const preferencesSchema = z.object({
+  language: z.enum(['follow', 'zh', 'en']).default('follow'),
   theme: z.enum(['follow', 'dsh', 'fresh', 'warm', 'violet']),
   view: z.enum(['grid', 'list']), layout: z.enum(['list', 'cards']),
   selectedProject: z.string().nullable(), projectFilter: z.enum(['active', 'archived', 'favorite']),
@@ -94,7 +95,7 @@ export const defaultDetail = () => ({ ratio: 65, group: 'pending' as const, sess
 export const initialState = (): State => ({
   revision: 0, bindings: [], todos: [], worktreeSessions: [], projectMarks: {}, sessionMarks: {},
   preferences: { theme: 'follow', view: 'grid', layout: 'list', selectedProject: null, projectFilter: 'active', detail: {},
-    home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
+    language: 'follow', home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
 });
 export interface HostWorkspace {
   workspaceId: string; path: string; title: string; available: boolean; sessionIds: readonly string[];
@@ -120,7 +121,7 @@ export interface SessionPreview {
   hasEarlier: boolean; messages: SessionPreviewMessage[];
 }
 export interface LaunchCatalog {
-  presets: { id: string; name: string; description?: string; requiresCodingTools?: boolean; isDefault: boolean; broken?: string }[];
+  presets: { id: string; name: string; description?: string; builtIn?: boolean; requiresCodingTools?: boolean; isDefault: boolean; broken?: string }[];
   models: { provider: string; id: string; name: string; providerName: string }[];
   defaultModel: { provider: string; model: string };
   failures: { name: string; message: string }[];

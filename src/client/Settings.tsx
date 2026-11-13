@@ -45,6 +45,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   const [projectTab, setProjectTab] = useState<'global' | 'single'>('global');
   const [backupTab, setBackupTab] = useState<'backup' | 'restore' | 'status'>('backup');
   const [theme, setTheme] = useState(snapshot.preferences.theme);
+  const [language, setLanguage] = useState(snapshot.preferences.language ?? 'follow');
   const [home, setHome] = useState(snapshot.preferences.home);
   const [root, setRoot] = useState(snapshot.preferences.root);
   const [navigation, setNavigation] = useState(snapshot.preferences.navigation);
@@ -77,7 +78,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     e.preventDefault();
     if (busy || picking || restoreBusy) return;
     if (nameInvalid) return;
-    void save({ op: 'settings', theme, permissions: {}, options: { home, root: root.trim(), openOnStartup, agentManageTodos, pluginAutoUpdate, backup: { ...backup, directory: backup.directory.trim() },
+    void save({ op: 'settings', theme, permissions: {}, options: { language, home, root: root.trim(), openOnStartup, agentManageTodos, pluginAutoUpdate, backup: { ...backup, directory: backup.directory.trim() },
       ...(!pluginUpdateBusy ? { pluginUpdateVisible } : {}),
       navigation: { ...navigation, sidebarName: navigation.sidebarName.trim() || snapshot.preferences.navigation.sidebarName } } }).then(ok => { if (ok) onClose(); });
   }}>
@@ -96,13 +97,13 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
             <p className="settings-inline-note">选择后即时预览；保存保留，取消恢复。</p>
           </div>
           <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-layout" aria-labelledby="wb-settings-appearance-tab-layout" hidden={appearanceTab !== 'layout'}>
-          {homeRows.map(([key,label,hint]) => <div key={key}><label className="wb-setting-row setting-row homepage-setting"><div><strong>显示{label}</strong><small>{hint}</small></div>
+          {homeRows.map(([key,label,hint]) => <div key={key}><label className="wb-setting-row setting-row homepage-setting"><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
             <input type="checkbox" aria-label={`显示${label}`} checked={home[key]} disabled={busy} onChange={e => { setHome({ ...home, [key]: e.target.checked }); if (key === 'stats' && !e.target.checked) setAppearanceTab('layout'); }}/>
           </label>{key === 'recent' && <div className="setting-dependent" hidden={!home.recent}><label className="setting-row"><div><strong>最近会话样式</strong><small>关闭统计区域后，恢复你选择的展示样式。</small></div><Picker variant="recent-layout" label="最近会话样式" value={home.stats ? 'buttons' : home.recentStyle} disabled={busy || home.stats} onChange={value => setHome({ ...home, recentStyle: value as 'cards' | 'buttons' })}
             options={[{ value: 'cards', label: '卡片' },{ value: 'buttons', label: '按钮' }]}/></label>{home.stats && <p className="settings-inline-note">统计区域开启时使用按钮样式，与统计卡共同展示。</p>}</div>}</div>)}
           <p className="settings-inline-note">隐藏模块后仍可使用顶部搜索与设置。</p></div>
           <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-stats" aria-labelledby="wb-settings-appearance-tab-stats" hidden={!home.stats || appearanceTab !== 'stats'}>
-            {statCardRows.map(([key,label,hint]) => <label className="wb-setting-row setting-row" key={key}><div><strong>显示{label}</strong><small>{hint}</small></div>
+            {statCardRows.map(([key,label,hint]) => <label className="wb-setting-row setting-row" key={key}><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
               <input type="checkbox" aria-label={`显示${label}`} checked={home.statCards[key]} disabled={busy} onChange={e => setHome({ ...home, statCards: { ...home.statCards, [key]: e.target.checked } })}/></label>)}
             <p className="settings-inline-note" role="status">{Object.values(home.statCards).some(Boolean) ? '统计卡可单独隐藏，点击后查看概览对应分类。' : '全部关闭时，首页统计区域不显示。'}</p>
             <label className="wb-setting-row setting-row"><div><strong>时间范围</strong><small>同时影响会话统计卡与项目「近期活跃」数量。</small></div>
@@ -112,6 +113,9 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
         </section>
         <section className="settings-panel" role="tabpanel" id="wb-settings-panel-general" aria-labelledby="wb-settings-tab-general" hidden={tab !== 'general'}>
           <h3>通用配置</h3><p className="dialog-description">统一配置启动页面和工作台入口。</p>
+          <label className="wb-setting-row setting-row"><div><strong>界面语言</strong><small>默认跟随 Harness；仅调整工作台界面，不翻译项目、会话或待办内容。</small></div>
+            <Picker label="界面语言" value={language} disabled={busy} onChange={value => setLanguage(value as Preferences['language'])}
+              options={[{ value: 'follow', label: '跟随平台' }, { value: 'zh', label: '简体中文' }, { value: 'en', label: 'English' }]}/></label>
           <label className="wb-setting-row setting-row"><div><strong>启动打开首页</strong><small>开启后，启动 DSH 桌面端进入工作台首页；保存后下次启动生效。</small></div>
             <input type="checkbox" aria-label="启动打开首页" checked={openOnStartup} disabled={busy} onChange={e => setOpenOnStartup(e.target.checked)}/></label>
           <label className="wb-setting-row setting-row"><div><strong>显示侧栏入口</strong><small>在 DSH 侧边栏显示工作台入口。</small></div>

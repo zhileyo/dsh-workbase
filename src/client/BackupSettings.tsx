@@ -5,6 +5,7 @@ import { DirectoryInput } from './DirectoryInput.js';
 import type { RestoreStatus } from '../shared/restore.js';
 import { RestoreExecutionStatus, RestoreSettings } from './RestoreSettings.js';
 import { Picker } from './ui.js';
+import { errorText, languageTag, statusText } from './i18n.js';
 
 const labels: Record<string, string> = {
   workbase: '工作台状态', workspace: '项目与会话关联', sessions: '会话事件', 'sessions-history': '会话历史文件',
@@ -75,7 +76,7 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
       <small>后台执行，关闭设置后继续。将保存当前备份配置。</small></div>
       <button type="button" className="primary" disabled={disabled || starting || !!running || !value.directory.trim() || !call}
         onClick={() => { void start(); }}>{starting ? '正在启动…' : running ? '备份进行中…' : '立即备份'}</button></div>
-    {error && <p id={`${errorId}-backup`} className="wb-warning" role="alert">{error}</p>}
+    {error && <p id={`${errorId}-backup`} className="wb-warning" role="alert">{errorText(error)}</p>}
     <div className="settings-inline-note" style={{ overflowWrap: 'anywhere' }}>
       <p>密钥位置：{status?.keyPath ?? 'DSH 数据目录下的 backup/identity.txt（默认 ~/.dsh/backup/identity.txt）'}</p>
       <p>首次备份时生成，恢复自动使用当前宿主密钥。密钥不在备份文件内，请单独妥善保管。</p>
@@ -89,17 +90,17 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
     </div>
     <div className="settings-subpanel" role="tabpanel" id="wb-settings-backup-panel-status" aria-labelledby="wb-settings-backup-tab-status" hidden={tab !== 'status'}>
     <h3>备份状态</h3>
-    {error && <p id={`${errorId}-status`} className="wb-warning" role="alert">{error}</p>}
+    {error && <p id={`${errorId}-status`} className="wb-warning" role="alert">{errorText(error)}</p>}
     {!status && <p className="settings-inline-note">{call ? '正在读取备份状态…' : '当前环境无法读取备份状态。'}</p>}
     {status && <div role="status" aria-live="polite" className="settings-inline-note">
-      <p>{status.message}</p>
-      {status.completedAt && <p>最近执行：{new Date(status.completedAt).toLocaleString()}</p>}
+      <p>{statusText(status.message)}</p>
+      {status.completedAt && <p>最近执行：{new Date(status.completedAt).toLocaleString(languageTag())}</p>}
       {status.path && <p style={{ overflowWrap: 'anywhere' }}>保存位置：{status.path}</p>}
     </div>}
     {!!status?.coverage.length && <details><summary>查看覆盖明细（{status.coverage.length} 项）</summary>
       {status.coverage.map(item => <div key={item.id} className="setting-row wb-setting-row"><div>
         <strong>{labels[item.id] ?? (item.id.startsWith('project-skills-') ? `项目技能 ${Number(item.id.slice(15)) + 1}` : item.id)} · {coverageLabel[item.status]}</strong>
-        <small>{item.message}</small></div></div>)}</details>}
+        <small>{errorText(item.message)}</small></div></div>)}</details>}
     <h3>恢复状态</h3>
     {call ? <RestoreExecutionStatus status={restoreStatus}/> : <p className="settings-inline-note">当前环境无法读取恢复状态。</p>}
     </div>

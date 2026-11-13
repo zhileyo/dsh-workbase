@@ -11,6 +11,7 @@ import { dateText, Icon, IconButton, Modal, preventImeSubmit } from './ui.js';
 import { DirectoryInput } from './DirectoryInput.js';
 import { Brand } from './Brand.js';
 import { TodoDetail } from './TodoDetail.js';
+import { errorText, languageTag, useWorkbaseLocale } from './i18n.js';
 
 type DialogState = { kind: 'rename'; project: Project }
   | { kind: 'archive'; session: HostSession } | { kind: 'rename-session'; session: HostSession; projectId: string }
@@ -38,6 +39,7 @@ function savedMessage(command: Command): string {
 const noUpdates = () => false;
 const subscribeNoUpdates = () => () => {};
 export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory }) {
+  useWorkbaseLocale();
   const pluginUpdateBusy = useSyncExternalStore(
     api.pluginUpdateBusy?.subscribe ?? subscribeNoUpdates,
     api.pluginUpdateBusy?.getSnapshot ?? noUpdates,
@@ -133,7 +135,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
   // 只缓存服务端确认的主题，不缓存设置预览或明暗状态。
   const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? memory.theme ?? 'follow';
   const lastActivity = Math.max(0, ...snapshot?.projects.map(p => p.updatedAt) ?? []);
-  return <div className={`wb ${chosenTheme === 'warm' ? 'c' : 'a'} ${chosenTheme} ${dark ? 'dark' : 'light'}`} data-style={chosenTheme === 'follow' ? 'dsh' : chosenTheme} data-theme={chosenTheme} data-dark={dark} style={themeStyle(chosenTheme, dark)}>
+  return <div lang={languageTag()} className={`wb ${chosenTheme === 'warm' ? 'c' : 'a'} ${chosenTheme} ${dark ? 'dark' : 'light'}`} data-style={chosenTheme === 'follow' ? 'dsh' : chosenTheme} data-theme={chosenTheme} data-dark={dark} style={themeStyle(chosenTheme, dark)}>
     <header className="wb-header app-header" style={!snapshot && !memory.theme ? { visibility: 'hidden' } : undefined}>
       <Brand/>
       <Search snapshot={snapshot} api={api} memory={memory} mutate={mutate} notify={notify}/>
@@ -142,8 +144,8 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
       <IconButton name="settings" label="工作台设置" disabled={!snapshot || busy} onClick={() => setDialog({ kind: 'settings' })}/>
       </div>
     </header>
-    {error && <div className="wb-feedback wb-error banner" role="alert"><Icon name="alert"/><span className="banner-body">{error}{snapshot ? ` · 数据可能不是最新 · 上次同步 ${dateText(snapshot.syncedAt)}` : ''}</span><button type="button" onClick={() => void load().catch(() => {})} disabled={busy}>重试</button><IconButton name="close" label="关闭错误提示" onClick={() => setError('')}/></div>}
-    {notice && <div className="wb-toast toast" data-tone={notice.tone} role="status" aria-live="polite" aria-atomic="true"><Icon name={notice.tone === 'success' ? 'check' : 'info'}/><span className="toast-message">{notice.message}</span>{notice.undo && <button type="button" disabled={busy} onClick={() => { if (notice.undo) void mutate({ op: 'restore-deleted-todo', projectId: notice.undo.projectId, token: notice.undo.token }); }}>撤销</button>}<button type="button" className="toast-dismiss" aria-label="关闭提示" title="关闭提示" onClick={() => setNotice(null)}><Icon name="close" size={14}/></button></div>}
+    {error && <div className="wb-feedback wb-error banner" role="alert"><Icon name="alert"/><span className="banner-body">{errorText(error)}{snapshot ? ` · 数据可能不是最新 · 上次同步 ${dateText(snapshot.syncedAt)}` : ''}</span><button type="button" onClick={() => void load().catch(() => {})} disabled={busy}>重试</button><IconButton name="close" label="关闭错误提示" onClick={() => setError('')}/></div>}
+    {notice && <div className="wb-toast toast" data-tone={notice.tone} role="status" aria-live="polite" aria-atomic="true"><Icon name={notice.tone === 'success' ? 'check' : 'info'}/><span className="toast-message">{errorText(notice.message)}</span>{notice.undo && <button type="button" disabled={busy} onClick={() => { if (notice.undo) void mutate({ op: 'restore-deleted-todo', projectId: notice.undo.projectId, token: notice.undo.token }); }}>撤销</button>}<button type="button" className="toast-dismiss" aria-label="关闭提示" title="关闭提示" onClick={() => setNotice(null)}><Icon name="close" size={14}/></button></div>}
     {busy && <span className="wb-saving" role="status">保存中…</span>}
     {!snapshot && (error ? <div className="wb-empty" aria-busy={!error}>{error ? '暂时无法读取项目，请重试。' : '正在读取 Harness 项目…'}</div> : <div className="wb-skeleton" role="status" aria-label="正在读取项目"><span className="sr-only">正在读取 Harness 项目…</span>
       <i className="s-composer"/>
@@ -174,7 +176,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     {dialog && snapshot && (dialog.kind === 'read-session' ?
       <SessionPreviewDialog api={api} project={dialog.project} session={dialog.session} onClose={close}/>
       : <Modal drawer={dialog.kind === 'settings'} title={dialog.kind === 'delete-session' ? '永久删除会话？' : dialog.kind === 'add' ? '添加项目' : dialog.kind === 'settings' ? '工作台设置' : dialog.kind === 'remove-project' ? '移除项目？' : dialog.kind === 'rename-session' ? '重命名会话' : dialog.kind === 'rename' ? '重命名项目' : '归档会话'} busy={busy} onClose={close}>
-      {error && <p id={dialogErrorId} className="wb-warning" role="alert">{error}</p>}
+      {error && <p id={dialogErrorId} className="wb-warning" role="alert">{errorText(error)}</p>}
       {dialog.kind === 'add' ? <AddProject api={api} root={snapshot.preferences.root} busy={busy} save={(path, name) => run(async () => {
         const result = await api.call({ op: 'add-project', path, ...(name ? { name } : {}) }) as { duplicate: boolean };
         return !result.duplicate;
@@ -206,11 +208,11 @@ function SessionPreviewDialog({ api, project, session, onClose }: { api: ClientP
   const preview = state.status === 'ready' ? state.preview : null;
   return <Modal title={preview?.title ?? session.title} className="session-preview-dialog" onClose={onClose}>
     <div className="session-preview-summary">
-      <div className="session-preview-meta"><span className={`session-preview-status${session.running ? ' running' : ''}`}><Icon name={session.archived && !session.running ? 'archive' : 'clock'} size={13}/>{session.running ? '运行中' : session.archived ? '已归档 · 只读' : '未归档'}</span><span title={project.path}><Icon name="folder" size={13}/><span>{preview?.projectName ?? project.title}</span></span><span title={new Date(session.updatedAt).toLocaleString('zh-CN')}><Icon name="clock" size={13}/>更新于 {dateText(session.updatedAt)}</span></div>
+      <div className="session-preview-meta"><span className={`session-preview-status${session.running ? ' running' : ''}`}><Icon name={session.archived && !session.running ? 'archive' : 'clock'} size={13}/>{session.running ? '运行中' : session.archived ? '已归档 · 只读' : '未归档'}</span><span title={project.path}><Icon name="folder" size={13}/><span>{preview?.projectName ?? project.title}</span></span><span title={new Date(session.updatedAt).toLocaleString(languageTag())}><Icon name="clock" size={13}/>更新于 {dateText(session.updatedAt)}</span></div>
     </div>
     <div className="session-preview-body">
     {state.status === 'loading' && <div className="session-preview-empty" role="status"><p>正在读取会话内容…</p></div>}
-    {state.status === 'error' && <div className="session-preview-empty" role="alert"><strong>暂时无法读取会话内容</strong><p className="wb-warning">{state.message}</p><button type="button" onClick={() => { setState({ status: 'loading' }); setRetry(value => value + 1); }}>重新读取</button></div>}
+    {state.status === 'error' && <div className="session-preview-empty" role="alert"><strong>暂时无法读取会话内容</strong><p className="wb-warning">{errorText(state.message)}</p><button type="button" onClick={() => { setState({ status: 'loading' }); setRetry(value => value + 1); }}>重新读取</button></div>}
     {preview && <div className="wb-preview-messages preview-messages" role="log" aria-label="会话内容">
       {preview.hasEarlier && <p className="wb-help preview-earlier">仅显示最近 40 条消息，更早内容请打开会话查看。</p>}
       {!preview.messages.length && <div className="session-preview-empty"><Icon name="message" size={24}/><strong>暂无可预览的正文</strong><p>会话还没有可显示的内容。</p></div>}

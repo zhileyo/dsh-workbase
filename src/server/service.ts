@@ -261,6 +261,7 @@ export class WorkbaseService {
         readOnly: w?.archived ?? false,
         title: issue.kind === 'cache' ? `${session?.title ?? issue.sessionId} · 列表缓存异常`
           : issue.kind === 'empty' ? '空会话' : '孤儿子代理残留',
+        ...(issue.kind === 'cache' ? { sessionTitle: session?.title ?? issue.sessionId } : {}),
         detail: issue.kind === 'cache' ? `会话 ${issue.sessionId} 缺少可用的官方列表缓存`
           : issue.kind === 'empty' ? '未开始对话且没有用户消息的普通冷会话'
           : `子代理 ${issue.sessionId} · 母会话 ${issue.parentSessionId ?? '未知'} 已不存在${issue.sizeBytes === undefined ? ' · 日志大小未知' : ` · 日志约 ${(issue.sizeBytes / 1024).toFixed(1)} KB`}`,
@@ -550,12 +551,13 @@ export class WorkbaseService {
       return { saved: true };
     });
   }
-  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'navigation' | 'openOnStartup' | 'agentManageTodos' | 'pluginUpdateVisible' | 'pluginAutoUpdate'>> & { backup?: Partial<Preferences['backup']> }) {
+  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'language' | 'navigation' | 'openOnStartup' | 'agentManageTodos' | 'pluginUpdateVisible' | 'pluginAutoUpdate'>> & { backup?: Partial<Preferences['backup']> }) {
     return this.change((state, workspaces) => {
       for (const [projectId, allowed] of Object.entries(permissions))
         this.writable(state, workspaces, projectId).agentCanChangeStatus = allowed;
       state.preferences.theme = theme;
       if (options) {
+        if (options.language !== undefined) state.preferences.language = options.language;
         state.preferences.home = { ...options.home };
         state.preferences.root = options.root;
         if (options.openOnStartup !== undefined) state.preferences.openOnStartup = options.openOnStartup;

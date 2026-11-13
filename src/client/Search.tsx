@@ -3,6 +3,7 @@ import type { Command } from '../shared/commands.js';
 import { defaultDetail, type SessionSearch, type Snapshot } from '../shared/model.js';
 import { readSnapshot, type ClientPort, type UiMemory } from './api.js';
 import { Icon, popupIndex, Tabs } from './ui.js';
+import { errorText } from './i18n.js';
 
 export function Search({ snapshot, api, memory, mutate, notify }: {
   snapshot: Snapshot | null; api: ClientPort; memory: UiMemory;
@@ -116,7 +117,7 @@ export function Search({ snapshot, api, memory, mutate, notify }: {
           </button>
         </div>)}
         {searchBody && loading && <p className="wb-help" role="status">正在检索会话正文…</p>}
-        {searchBody && error && <p className="wb-warning" role="alert">标题、项目与待办结果仍可用。{error}<button type="button" onClick={() => setRetry(n => n + 1)}>重试全文检索</button></p>}
+        {searchBody && error && <p className="wb-warning" role="alert">标题、项目与待办结果仍可用。{errorText(error)}<button type="button" onClick={() => setRetry(n => n + 1)}>重试全文检索</button></p>}
         {query && !(searchBody && loading) && !hits.length && <p className="search-placeholder">{searchBody && error ? '当前可搜索范围没有匹配结果' : '没有匹配结果'}</p>}
         {searchBody && remote.hasMore && <p className="wb-help">仅显示前 20 条正文结果，请缩小搜索范围。</p>}
         {sessionKind && !bodyEnabled && snapshot?.sessionSearch?.showDependency && <p className="wb-help">会话正文搜索依赖官方「历史会话搜索」实验套件（@deepseek-ai/dsh-experimental-session-search），需在宿主插件页添加并启用；标题搜索不受影响。</p>}

@@ -146,7 +146,7 @@ export function createHost(ctx: Context): HostPort {
             minimal: ['极简模式', 'Agent 使用终端和图片读取工具，并支持上下文压缩，适合测试和对比其基础表现。'],
             cordis: ['创造模式', '用对话定制 DSH：让 Agent 编写插件，添加新功能或界面；也能组合工具和提示词，创建自己的模式。'],
           } as Record<string, [string, string]>)[p.id] : undefined;
-          return { ...p, name: builtIn?.[0] ?? p.name ?? p.id, description: builtIn?.[1] ?? p.description,
+          return { ...p, name: builtIn?.[0] ?? p.name ?? p.id, description: builtIn?.[1] ?? p.description, builtIn: !!builtIn,
             requiresCodingTools: p.name === undefined && (p.id === 'ptc' || p.id === 'minimal') };
         }),
         models: catalog.groups.flatMap(group => group.models.map(model => ({

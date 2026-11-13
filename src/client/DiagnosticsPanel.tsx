@@ -4,6 +4,7 @@ import { diagnosticRepairResult, type Diagnosis, type DiagnosticCandidate, type 
 import type { ClientPort } from './api.js';
 import { StatsProjectPanel, type StatEntry } from './StatsProjectPanel.js';
 import { Icon, Modal } from './ui.js';
+import { errorText, t } from './i18n.js';
 
 export function fallbackDiagnosis(snapshot: Snapshot): Diagnosis {
   return {
@@ -65,7 +66,7 @@ export function diagnosticEmptyState(report: Diagnosis, kind?: keyof typeof chec
   const incomplete = kinds.flatMap(key => {
     const check = report.checks.find(check => check.kind === key);
     return check?.status === 'ok' ? [] : [`${checkNames[key]}：${check?.status === 'error' ? '检查失败'
-      : check?.status === 'unsupported' ? '能力不可用' : '尚未检查'}${check?.message ? `（${check.message}）` : ''}`];
+      : check?.status === 'unsupported' ? '能力不可用' : '尚未检查'}${check?.message ? `（${errorText(check.message)}）` : ''}`];
   });
   if (incomplete.length) return { title: '检查未完成', detail: incomplete.join('；') };
   return kind ? {
@@ -131,8 +132,11 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
   const unsupported = '宿主缺少诊断修复所需的底层能力，请更新宿主';
   const entries: StatEntry[] = report.issues.map(issue => {
     const groupId = issue.projectId ?? `unbound:${issue.path}`;
+    const title = issue.kind === 'cache'
+      ? issue.sessionTitle === undefined ? issue.title : `${issue.sessionTitle} · ${t('列表缓存异常')}`
+      : t(issue.title);
     return {
-      id: issue.id, title: `${issue.projectTitle} · ${issue.title}`,
+      id: issue.id, title: `${issue.projectTitle} · ${title}`,
       detail: issue.kind === 'directory' ? '目录无法访问'
         : issue.kind === 'cache' ? '列表缓存不可用'
         : issue.kind === 'empty' ? '尚未开始对话'
@@ -155,7 +159,7 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
   const unknownSize = orphanIssues.filter(i => i.sizeBytes === undefined).length;
   const retryItems = feedback ? candidate(report, feedback.kind, feedback.result.failures.map(f => f.sessionId)) : [];
   const emptyState = diagnosticEmptyState(report);
-  const incomplete = emptyState.title === '检查未完成';
+  const incomplete = emptyState.title === t('检查未完成');
   return <>
     <div className="stats-page-header">
       <h3 className="stats-page-heading">项目诊断</h3>
@@ -172,12 +176,12 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
         title={report.repair.orphan ? undefined : unsupported} onClick={() => requestRepair('orphan', orphans)}>清理残留（{orphans.length}）</button>}
     </div>}
     {!!orphanIssues.length && <p className="diagnostic-message">残留日志已知大小约 {(knownSize / 1024).toFixed(1)} KB{unknownSize ? `，另有 ${unknownSize} 项大小未知` : ''}；不包含附件及其他目录占用。</p>}
-    {error && <p className="diagnostic-message" role="alert">{error}</p>}
+    {error && <p className="diagnostic-message" role="alert">{errorText(error)}</p>}
     {progress && <p className="diagnostic-message" role="status">已处理 {progress.done} / {progress.total}</p>}
     {feedback && <div className="diagnostic-feedback" role="status">
       <p>{feedback.kind === 'cache' ? '缓存重建' : feedback.kind === 'empty' ? '空会话删除' : '残留清理'}：成功 {feedback.result.succeeded.length} · 跳过 {feedback.result.skipped.length} · 失败 {feedback.result.failures.length}</p>
       {!!feedback.result.failures.length && <details><summary>失败详情</summary>
-        {feedback.result.failures.map(f => <p key={f.sessionId}>{f.sessionId}：{f.message}</p>)}</details>}
+        {feedback.result.failures.map(f => <p key={f.sessionId}>{f.sessionId}：{errorText(f.message)}</p>)}</details>}
       {!!retryItems.length && <button type="button" disabled={working || busy}
         onClick={() => requestRepair(feedback.kind, retryItems)}>重试失败项（{retryItems.length}）</button>}
     </div>}

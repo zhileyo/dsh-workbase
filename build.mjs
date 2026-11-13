@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { syncPrototypeUi } from './sync-ui.mjs';
+import { clientLocalization } from './localize-ui.mjs';
 await syncPrototypeUi();
 const pkg = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
 await mkdir(new URL('./dist/', import.meta.url), { recursive: true });
@@ -15,6 +16,7 @@ const result = await build({
   target: 'es2022', jsx: 'automatic', minify: true, write: false,
   external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
   loader: { '.css': 'text' },
+  plugins: [clientLocalization],
 });
 const code = result.outputFiles[0].text;
 await writeFile(new URL('./lib/client.js', import.meta.url),

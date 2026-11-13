@@ -8,6 +8,7 @@ const projectId = z.string().min(1).max(200);
 const todoId = z.string().min(1).max(200);
 // 读取旧状态时需要默认值；增量更新不能让 Zod 4 给未提交字段填默认值。
 const preferencesPatchSchema = preferencesSchema.extend({
+  language: preferencesSchema.shape.language.removeDefault(),
   home: preferencesSchema.shape.home.removeDefault(),
   fields: preferencesSchema.shape.fields.removeDefault(),
   root: preferencesSchema.shape.root.removeDefault(),
@@ -46,6 +47,7 @@ export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('preferences'), patch: preferencesPatchSchema }).strict(),
   z.object({ op: z.literal('settings'), theme: preferencesSchema.shape.theme, permissions: z.record(projectId, z.boolean()),
     options: z.object({ home: preferencesSchema.shape.home, root: preferencesSchema.shape.root,
+      language: preferencesSchema.shape.language.removeDefault().optional(),
       openOnStartup: preferencesSchema.shape.openOnStartup.removeDefault().optional(),
       agentManageTodos: preferencesSchema.shape.agentManageTodos.removeDefault().optional(),
       pluginUpdateVisible: preferencesSchema.shape.pluginUpdateVisible.removeDefault().optional(),

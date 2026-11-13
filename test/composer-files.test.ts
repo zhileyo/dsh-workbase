@@ -20,6 +20,7 @@ test('菜单切换effect清理保留旧引用，连续切换仅最后目标交�
   runInNewContext(output.outputFiles[0]!.text, {
     module, exports: module.exports, AbortController,
     require: (id: string) => id === 'react' ? { ...react, useLayoutEffect() {},
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useRef: (current: unknown) => { const i = cursor++; return hooks[i] ??= { current }; },
       useState: (initial: unknown) => { const i = cursor++; return [hooks[i] ??= initial, (value: unknown) => { hooks[i] = value; }]; },
       useEffect: (fn: () => any, deps: unknown[]) => {
@@ -104,6 +105,7 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
   runInNewContext(output.outputFiles[0]!.text, {
     module, exports: module.exports, AbortController,
     require: (id: string) => id === 'react' ? { ...react,
+      useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect: (fn: () => void) => effects.push(fn), useLayoutEffect() {},
       useRef: (current: unknown) => ({ current }),
       useState: (initial: unknown) => {
