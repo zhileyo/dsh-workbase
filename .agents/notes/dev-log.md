@@ -488,6 +488,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-13 · 未知偏好键不再阻断插件启用
+
+**背景**：用户启用 1.0.0 报 `domain 'dsh workbase': stored global does not match its schema ... unrecognized_keys ["extras"]`。`~/.dsh/storages/dsh_workbase.json` 的 `preferences` 里有 `{"extras":{"bulkUpdate":true}}`；仓库历史、已安装产物与 DSH 宿主存储代码里都搜不到 `extras`／`bulkUpdate`，属旧版本或外部写入遗留的键。
+
+**决策**：先就地修数据（备份后删掉该键）解阻塞；再把 `preferencesSchema` 的 `.strict()` 去掉，让宿主读整份 global 时按 zod 默认 strip 丢弃未知偏好键。RPC 侧不跟着放宽：`preferencesPatchSchema` 结尾显式 `.strict()`，客户端多带键仍被拒绝。没有改成 passthrough——未知键不属于本插件，留着只会继续漂移。
+
+**证据**：修数据前 `stateSchema.safeParse` 明确报 `unrecognized_keys ["extras"]`；删键后同一探针对修复后的文件返回 `PARSE_OK`（18 个已知偏好键齐全）。改 schema 后对**带 extras 的原始备份**跑同一探针同样 `PARSE_OK`，即旧数据无需再手工清理也能激活。`npm test` 254 项：249 过、5 红（仍是本机符号链接权限与缺 `sqlite3` 两项环境限制）。`npm run typecheck`、`npm run build` 通过。
+
+**遗留**：其他机器若也有同类遗留键，需修数据或升级到带本修复的版本；本机 desktop profile 已装 1.0.0，要更新到 1.0.1 才带此修复（数据已修，当前即可激活）。
+
 ### 2026-11-13 · 发版文档同步改为同版本幂等
 
 **背景**：1.0.0 推送后 GitHub Actions 的 release 运行失败，npm 仍停在 0.3.1。本地用 `prepare({ nextRelease: { version: '1.0.0' } })` 直接复现：`[sync-docs] ... 未命中「当前源码与本地包版本」`。原因是开发日志的「当前状态」在开发期已先写成 `1.0.0`，发版要写的也是 `1.0.0`，替换后文本不变，插件把「没变化」当成「没命中」抛错，整次发版在 `npm publish` 之前中止。

@@ -78,7 +78,10 @@ export const preferencesSchema = z.object({
     ratio: z.number().min(40).max(70), group: z.enum(['pending', 'done']),
     sessionFilter: z.enum(['active', 'archived', 'favorite']),
   }).strict()),
-}).strict();
+  // 这里不加 .strict()：整份 global 由宿主按本 schema 校验后才会激活插件，
+  // 旧版本或外来写入留下的未知偏好键（实测遇到过 `extras`）会让整个插件启用失败。
+  // 默认的 strip 行为丢弃这些键，RPC 侧仍由 commands.ts 的 preferencesPatchSchema 严格校验。
+});
 export const stateSchema = z.object({
   revision: z.number().int().nonnegative(),
   bindings: z.array(bindingSchema), todos: z.array(todoSchema),

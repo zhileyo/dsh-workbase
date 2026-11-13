@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, stateSchema } from '../src/shared/model.js';
+import { commandSchema } from '../src/shared/commands.js';
 import { WorkbaseService, type HostPort } from '../src/server/service.js';
 
 test('插件更新显示开关持久化，旧设置请求保留选择，写入失败整体回滚', async () => {
@@ -190,3 +191,14 @@ test('全局 Agent 管理开关兼容旧状态，保存和其他偏好补丁互�
   await service.saveSettings('warm', {}, { root: '', home: state.preferences.home });
   assert.equal(state.preferences.agentManageTodos, false);
 });
+
+test('存储里遗留的未知偏好键被丢弃，不会阻断插件激活，RPC 补丁仍然严格', () => {
+  const legacy = structuredClone(initialState()) as any;
+  legacy.preferences.extras = { bulkUpdate: true };
+  const parsed = stateSchema.parse(legacy);
+  assert.equal('extras' in parsed.preferences, false);
+  assert.equal(parsed.preferences.theme, 'follow');
+  // 宽容只针对宿主读取的整份 global；客户端补丁多带键仍要被拒绝。
+  assert.throws(() => commandSchema.parse({ op: 'preferences', patch: { extras: { bulkUpdate: true } } }));
+});
+
