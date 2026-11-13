@@ -61,13 +61,11 @@
 .wb *{box-sizing:border-box}
 .wb.wb .app-header{flex:none;padding-left:max(32px,calc(var(--dsh-frame-leading-clearance,0px) + 12px));-webkit-app-region:drag}
 .wb .app-header :is(button,.global-search,.header-actions){-webkit-app-region:no-drag}
-.wb .wb-sync{padding:0;border:0;background:transparent;min-height:32px}
+.wb .wb-sync{padding:0;border:0;background:transparent}
 /* 52px：底边对齐宿主侧边栏「新会话」按钮上边框。按钮上边框 = topStrip 高度 52px
    （_root 6px padding 被 topStrip -6px margin 抵消，按钮 margin-top 0），Windows 在标题栏之下、
    macOS 在窗口顶部起算，与工作台帧顶部同参考线，因此两平台 header 高度一致为 52px。 */
 .wb.wb .app-header{height:52px;min-height:52px;padding-top:0;padding-bottom:0}
-[data-platform=darwin] .wb .global-search input{height:32px}
-[data-platform=darwin] .wb .global-search kbd{top:6px}
 /* 官方 shell.leading：28px 控件、16px 图标、8px 间距。 */
 [data-platform=darwin] [data-sidebar-collapsed] .wb.wb .app-header{padding-left:max(16px,var(--dsh-frame-leading-clearance,0px))}
 [data-platform=darwin] [data-sidebar-collapsed] .wb .workbase-brand{width:28px;height:28px;gap:0;justify-content:center;transform:translateY(1px)}

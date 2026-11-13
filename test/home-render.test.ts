@@ -24,7 +24,7 @@ function fixture(): Snapshot {
 function render(snapshot: Snapshot) {
   const noop = () => {};
   const props: HomeProps = {
-    snapshot, api: { forgeAvailable: () => false } as unknown as ClientPort, memory: new UiMemory(), busy: false,
+    snapshot, api: {} as ClientPort, memory: new UiMemory(), busy: false,
     mutate: async () => true, navigate: noop, rename: noop, removeProject: noop, notify: noop, refresh: async () => {},
   };
   return renderToStaticMarkup(createElement(Home, props));
@@ -129,12 +129,14 @@ test('统计卡按单卡显隐过滤，全部关闭时整个统计区域不渲�
   s.preferences.home.statCards = { running: true, recent: false, pending: true, diagnostic: false };
   let html = render(s);
   assert.equal((html.match(/class="wb-stat-card stat-card"/g) ?? []).length, 2);
+  assert.match(html, /class="stats-grid" data-count="2"/);
   assert.ok(html.includes('data-stat-tab="running"'));
   assert.ok(!html.includes('data-stat-tab="recent"'));
   assert.ok(!html.includes('data-stat-tab="diagnostic"'));
   s.preferences.home.statDays = 14;
   s.preferences.home.statCards = { running: true, recent: true, pending: true, diagnostic: false };
   html = render(s);
+  assert.match(html, /class="stats-grid" data-count="3"/);
   assert.ok(html.includes('最近 14 天'), '统计时间范围反映到卡片小字');
   s.preferences.home.statCards = { running: false, recent: false, pending: false, diagnostic: false };
   html = render(s);

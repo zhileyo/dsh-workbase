@@ -87,8 +87,8 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
       <div className="wb-todo-body todo-copy">
         <button type="button" className="wb-todo-title todo-title wb-ellipsis" disabled={busy} title={p.archived ? `${t.title}（项目已归档，仅可查看）` : t.title} onClick={() => edit(t)}>{t.title}</button>
         <div className="todo-meta-line">{t.priority && <span className={`todo-priority ${t.priority}`}>{priorityLabels[t.priority]}优先级</span>}
-          <div className="todo-meta">{t.creator === 'agent' ? 'Agent' : '用户'} 创建 · {dateText(t.updatedAt)}</div>
-          {todoAttachments(t).length > 0 && <span className="todo-attachment-count"><Icon name="paperclip" size={12}/>{todoAttachments(t).length} 个附件</span>}</div>
+          <div className="todo-meta" title={`${t.creator === 'agent' ? 'Agent' : '用户'} 创建 · ${dateText(t.updatedAt)}`}>{t.creator === 'agent' ? 'Agent' : '用户'} 创建 · {dateText(t.updatedAt)}</div>
+          {todoAttachments(t).length > 0 && <span className="todo-attachment-count" role="img" aria-label={`${todoAttachments(t).length} 个附件`} title={`${todoAttachments(t).length} 个附件`}><Icon name="paperclip" size={12}/><span aria-hidden="true">{todoAttachments(t).length}<span className="todo-attachment-unit"> 个附件</span></span></span>}</div>
       </div>
       {!p.archived && <IconButton name="trash" label={`删除待办：${t.title}`} className="more todo-delete" disabled={busy} onClick={() => remove(t)}/>}
     </article>) : <div className="wb-empty empty">{filteringTodos ? '没有符合条件的待办。' : done ? '暂无已完成待办。' : '暂无待办，记录下一步或在对话中让 Agent 创建。'}</div>;

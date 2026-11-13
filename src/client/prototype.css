@@ -79,7 +79,7 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 .stats-grid[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
 .stats-grid[data-count="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
 .stats-grid[data-count="5"]{grid-template-columns:repeat(5,minmax(0,1fr))}
-@container workbase-stats (max-width:1139px){.stats-grid:is([data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container workbase-stats (max-width:1139px){.stats-grid:is([data-count="3"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(3,minmax(0,1fr))}}
 @container workbase-stats (max-width:719px){.stats-grid:is([data-count="2"],[data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container workbase-stats (max-width:419px){.stats-grid[data-count]{grid-template-columns:minmax(0,1fr)}}
 :scope .stat-card{position:relative;display:flex;align-items:flex-start;justify-content:flex-start;text-align:left;gap:0;min-width:0;min-height:104px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);white-space:normal}
@@ -126,12 +126,10 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 :scope .diagnostic-list-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex:none;min-height:44px;padding:0 16px 12px;border-bottom:1px solid var(--line)}
 :scope .diagnostic-list-header strong{font-size:14px;font-weight:500;overflow-wrap:anywhere}
 :scope .diagnostic-list-header button{margin-left:auto;flex:none}
-:scope .diagnostic-refresh,:scope .diagnostic-toolbar button,:scope .diagnostic-list-header button,:scope .diagnostic-item button,:scope .diagnostic-feedback button{min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12px;background:var(--panel);color:var(--text);white-space:nowrap}
-:scope .diagnostic-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;font-size:14px}
-:scope .diagnostic-refresh>svg{width:14px;height:14px;flex:none}
-:scope .diagnostic-refresh:hover,:scope .diagnostic-toolbar button:hover,:scope .diagnostic-list-header button:hover,:scope .diagnostic-item button:hover,:scope .diagnostic-feedback button:hover{background:var(--hover)}
+:scope .diagnostic-toolbar button,:scope .diagnostic-list-header button,:scope .diagnostic-item button,:scope .diagnostic-feedback button{min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12px;background:var(--panel);color:var(--text);white-space:nowrap}
+:scope .diagnostic-toolbar button:hover,:scope .diagnostic-list-header button:hover,:scope .diagnostic-item button:hover,:scope .diagnostic-feedback button:hover{background:var(--hover)}
 :scope :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item) button.danger{color:var(--danger-text)}
-:scope .diagnostic-refresh:disabled,:scope :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item,.diagnostic-feedback) button:disabled{opacity:.5;cursor:not-allowed}
+:scope :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item,.diagnostic-feedback) button:disabled{opacity:.5;cursor:not-allowed}
 :scope .diagnostic-item{cursor:default;flex-wrap:wrap;gap:10px}
 :scope .diagnostic-item .stats-item-copy{min-width:140px}
 :scope .diagnostic-message,:scope .diagnostic-feedback{flex:none;font-size:12px;overflow-wrap:anywhere;margin:0 0 12px;color:var(--muted)}
@@ -986,10 +984,10 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .app-header:has(.header-activity){--wb-header-side:max(390px,calc(var(--dsh-frame-leading-clearance,0px) + 40px))}
 :scope .app-header .header-activity{max-width:130px;overflow:hidden;text-overflow:ellipsis}
 :scope .app-header .global-search{position:absolute;left:50%;transform:translateX(-50%);width:min(720px,calc(100% - 2 * var(--wb-header-side)));max-width:none;margin:0;flex:none}
-:scope .app-header .sync{margin-left:auto}
-:scope .app-header .global-search input{height:32px}
-:scope .app-header .global-search kbd{top:6px}
-:scope .app-header .header-actions button{height:32px;min-height:32px;padding-top:0;padding-bottom:0}
+:scope .app-header .sync{margin-left:auto;height:36px;min-height:36px}
+:scope .app-header .global-search input{height:36px;min-height:36px;padding-top:0;padding-bottom:0;line-height:20px}
+:scope .app-header .global-search kbd{top:50%;transform:translateY(-50%)}
+:scope .app-header .header-actions>button{height:36px;min-height:36px;min-width:36px;padding-top:0;padding-bottom:0}
 :scope .workbase-return{height:32px;padding:0 8px;gap:6px;font-size:13px}
 :scope .directory-picker{display:flex;position:relative;width:100%}
 :scope .directory-picker input{width:100%;min-width:0;padding-right:42px;cursor:text}
@@ -1005,7 +1003,7 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .detail-project-info .todo-view-switch{margin-left:auto;height:auto;min-height:0;padding:0;gap:2px;border:0;border-radius:0;background:transparent}
 :scope .detail-project-info .todo-view-switch button{width:var(--icon-target);height:var(--icon-target);min-width:var(--icon-target);min-height:var(--icon-target);padding:7px;border-radius:5px}
 @media(pointer:coarse),(hover:none){:scope .detail-project-info .todo-view-switch{height:46px}:scope .detail-project-info .todo-view-switch button{width:44px;height:44px}}
-@container workbase (max-width:650px){:scope .app-header .global-search{position:relative;left:auto;transform:none;width:auto;flex:1;min-width:0;margin:0}:scope .app-header .sync{display:none}:scope .header-actions .action-label{display:none}:scope .app-header .header-actions button{width:32px;padding:0}}
+@container workbase (max-width:650px){:scope .app-header .global-search{position:relative;left:auto;transform:none;width:auto;flex:1;min-width:0;margin:0}:scope .app-header .sync{display:none}:scope .header-actions .action-label{display:none}:scope .app-header .header-actions>button{width:36px;padding:0}}
 /* 会话预览：轻量信息下方的只读正文列表（角色徽标 + 可选中文本）。 */
 :scope .preview-messages{max-height:46vh;overflow:auto;overflow-wrap:anywhere;border-top:1px solid var(--line);margin-top:16px;padding-top:14px;display:flex;flex-direction:column;gap:16px}
 :scope .preview-message{display:flex;flex-direction:column;gap:4px}
@@ -1204,8 +1202,12 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .todo-priority.high{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
 :scope .todo-priority.medium{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 :scope .todo-image-count{font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
-:scope .todo-meta-line{flex-wrap:wrap;justify-content:flex-start}
-:scope .todo-attachment-count{display:inline-flex;align-items:center;gap:4px;font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+:scope .todo-meta-line{flex-wrap:nowrap;justify-content:flex-start}
+:scope .todo-meta-line .todo-meta{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+:scope .todo-meta-line .todo-priority{white-space:nowrap}
+:scope .todo-copy{container-type:inline-size;container-name:workbase-todo}
+:scope .todo-attachment-count{display:inline-flex;flex:none;align-items:center;gap:4px;font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+@container workbase-todo (max-width:300px){:scope .todo-attachment-unit{display:none}}
 :scope .todo-detail-dialog>.dialog-head{height:72px;min-height:72px;padding:0 24px;border-bottom:1px solid var(--line);margin:0;flex:none}
 :scope .todo-detail-dialog>.dialog-head h2{font-family:var(--font-ui);font-size:20px;font-weight:600}
 :scope .todo-detail-form{display:flex;flex-direction:column;flex:1;min-height:0;gap:0;margin:0}

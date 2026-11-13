@@ -83,7 +83,7 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 .stats-grid[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
 .stats-grid[data-count="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
 .stats-grid[data-count="5"]{grid-template-columns:repeat(5,minmax(0,1fr))}
-@container workbase-stats (max-width:1139px){.stats-grid:is([data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container workbase-stats (max-width:1139px){.stats-grid:is([data-count="3"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(3,minmax(0,1fr))}}
 @container workbase-stats (max-width:719px){.stats-grid:is([data-count="2"],[data-count="3"],[data-count="4"],[data-count="5"],[data-count="6"]){grid-template-columns:repeat(2,minmax(0,1fr))}}
 @container workbase-stats (max-width:419px){.stats-grid[data-count]{grid-template-columns:minmax(0,1fr)}}
 .app .stat-card{position:relative;display:flex;align-items:flex-start;justify-content:flex-start;text-align:left;gap:0;min-width:0;min-height:104px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);white-space:normal}
@@ -130,12 +130,10 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 .app .diagnostic-list-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;flex:none;min-height:44px;padding:0 16px 12px;border-bottom:1px solid var(--line)}
 .app .diagnostic-list-header strong{font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .app .diagnostic-list-header button{margin-left:auto;flex:none}
-.app .diagnostic-refresh,.app .diagnostic-toolbar button,.app .diagnostic-list-header button,.app .diagnostic-item button,.app .diagnostic-feedback button{min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12px;background:var(--panel);color:var(--text);white-space:nowrap}
-.app .diagnostic-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;font-size:14px}
-.app .diagnostic-refresh>svg{width:14px;height:14px;flex:none}
-.app .diagnostic-refresh:hover,.app .diagnostic-toolbar button:hover,.app .diagnostic-list-header button:hover,.app .diagnostic-item button:hover,.app .diagnostic-feedback button:hover{background:var(--hover)}
+.app .diagnostic-toolbar button,.app .diagnostic-list-header button,.app .diagnostic-item button,.app .diagnostic-feedback button{min-height:32px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:12px;background:var(--panel);color:var(--text);white-space:nowrap}
+.app .diagnostic-toolbar button:hover,.app .diagnostic-list-header button:hover,.app .diagnostic-item button:hover,.app .diagnostic-feedback button:hover{background:var(--hover)}
 .app :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item) button.danger{color:var(--danger-text)}
-.app .diagnostic-refresh:disabled,.app :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item,.diagnostic-feedback) button:disabled{opacity:.5;cursor:not-allowed}
+.app :is(.diagnostic-toolbar,.diagnostic-list-header,.diagnostic-item,.diagnostic-feedback) button:disabled{opacity:.5;cursor:not-allowed}
 .app .diagnostic-item{cursor:default;flex-wrap:wrap;gap:10px}
 .app .diagnostic-item .stats-item-copy{min-width:140px}
 .app .diagnostic-message,.app .diagnostic-feedback{flex:none;font-size:12px;overflow-wrap:anywhere;margin:0 0 12px;color:var(--muted)}
@@ -990,10 +988,10 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .app-header:has(.header-activity){--wb-header-side:max(390px,calc(var(--dsh-frame-leading-clearance,0px) + 40px))}
 .app .app-header .header-activity{max-width:130px;overflow:hidden;text-overflow:ellipsis}
 .app .app-header .global-search{position:absolute;left:50%;transform:translateX(-50%);width:min(720px,calc(100% - 2 * var(--wb-header-side)));max-width:none;margin:0;flex:none}
-.app .app-header .sync{margin-left:auto}
-.app .app-header .global-search input{height:32px}
-.app .app-header .global-search kbd{top:6px}
-.app .app-header .header-actions button{height:32px;min-height:32px;padding-top:0;padding-bottom:0}
+.app .app-header .sync{margin-left:auto;height:36px;min-height:36px}
+.app .app-header .global-search input{height:36px;min-height:36px;padding-top:0;padding-bottom:0;line-height:20px}
+.app .app-header .global-search kbd{top:50%;transform:translateY(-50%)}
+.app .app-header .header-actions>button{height:36px;min-height:36px;min-width:36px;padding-top:0;padding-bottom:0}
 .app .workbase-return{height:32px;padding:0 8px;gap:6px;font-size:13px}
 .app .directory-picker{display:flex;position:relative;width:100%}
 .app .directory-picker input{width:100%;min-width:0;padding-right:42px;cursor:text}
@@ -1009,7 +1007,7 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .detail-project-info .todo-view-switch{margin-left:auto;height:auto;min-height:0;padding:0;gap:2px;border:0;border-radius:0;background:transparent}
 .app .detail-project-info .todo-view-switch button{width:var(--icon-target);height:var(--icon-target);min-width:var(--icon-target);min-height:var(--icon-target);padding:7px;border-radius:5px}
 @media(pointer:coarse),(hover:none){.app .detail-project-info .todo-view-switch{height:46px}.app .detail-project-info .todo-view-switch button{width:44px;height:44px}}
-@media(max-width:650px){.app .app-header .global-search{position:relative;left:auto;transform:none;width:auto;flex:1;min-width:0;margin:0}.app .app-header .sync{display:none}.app .header-actions .action-label{display:none}.app .app-header .header-actions button{width:32px;padding:0}}
+@media(max-width:650px){.app .app-header .global-search{position:relative;left:auto;transform:none;width:auto;flex:1;min-width:0;margin:0}.app .app-header .sync{display:none}.app .header-actions .action-label{display:none}.app .app-header .header-actions>button{width:36px;padding:0}}
 /* 会话预览：轻量信息下方的只读正文列表（角色徽标 + 可选中文本）。 */
 .app .preview-messages{max-height:46vh;overflow:auto;overflow-wrap:anywhere;border-top:1px solid var(--line);margin-top:16px;padding-top:14px;display:flex;flex-direction:column;gap:16px}
 .app .preview-message{display:flex;flex-direction:column;gap:4px}
@@ -1208,8 +1206,12 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .todo-priority.high{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent)}
 .app .todo-priority.medium{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .app .todo-image-count{font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
-.app .todo-meta-line{flex-wrap:wrap;justify-content:flex-start}
-.app .todo-attachment-count{display:inline-flex;align-items:center;gap:4px;font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+.app .todo-meta-line{flex-wrap:nowrap;justify-content:flex-start}
+.app .todo-meta-line .todo-meta{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app .todo-meta-line .todo-priority{white-space:nowrap}
+.app .todo-copy{container-type:inline-size;container-name:workbase-todo}
+.app .todo-attachment-count{display:inline-flex;flex:none;align-items:center;gap:4px;font-size:var(--type-meta);color:var(--muted);white-space:nowrap}
+@container workbase-todo (max-width:300px){.app .todo-attachment-unit{display:none}}
 .app .todo-detail-dialog>.dialog-head{height:72px;min-height:72px;padding:0 24px;border-bottom:1px solid var(--line);margin:0;flex:none}
 .app .todo-detail-dialog>.dialog-head h2{font-family:var(--font-ui);font-size:20px;font-weight:600}
 .app .todo-detail-form{display:flex;flex-direction:column;flex:1;min-height:0;gap:0;margin:0}
@@ -5248,20 +5250,20 @@ function workspaceSettings(){
  settingsDraft={recentLayout:homepage.recentLayout};
  const nav=homepage.navigation;
  const row=(id,title,hint,checked)=>`<label class="setting-row" for="${id}"><div><strong>${title}</strong><small>${hint}</small></div><input type="checkbox" id="${id}" aria-label="${title}" ${checked?'checked':''}></label>`;
- const home=`<h3>首页显示</h3><p class="dialog-description">按模块安排首页，统计卡点击后进入概览中的对应分类。</p>
- <div class="settings-subtabs" role="tablist" aria-label="首页显示分类"><button type="button" id="settings-subtab-layout" data-home-subtab="layout" role="tab" aria-selected="true" aria-controls="settings-subpanel-layout">模块布局</button><button type="button" id="settings-subtab-stats" data-home-subtab="stats" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-subpanel-stats" ${homepage.stats?'':'hidden'}>统计设置</button></div>
- <div class="settings-subpanel" id="settings-subpanel-layout" data-home-subpanel="layout" role="tabpanel" aria-labelledby="settings-subtab-layout">
+ const appearance=`<h3>外观布局</h3><p class="dialog-description">选择工作台主题，调整首页模块与统计卡片。</p>
+ <div class="settings-subtabs" role="tablist" aria-label="外观布局分类"><button type="button" id="settings-subtab-layout" data-appearance-subtab="layout" role="tab" aria-selected="true" aria-controls="settings-subpanel-layout">首页模块</button><button type="button" id="settings-subtab-stats" data-appearance-subtab="stats" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-subpanel-stats" ${homepage.stats?'':'hidden'}>统计卡片</button><button type="button" id="settings-subtab-theme" data-appearance-subtab="theme" role="tab" aria-selected="false" tabindex="-1" aria-controls="settings-subpanel-theme">主题配色</button></div>
+ <div class="settings-subpanel" id="settings-subpanel-theme" data-appearance-subpanel="theme" role="tabpanel" aria-labelledby="settings-subtab-theme" hidden><div class="theme-mode-note">${icon('info')}<div class="theme-mode-copy"><strong id="settings-theme-mode">当前外观：${resolvedAppearance()==='dark'?'深色':'浅色'}</strong><span>切换明暗模式，请前往 DSH 设置 → 外观。</span></div></div><div class="theme-choices" role="radiogroup" aria-label="工作台主题">${themeChoices.map(t=>`<label class="theme-choice" for="workbase-theme-${t.id}"><input id="workbase-theme-${t.id}" type="radio" name="workbase-theme" value="${t.id}" ${workbaseTheme===t.id?'checked':''} aria-describedby="theme-desc-${t.id}"><span class="theme-choice-copy"><strong>${t.name}</strong><small id="theme-desc-${t.id}">${t.description}</small></span></label>`).join('')}</div><p class="settings-inline-note">选择后即时预览；保存保留，取消恢复。</p></div>
+ <div class="settings-subpanel" id="settings-subpanel-layout" data-appearance-subpanel="layout" role="tabpanel" aria-labelledby="settings-subtab-layout">
  ${row('show-composer','显示快捷会话','输入任务并选择项目，直接开始新会话。',homepage.composer)}
- ${row('show-stats','显示数据统计','展示统计卡，并开启「统计设置」菜单。',homepage.stats)}
+ ${row('show-stats','显示数据统计','展示统计卡，并开启「统计卡片」页签。',homepage.stats)}
  ${row('show-recent','显示最近会话','显示输入框下方的最近会话入口。',homepage.recent)}
  <div class="setting-dependent" id="recent-options"><label class="setting-row" for="recent-layout"><div><strong>最近会话样式</strong><small>关闭统计区域后，恢复你选择的展示样式。</small></div><select id="recent-layout" aria-label="最近会话样式"><option value="cards" ${homepage.recentLayout==='cards'?'selected':''}>卡片</option><option value="buttons" ${homepage.recentLayout==='buttons'?'selected':''}>按钮</option></select></label><p id="stats-layout-note" class="settings-inline-note">统计区域开启时使用按钮样式，与统计卡共同展示。</p></div>
  ${row('show-projects','显示项目总览','显示项目列表 / 宫格、筛选及字段设置入口。',homepage.projects)}
  <p class="settings-inline-note">隐藏模块后仍可使用顶部搜索与设置。</p></div>
- <div class="settings-subpanel" id="settings-subpanel-stats" data-home-subpanel="stats" role="tabpanel" aria-labelledby="settings-subtab-stats" hidden>
+ <div class="settings-subpanel" id="settings-subpanel-stats" data-appearance-subpanel="stats" role="tabpanel" aria-labelledby="settings-subtab-stats" hidden>
  <div id="stat-card-options" aria-describedby="stat-cards-note">${statsTabs.map(([key])=>row('show-stat-'+key,'显示'+{running:'运行统计',recent:'会话统计',pending:'待办统计',diagnostic:'项目诊断',skills:'技能管理',mcp:'MCP 管理',rss:'RSS 订阅'}[key],{running:'尚未结束的会话。',recent:'所选时间范围内更新的未归档会话。',pending:'跨项目的未完成待办。',diagnostic:'项目目录可用性检查。',skills:'已启用的全局技能，管理技能、来源和分类。',mcp:'已连接的 MCP 服务，管理连接与工具。',rss:'已订阅的来源，管理订阅与阅读文章。'}[key],homepage.statCards[key])).join('')}</div>
  <p id="stat-cards-note" class="settings-inline-note" role="status"></p>
- <label class="setting-row" for="stat-days"><div><strong>时间范围</strong><small>同时影响近期会话卡与项目「近期活跃」数量。</small></div><select class="settings-control" id="stat-days" aria-label="统计时间范围">${[7,14,30].map(days=>`<option value="${days}" ${homepage.statDays===days?'selected':''}>最近 ${days} 天</option>`).join('')}</select></label></div>`;
- const theme=`<h3>外观配置</h3><p class="dialog-description">选择工作台配色，浅色和深色跟随 DSH 外观配置。</p><div class="theme-mode-note">${icon('info')}<div class="theme-mode-copy"><strong id="settings-theme-mode">当前外观：${resolvedAppearance()==='dark'?'深色':'浅色'}</strong><span>切换明暗模式，请前往 DSH 设置 → 外观。</span></div></div><div class="theme-choices" role="radiogroup" aria-label="工作台主题">${themeChoices.map(t=>`<label class="theme-choice" for="workbase-theme-${t.id}"><input id="workbase-theme-${t.id}" type="radio" name="workbase-theme" value="${t.id}" ${workbaseTheme===t.id?'checked':''} aria-describedby="theme-desc-${t.id}"><span class="theme-choice-copy"><strong>${t.name}</strong><small id="theme-desc-${t.id}">${t.description}</small></span></label>`).join('')}</div>`;
+ <label class="setting-row" for="stat-days"><div><strong>时间范围</strong><small>同时影响会话统计卡与项目「近期活跃」数量。</small></div><select class="settings-control" id="stat-days" aria-label="统计时间范围">${[7,14,30].map(days=>`<option value="${days}" ${homepage.statDays===days?'selected':''}>最近 ${days} 天</option>`).join('')}</select></label></div>`;
  const general=`<h3>通用配置</h3><p class="dialog-description">统一配置启动页面和工作台入口。</p>
  ${row('open-on-startup','启动打开首页','开启后，启动 DSH 桌面端进入工作台首页；保存后下次启动生效。',homepage.openOnStartup)}
  ${row('sidebar-visible','显示侧栏入口','在 DSH 侧边栏显示工作台入口。',nav.sidebarVisible)}
@@ -5279,7 +5281,7 @@ function workspaceSettings(){
  const backup=`<h3>备份恢复</h3><p class="dialog-description">管理数据备份、恢复与执行状态。</p>
  <div class="settings-subtabs" role="tablist" aria-label="备份恢复分类">${backupTabs.map(([key,label],i)=>`<button type="button" id="settings-backup-tab-${key}" data-backup-subtab="${key}" role="tab" aria-selected="${i===0}" tabindex="${i===0?0:-1}" aria-controls="settings-backup-panel-${key}">${label}</button>`).join('')}</div>
  ${backupTabs.map(([key,label],i)=>`<div class="settings-subpanel" id="settings-backup-panel-${key}" data-backup-subpanel="${key}" role="tabpanel" aria-labelledby="settings-backup-tab-${key}" ${i===0?'':'hidden'}><p class="settings-inline-note">${label}内容请在工作台插件中查看。</p></div>`).join('')}`;
- const categories=[['home','首页显示','grid',home],['theme','外观配置','palette',theme],['general','通用配置','settings',general],['project','项目配置','folder',project],['backup','备份恢复','archive',backup],['tools','其他组件','components',tools]];
+ const categories=[['general','通用配置','settings',general],['appearance','外观布局','palette',appearance],['project','项目配置','folder',project],['backup','备份恢复','archive',backup],['tools','其他组件','components',tools]];
  modal('工作台设置',`<div class="settings-layout"><nav class="settings-nav" role="tablist" aria-label="设置分类" aria-orientation="vertical">${categories.map(([key,label,symbol])=>`<button type="button" id="settings-tab-${key}" data-settings-tab="${key}" role="tab" aria-controls="settings-panel-${key}">${icon(symbol)}${label}</button>`).join('')}</nav><div class="settings-content">${categories.map(([key,,,body])=>`<section class="settings-panel" id="settings-panel-${key}" data-settings-panel="${key}" role="tabpanel" aria-labelledby="settings-tab-${key}" hidden>${body}</section>`).join('')}</div></div>`,`<span class="settings-save-note">保存全部分类修改 · 主题即时预览</span>${button('取消','close-modal')}${button('保存设置','save-workspace-settings','primary')}`,true);
  const dialog=document.querySelector('.dialog');dialog.classList.add('workspace-settings');dialog.closest('.overlay').classList.add('settings-overlay');
  const get=id=>dialog.querySelector('#'+id),recent=get('recent-layout');
@@ -5289,7 +5291,7 @@ function workspaceSettings(){
   get('recent-options').hidden=!get('show-recent').checked;
   const stats=get('show-stats').checked;
   get('settings-subtab-stats').hidden=!stats;
-  if(!stats&&get('settings-subtab-stats').getAttribute('aria-selected')==='true')selectHomeSettingsTab('layout',true);
+  if(!stats&&get('settings-subtab-stats').getAttribute('aria-selected')==='true')selectAppearanceSettingsTab('layout',true);
   recent.disabled=stats;recent.value=stats?'buttons':settingsDraft.recentLayout;get('stats-layout-note').hidden=!stats;
   const cards=statsTabs.map(([key])=>get('show-stat-'+key));cards.forEach(input=>input.disabled=!stats);
   get('stat-card-options').classList.toggle('settings-disabled',!stats);
@@ -5309,19 +5311,19 @@ function workspaceSettings(){
   else get('navigation-note').textContent='侧边栏入口与顶部返回按钮至少保留一个。';
   syncChoices();
  });
- dialog.querySelector('[data-settings-panel="theme"]').addEventListener('change',e=>{if(e.target.matches('input[name="workbase-theme"]')&&e.target.checked)setWorkbaseTheme(e.target.value,false)});
- const subtabs=dialog.querySelector('.settings-subtabs');
- subtabs.addEventListener('click',e=>{const tab=e.target.closest('[data-home-subtab]');if(tab)selectHomeSettingsTab(tab.dataset.homeSubtab)});
- subtabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...subtabs.querySelectorAll('button:not([hidden])')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+1)%tabs.length;selectHomeSettingsTab(tabs[next].dataset.homeSubtab,true)});
+ dialog.querySelector('[data-appearance-subpanel="theme"]').addEventListener('change',e=>{if(e.target.matches('input[name="workbase-theme"]')&&e.target.checked)setWorkbaseTheme(e.target.value,false)});
+ const subtabs=dialog.querySelector('[aria-label="外观布局分类"]');
+ subtabs.addEventListener('click',e=>{const tab=e.target.closest('[data-appearance-subtab]');if(tab)selectAppearanceSettingsTab(tab.dataset.appearanceSubtab)});
+ subtabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...subtabs.querySelectorAll('button:not([hidden])')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;selectAppearanceSettingsTab(tabs[next].dataset.appearanceSubtab,true)});
  const projectTabs=dialog.querySelector('[aria-label="项目配置分类"]');
  projectTabs.addEventListener('click',e=>{const tab=e.target.closest('[data-project-subtab]');if(tab)selectProjectSettingsTab(tab.dataset.projectSubtab)});
  const backupSubtabs=dialog.querySelector('[aria-label="备份恢复分类"]');
  backupSubtabs.addEventListener('click',e=>{const tab=e.target.closest('[data-backup-subtab]');if(tab)selectBackupSettingsTab(tab.dataset.backupSubtab)});
  backupSubtabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...backupSubtabs.querySelectorAll('button')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;selectBackupSettingsTab(tabs[next].dataset.backupSubtab,true)});
  projectTabs.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...projectTabs.querySelectorAll('button')],i=tabs.indexOf(document.activeElement),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+1)%tabs.length;selectProjectSettingsTab(tabs[next].dataset.projectSubtab,true)});
- syncChoices();bindSettingsTabs(dialog.querySelector('.settings-layout'),view==='detail'?'project':'home');bindThemeSelects();
+ syncChoices();bindSettingsTabs(dialog.querySelector('.settings-layout'),view==='detail'?'project':'appearance');bindThemeSelects();
 }
-function selectHomeSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;if(name==='stats'&&!dialog.querySelector('#show-stats')?.checked)name='layout';closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-home-subtab]')){const active=tab.dataset.homeSubtab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('[data-home-subpanel]'))panel.hidden=panel.dataset.homeSubpanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-home-subtab="${name}"]`)?.focus()}
+function selectAppearanceSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;if(name==='stats'&&!dialog.querySelector('#show-stats')?.checked)name='layout';closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-appearance-subtab]')){const active=tab.dataset.appearanceSubtab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('[data-appearance-subpanel]'))panel.hidden=panel.dataset.appearanceSubpanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-appearance-subtab="${name}"]`)?.focus()}
 function selectProjectSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-project-subtab]')){const active=tab.dataset.projectSubtab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('[data-project-subpanel]'))panel.hidden=panel.dataset.projectSubpanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-project-subtab="${name}"]`)?.focus()}
 function selectBackupSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-backup-subtab]')){const active=tab.dataset.backupSubtab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('[data-backup-subpanel]'))panel.hidden=panel.dataset.backupSubpanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-backup-subtab="${name}"]`)?.focus()}
 function selectSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;if(integrationDetail)integrationBack(false);closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-settings-tab]')){const active=tab.dataset.settingsTab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('.settings-panel'))panel.hidden=panel.dataset.settingsPanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-settings-tab="${name}"]`)?.focus()}
@@ -5480,7 +5482,7 @@ const params=new URLSearchParams(location.search);if(['a','c'].includes(params.g
 if(view==='detail')sessionFilter=normalizeEntityFilter(viewStates['detail'+selected]?.sessionFilter);
 render();
 window.scrollTo(0,view==='detail'?0:positions[view+selected]||0);
-if(params.get('preview')==='settings'){workspaceSettings();if(['home','theme','general','backup','project','tools'].includes(params.get('tab')))selectSettingsTab(params.get('tab'));if(['layout','stats'].includes(params.get('subtab')))selectHomeSettingsTab(params.get('subtab'));if(params.get('tab')==='backup'&&['backup','restore','status'].includes(params.get('subtab')))selectBackupSettingsTab(params.get('subtab'))}
+if(params.get('preview')==='settings'){workspaceSettings();const requestedTab=params.get('tab'),settingsTab=['home','theme'].includes(requestedTab)?'appearance':requestedTab;if(['appearance','general','backup','project','tools'].includes(settingsTab))selectSettingsTab(settingsTab);if(requestedTab==='theme')selectAppearanceSettingsTab('theme');if(['theme','layout','stats'].includes(params.get('subtab')))selectAppearanceSettingsTab(params.get('subtab'));if(requestedTab==='backup'&&['backup','restore','status'].includes(params.get('subtab')))selectBackupSettingsTab(params.get('subtab'))}
 if(params.get('preview')==='stats')openStats(params.get('stat')||'running');
 </script>
 </body>

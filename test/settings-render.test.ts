@@ -30,9 +30,9 @@ test('更新期间显隐开关禁用，自动更新为子设置且其他配置�
   assert.match(html(true), /aria-label="开启自动更新"/);
 });
 
-test('设置包含六个可访问分类及首页、项目两组子分类', () => {
+test('设置包含五个可访问分类及外观布局、项目子分类', () => {
   const html = render();
-  for (const label of ['首页显示', '外观配置', '通用配置', '备份恢复', '项目配置', '其他组件', '模块布局', '统计设置', '全局配置', '数据备份', '数据恢复', '执行状态']) {
+  for (const label of ['通用配置', '外观布局', '项目配置', '备份恢复', '其他组件', '主题配色', '首页模块', '统计卡片', '全局配置', '数据备份', '数据恢复', '执行状态']) {
     assert.ok(html.includes(`>${label}</button>`), label);
   }
   assert.ok(html.includes('暂无项目专属配置'));
@@ -73,7 +73,7 @@ test('备份恢复子分类分别展示操作与状态，隐藏表单保留挂�
 test('关闭统计隐藏统计子菜单，项目详情入口默认选择项目配置', () => {
   const html = render(false, 'p');
   assert.match(html, /id="wb-settings-tab-project"[^>]*aria-selected="true"/);
-  assert.match(html, /id="wb-settings-home-tab-stats"[^>]*hidden=""/);
+  assert.match(html, /id="wb-settings-appearance-tab-stats"[^>]*hidden=""/);
   assert.match(html, /aria-label="最近会话样式"[^>]*aria-haspopup/);
   assert.ok(html.includes('settings-text-control'));
   assert.ok(!html.includes('required=""'), '隐藏分类不应被原生必填校验拦截');

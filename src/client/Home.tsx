@@ -157,7 +157,7 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
         {recentStyle === 'cards' && <span className="recent-arrow" aria-hidden="true"><Icon name="chevron" size={14}/></span>}
       </button>)}</div>
     </section>}
-    {home.stats && visibleStatTabs.length > 0 && <section className="wb-home-stats home-stats" aria-label="工作台统计"><div className="stats-grid">
+    {home.stats && visibleStatTabs.length > 0 && <section className="wb-home-stats home-stats" aria-label="工作台统计"><div className="stats-grid" data-count={visibleStatTabs.length}>
       {visibleStatTabs.map(([key,label,symbol]) => {
         const value = key === 'running' ? running.length : key === 'recent' ? active.length : key === 'pending' ? pending.length : diagnostics.count;
         const detail = key === 'running' ? running.length ? `${new Set(running.map(s => s.project.projectId)).size} 个项目` : '暂无运行中' : key === 'recent' ? `最近 ${home.statDays} 天` : key === 'pending' ? `手动 ${pending.filter(t => t.creator === 'user').length}／Agent ${pending.filter(t => t.creator === 'agent').length}` : diagnostics.detail;

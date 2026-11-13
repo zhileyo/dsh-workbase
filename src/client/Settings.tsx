@@ -7,7 +7,7 @@ import { BackupSettings } from './BackupSettings.js';
 
 export const themeOptions = [['follow','跟随 DSH 主题'],['dsh','DSH 默认主题'],['fresh','清爽主题'],['warm','温暖阅读'],['violet','紫晶工作台']] as const;
 const themeDescriptions = ['同步 DSH 当前配置的主题及后续变更。', '固定使用 DSH 官方默认配色。', '冷白与森林绿，清晰紧凑的工具风格。', '纸色与棕色，柔和的阅读式字体。', '白底、冷灰与紫色强调，深色采用柔和紫晶色。'];
-const categories = [['home','首页显示','grid'],['theme','外观配置','palette'],['general','通用配置','settings'],['project','项目配置','folder'],['backup','备份恢复','archive'],['tools','其他组件','components']] as const;
+const categories = [['general','通用配置','settings'],['appearance','外观布局','palette'],['project','项目配置','folder'],['backup','备份恢复','archive'],['tools','其他组件','components']] as const;
 const statCardRows = [
   ['running','运行统计','尚未结束的会话。'],
   ['recent','会话统计','所选时间范围内更新的未归档会话。'],
@@ -40,8 +40,8 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   onRestored?(): void;
   describedBy?: string;
 }) {
-  const [tab, setTab] = useState<typeof categories[number][0]>(snapshot.preferences.selectedProject ? 'project' : 'home');
-  const [homeTab, setHomeTab] = useState<'layout' | 'stats'>('layout');
+  const [tab, setTab] = useState<typeof categories[number][0]>(snapshot.preferences.selectedProject ? 'project' : 'appearance');
+  const [appearanceTab, setAppearanceTab] = useState<'theme' | 'layout' | 'stats'>('layout');
   const [projectTab, setProjectTab] = useState<'global' | 'single'>('global');
   const [backupTab, setBackupTab] = useState<'backup' | 'restore' | 'status'>('backup');
   const [theme, setTheme] = useState(snapshot.preferences.theme);
@@ -69,7 +69,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   };
   const homeRows = [
     ['quick','快捷会话','输入任务并选择项目，直接开始新会话。'],
-    ['stats','数据统计','展示统计卡，并开启「统计设置」菜单。'],
+    ['stats','数据统计','展示统计卡，并开启「统计卡片」页签。'],
     ['recent','最近会话','显示输入框下方的最近会话入口。'],
     ['projects','项目总览','显示项目列表 / 宫格与筛选、视图切换按钮。'],
   ] as const;
@@ -84,31 +84,31 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     <div className="settings-layout">
       <nav className="settings-nav" role="tablist" aria-label="设置分类" aria-orientation="vertical">{categories.map(([value,label,symbol],i) => <button type="button" role="tab" id={`wb-settings-tab-${value}`} aria-controls={`wb-settings-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => switchTab(value)} onKeyDown={e => navKey(e, i)}><Icon name={symbol}/>{label}</button>)}</nav>
       <div className="wb-drawer-body settings-content" ref={content}>
-        <section className="settings-panel" role="tabpanel" id="wb-settings-panel-home" aria-labelledby="wb-settings-tab-home" hidden={tab !== 'home'}>
-          <h3>首页显示</h3><p className="dialog-description">按模块安排首页，统计卡点击后进入概览中的对应分类。</p>
-          <SettingsSubtabs scope="home" label="首页显示分类" value={homeTab} options={[{ value: 'layout', label: '模块布局' }, { value: 'stats', label: '统计设置', hidden: !home.stats }]} onChange={value => { setHomeTab(value); resetScroll(); }}/>
-          <div className="settings-subpanel" role="tabpanel" id="wb-settings-home-panel-layout" aria-labelledby="wb-settings-home-tab-layout" hidden={homeTab !== 'layout'}>
+        <section className="settings-panel" role="tabpanel" id="wb-settings-panel-appearance" aria-labelledby="wb-settings-tab-appearance" hidden={tab !== 'appearance'}>
+          <h3>外观布局</h3><p className="dialog-description">选择工作台主题，调整首页模块与统计卡片。</p>
+          <SettingsSubtabs scope="appearance" label="外观布局分类" value={appearanceTab} options={[{ value: 'layout', label: '首页模块' }, { value: 'stats', label: '统计卡片', hidden: !home.stats }, { value: 'theme', label: '主题配色' }]} onChange={value => { setAppearanceTab(value); resetScroll(); }}/>
+          <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-theme" aria-labelledby="wb-settings-appearance-tab-theme" hidden={appearanceTab !== 'theme'}>
+            <div className="theme-mode-note"><Icon name="info"/><div className="theme-mode-copy"><strong>当前外观：{dark ? '深色' : '浅色'}</strong><span>切换明暗模式，请前往 DSH 设置 → 外观。</span></div></div>
+            <div className="theme-choices" role="radiogroup" aria-label="工作台主题">{themeOptions.map(([value,label],i) => <label className="theme-choice" key={value}>
+              <input type="radio" name="workbase-theme" value={value} checked={theme === value} disabled={busy} onChange={() => { setTheme(value); preview(value); }}/>
+              <span className="theme-choice-copy"><strong>{label}</strong><small>{themeDescriptions[i]}</small></span>
+            </label>)}</div>
+            <p className="settings-inline-note">选择后即时预览；保存保留，取消恢复。</p>
+          </div>
+          <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-layout" aria-labelledby="wb-settings-appearance-tab-layout" hidden={appearanceTab !== 'layout'}>
           {homeRows.map(([key,label,hint]) => <div key={key}><label className="wb-setting-row setting-row homepage-setting"><div><strong>显示{label}</strong><small>{hint}</small></div>
-            <input type="checkbox" aria-label={`显示${label}`} checked={home[key]} disabled={busy} onChange={e => { setHome({ ...home, [key]: e.target.checked }); if (key === 'stats' && !e.target.checked) setHomeTab('layout'); }}/>
+            <input type="checkbox" aria-label={`显示${label}`} checked={home[key]} disabled={busy} onChange={e => { setHome({ ...home, [key]: e.target.checked }); if (key === 'stats' && !e.target.checked) setAppearanceTab('layout'); }}/>
           </label>{key === 'recent' && <div className="setting-dependent" hidden={!home.recent}><label className="setting-row"><div><strong>最近会话样式</strong><small>关闭统计区域后，恢复你选择的展示样式。</small></div><Picker variant="recent-layout" label="最近会话样式" value={home.stats ? 'buttons' : home.recentStyle} disabled={busy || home.stats} onChange={value => setHome({ ...home, recentStyle: value as 'cards' | 'buttons' })}
             options={[{ value: 'cards', label: '卡片' },{ value: 'buttons', label: '按钮' }]}/></label>{home.stats && <p className="settings-inline-note">统计区域开启时使用按钮样式，与统计卡共同展示。</p>}</div>}</div>)}
           <p className="settings-inline-note">隐藏模块后仍可使用顶部搜索与设置。</p></div>
-          <div className="settings-subpanel" role="tabpanel" id="wb-settings-home-panel-stats" aria-labelledby="wb-settings-home-tab-stats" hidden={!home.stats || homeTab !== 'stats'}>
+          <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-stats" aria-labelledby="wb-settings-appearance-tab-stats" hidden={!home.stats || appearanceTab !== 'stats'}>
             {statCardRows.map(([key,label,hint]) => <label className="wb-setting-row setting-row" key={key}><div><strong>显示{label}</strong><small>{hint}</small></div>
               <input type="checkbox" aria-label={`显示${label}`} checked={home.statCards[key]} disabled={busy} onChange={e => setHome({ ...home, statCards: { ...home.statCards, [key]: e.target.checked } })}/></label>)}
             <p className="settings-inline-note" role="status">{Object.values(home.statCards).some(Boolean) ? '统计卡可单独隐藏，点击后查看概览对应分类。' : '全部关闭时，首页统计区域不显示。'}</p>
-            <label className="wb-setting-row setting-row"><div><strong>时间范围</strong><small>同时影响近期会话卡与项目「近期活跃」数量。</small></div>
+            <label className="wb-setting-row setting-row"><div><strong>时间范围</strong><small>同时影响会话统计卡与项目「近期活跃」数量。</small></div>
               <Picker variant="stat-days" label="统计时间范围" value={String(home.statDays)} disabled={busy} onChange={value => setHome({ ...home, statDays: Number(value) })}
                 options={[{ value: '7', label: '最近 7 天' },{ value: '14', label: '最近 14 天' },{ value: '30', label: '最近 30 天' }]}/></label>
           </div>
-        </section>
-        <section className="settings-panel" role="tabpanel" id="wb-settings-panel-theme" aria-labelledby="wb-settings-tab-theme" hidden={tab !== 'theme'}>
-          <h3>外观配置</h3><p className="dialog-description">选择工作台配色，浅色和深色跟随 DSH 外观配置。</p>
-          <div className="theme-mode-note"><Icon name="info"/><div className="theme-mode-copy"><strong>当前外观：{dark ? '深色' : '浅色'}</strong><span>切换明暗模式，请前往 DSH 设置 → 外观。</span></div></div>
-          <div className="theme-choices" role="radiogroup" aria-label="工作台主题">{themeOptions.map(([value,label],i) => <label className="theme-choice" key={value}>
-            <input type="radio" name="workbase-theme" value={value} checked={theme === value} disabled={busy} onChange={() => { setTheme(value); preview(value); }}/>
-            <span className="theme-choice-copy"><strong>{label}</strong><small>{themeDescriptions[i]}</small></span>
-          </label>)}</div>
         </section>
         <section className="settings-panel" role="tabpanel" id="wb-settings-panel-general" aria-labelledby="wb-settings-tab-general" hidden={tab !== 'general'}>
           <h3>通用配置</h3><p className="dialog-description">统一配置启动页面和工作台入口。</p>
