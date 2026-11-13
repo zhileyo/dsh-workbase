@@ -24,6 +24,7 @@
   },
   "scripts": {
     "build": "node build.mjs",
+    "host:check": "node check-host.mjs",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "prepublishOnly": "npm test && npm run typecheck && npm run build",

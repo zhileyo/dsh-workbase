@@ -1,7 +1,7 @@
 /** 官方 pluginManager 的远程结果；失败与传输丢失分开处理。 */
 type Answer<T> = { ok: true; value: T } | { ok: false; error: { message: string } };
 export interface Bundle {
-  name: string; version?: string; updatable: boolean;
+  name: string; version?: string; updatable?: boolean; update?: 'registry' | 'git';
   installed: boolean; availability: 'profile' | 'installation' | 'missing'; official: boolean;
   source?: string;
 }
@@ -35,6 +35,10 @@ const failed = (change: Change) => ['failed', 'cancelled'].includes(change.appli
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const reason = (change: Change) => change.error?.diagnostic ?? change.error?.code ?? '宿主未能完成操作';
 const stepOrder: UpdateStep[] = ['checking', 'removing', 'installing', 'restoring'];
+/** 新接口优先；Git 更新需要 commit/spec，不能误走 registry 批量流程。 */
+function registryUpdateAvailable(bundle: Bundle) {
+  return bundle.update !== undefined ? bundle.update === 'registry' : bundle.updatable === true;
+}
 
 /** 组件卸载和页面切换不启动第二个批次；更新始终交给官方服务处理。 */
 export class PluginUpdateController {
@@ -85,10 +89,11 @@ export class PluginUpdateController {
       const installed = bundles.value.filter(bundle => bundle.installed === true
         && bundle.availability === 'profile' && bundle.official === false);
       this.publish({ items: installed.map(bundle => ({ ...bundle, steps: [],
-        status: bundle.updatable ? 'waiting' : 'skipped',
-        detail: bundle.updatable ? '等待检查' : '当前安装来源不支持在线更新',
+        status: registryUpdateAvailable(bundle) ? 'waiting' : 'skipped',
+        detail: registryUpdateAvailable(bundle) ? '等待检查' : bundle.update === 'git'
+          ? 'Git 来源请在官方插件页选择提交更新' : '当前安装来源不支持在线更新',
       })) });
-      for (const bundle of installed.filter(bundle => bundle.updatable)) {
+      for (const bundle of installed.filter(registryUpdateAvailable)) {
         if (this.disposed) return;
         this.item(bundle.name, { status: 'checking', detail: '正在检查新版本' });
         try {

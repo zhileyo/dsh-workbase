@@ -18,6 +18,19 @@ const listed = (installed = '1.0.0') => ({
     { version: '2.0.0', bundle: true },
   ],
 });
+test('新版宿主仅返回update时仍检查registry插件，Git不误走registry更新', async () => {
+  const checked: string[] = [];
+  const controller = new PluginUpdateController(host({
+    listBundles: async () => ok([
+      { name: 'dsh-context', version: '0.83.1', installed: true, availability: 'profile', official: false, update: 'registry' },
+      { name: 'git-copy', installed: true, availability: 'profile', official: false, update: 'git', updatable: true },
+    ]),
+    listVersions: async name => { checked.push(name); return ok(listed('0.83.1')); },
+  }));
+  await controller.check();
+  assert.deepEqual(checked, ['dsh-context']);
+  assert.deepEqual(controller.getSnapshot().items.map(item => item.status), ['available', 'skipped']);
+});
 function host(overrides: Partial<PluginManagerPort> = {}): PluginManagerPort {
   return {
     listBundles: async () => ok([userBundle('one'), userBundle('local', { updatable: false })]),

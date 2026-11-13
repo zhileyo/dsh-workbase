@@ -123,7 +123,7 @@ test('启动自动更新等待配置与控制器，后台忙状态可订阅，�
       on(_event: string, callback: () => void) { reset = callback; return () => {}; },
       layout: { panelInfo: { getSnapshot: () => ({ activePanelId: 'other' }) } }, uiWorkspace: {},
       remote: { pluginManager: {
-        async listBundles() { checks++; return { ok: true, value: [{ name: 'one', updatable: true, installed: true, availability: 'profile', official: false }] }; },
+        async listBundles() { checks++; return { ok: true, value: [{ name: 'one', update: 'registry', installed: true, availability: 'profile', official: false }] }; },
         async listVersions() { return { ok: true, value: { status: 'listed', installed: '1.0.0', registry: null, versions: [{ version: '2.0.0', bundle: true }] } }; },
         async updateBundle() {
           updates++; await new Promise<void>(resolve => { finish = resolve; });

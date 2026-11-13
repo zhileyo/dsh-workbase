@@ -21,6 +21,7 @@ npm ci                 # 安装依赖
 npm run typecheck      # tsc --noEmit（src + test，无 lint 配置，别找 .eslintrc）
 npm test               # tsx --test test/*.test.ts
 npm run build          # node build.mjs：先同步原型资产，再打包两端
+npm run host:check     # 只读检查实际宿主、安装一致性与能力变化，详见 docs/HOST-COMPATIBILITY.md
 npx semantic-release --dry-run  # 看这次会发哪个版本（版本号由提交 type 推断，见「发版」）
 ```
 
