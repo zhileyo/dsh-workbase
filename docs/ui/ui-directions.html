@@ -147,6 +147,12 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 .app .stats-drawer .settings-content{overflow:hidden}
 .app .stats-drawer .settings-panel{height:100%;display:flex;flex-direction:column;min-height:0}
 .app .stats-drawer .settings-panel[hidden]{display:none}
+.app .stats-sidebar{display:flex;flex-direction:column;width:200px;flex:none;min-height:0;background:var(--bg);border-right:1px solid var(--line)}
+.app .stats-sidebar>.settings-nav{width:100%;flex:1;min-height:0;overflow:auto;border-right:0}
+.app .stats-sidebar-actions{flex:none;margin:0 12px;padding:12px 0 max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+.app .stats-sidebar-actions>button{display:flex;justify-content:flex-start;gap:10px;width:100%;height:36px;padding:7px 12px;border:0;border-radius:8px;background:transparent;font-size:14px;line-height:20px;color:var(--muted)}
+.app .stats-sidebar-actions>button:hover{background:var(--hover);color:var(--text)}
+@container workbase (max-width:650px){.app .stats-sidebar{width:100%;border-right:0;flex:none}.app .stats-sidebar>.settings-nav{flex:none;overflow:visible}.app .stats-sidebar-actions{display:none}}
 .app .stats-drawer .stats-page-heading{margin:0 0 8px;font-size:16px;line-height:24px}
 .app .stats-page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;margin-bottom:8px}
 .app .stats-drawer .stats-page-header>.stats-page-heading{min-width:0;margin:0}
@@ -405,11 +411,11 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .app .workspace-settings .setting-row strong,.app .workspace-settings label.field,.app .workspace-settings .theme-choice strong{font-size:14px;font-weight:500;line-height:20px}
 .app .workspace-settings .setting-row small,.app .workspace-settings .theme-choice small{font-size:12px;line-height:20px}
 .workspace-settings .setting-row small{margin-top:4px}
-.workspace-settings .setting-row input[type=checkbox]{appearance:none;position:relative;width:32px;height:18px;flex:none;border:0;border-radius:20px;background:var(--muted);padding:0;margin:0;cursor:pointer;transition:background .15s}
-.workspace-settings .setting-row input[type=checkbox]::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
-.workspace-settings .setting-row input[type=checkbox]:checked{background:var(--accent)}
-.workspace-settings .setting-row input[type=checkbox]:checked::before{transform:translateX(14px)}
-.workspace-settings .setting-row input[type=checkbox]:disabled{opacity:.4;cursor:not-allowed}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch){appearance:none;position:relative;width:32px;height:18px;flex:none;border:0;border-radius:20px;background:var(--muted);padding:0;margin:0;cursor:pointer;transition:background .15s}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch)::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):checked{background:var(--accent)}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):checked::before{transform:translateX(14px)}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):disabled{opacity:.4;cursor:not-allowed}
 .workspace-settings #recent-layout{width:180px;flex:none;font-size:12px}
 .workspace-settings .setting-row:has(#recent-layout)>strong{flex:1}
 .workspace-settings #stats-layout-note{margin:8px 0 0;color:var(--warntext)}
@@ -1293,21 +1299,48 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .integration-heading .number{margin-left:8px;font-size:12px}
 .app .integration-caption{font-size:12px;line-height:20px;color:var(--muted);margin:8px 0 0}
 .app .integration-manager .settings-subtabs{flex:none;margin:16px 0;overflow:auto;gap:24px;white-space:nowrap}
-.app .integration-workspace{display:grid;grid-template-columns:168px minmax(0,1fr);gap:20px;flex:1;min-height:0;min-width:0}
+.app .integration-workspace{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;flex:1;min-height:0;min-width:0}
 .app .integration-workspace[data-grouped="false"]{grid-template-columns:minmax(0,1fr)}
-.app .integration-groups{min-width:0;min-height:0;overflow:auto;border-right:1px solid var(--line);padding-right:12px}
+.app .integration-groups{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:0;padding-right:16px}
+.app .integration-group-list{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.app .integration-group-list>.stats-group-entry,.app .integration-group-list>.integration-group-title{flex:none}
 .app .integration-group-title{font-size:12px;color:var(--muted);margin:16px 8px 6px}
 .app .integration-group-title:first-child{margin-top:0}
+.app .integration-group-heading{display:flex;align-items:center;gap:4px;flex:none;margin:8px 0 4px}
+.app .integration-group-heading .integration-group-title{flex:1;min-width:0;margin:0 8px}
+.app .integration-group-heading button{flex:none;width:36px;height:36px;padding:7px;border-radius:8px}
 .app .integration-main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .app .integration-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;flex:none}
+.app .integration-toolbar:empty{display:none}
 .app .integration-toolbar .stats-group-search{margin:0;flex:1;min-width:140px}
-.app .integration-toolbar button,.app .integration-heading button{height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px;flex:none}
+.app .integration-toolbar button,.app .integration-heading button,.app .diagnostic-refresh,.app .stats-create-todo{height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px;flex:none}
 .app .integration-toolbar .theme-select{width:140px}
 .app .integration-toolbar .theme-select-trigger{height:36px;padding:7px 10px;border-radius:8px}
 .app .integration-mobile-group{display:none}
-.app .integration-records{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}
-.app .integration-record{display:flex;align-items:center;gap:12px;padding:16px 12px;border-bottom:1px solid var(--line);min-width:0}
-.app .integration-record:last-of-type{border-bottom:0}
+.app .integration-records{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-content:start}
+.app .integration-transfer-menu{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.app .integration-transfer-menu .stats-group-copy{flex:1;min-width:0}
+.app .integration-transfer-menu small{display:block;color:var(--muted);font-size:12px;font-weight:400;white-space:normal;overflow-wrap:anywhere}
+.app .integration-record{position:relative;display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--surface);transition:box-shadow .2s,border-color .2s}
+.app .integration-record:hover,.app .integration-record:focus-within{border-color:var(--control-line);box-shadow:0 4px 12px color-mix(in srgb,var(--text) 6%,transparent)}
+.app .integration-record-title>button::after{content:"";position:absolute;inset:0;border-radius:10px}
+.app .integration-record-actions{position:relative;z-index:1}
+.app .integration-records>.integration-empty{grid-column:1/-1}
+.app .integration-records .integration-record-title{flex-wrap:wrap}
+.app .integration-records .integration-record-actions{position:relative;align-self:center}
+.app .integration-records .integration-record-copy{padding-bottom:0}
+.app .integration-records .integration-record-icon{width:40px;height:40px}
+.app .integration-records .integration-record-actions button{width:auto;min-width:60px;height:36px;padding:7px 12px;font-size:14px;line-height:20px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface);color:var(--text);white-space:nowrap}
+.app .integration-records .integration-record-actions button.primary{background:var(--primary-bg);border-color:var(--primary-bg);color:var(--on-primary)}
+.app .integration-records .integration-record-actions button:hover{background:var(--hover)}
+.app .integration-records .integration-record-actions button.primary:hover{background:var(--primary-bg)}
+.app .integration-card-toggle{display:grid;place-items:center;width:36px;height:36px;cursor:pointer;flex:none}
+.app .integration-card-switch:focus-visible{outline:2px solid var(--focus-tone);outline-offset:3px}
+.app .todo-project-field{margin-bottom:16px}
+@media (prefers-reduced-motion:reduce){.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch),.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch)::before{transition:none}}
+.app .integration-card-warning{display:inline-flex;flex:none;color:var(--danger-text)}
+.app .integration-card-warning svg{width:14px;height:14px}
+@container workbase (min-width:1050px){.app .integration-workspace[data-grouped="false"] .integration-records{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .app .integration-record-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:var(--hover);color:var(--muted);flex:none}
 .app .integration-record-icon svg{width:18px;height:18px}
 .app .integration-record-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
@@ -1329,6 +1362,19 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .integration-status-line{display:flex;align-items:center;gap:8px;flex:none;margin:0 0 12px;font-size:12px;line-height:20px;color:var(--muted)}
 .app .integration-status-line svg{width:14px;height:14px;flex:none}
 .app .integration-detail{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;margin:0;background:var(--surface)}
+.app .stats-drawer{position:relative}
+.app .stats-drawer>.integration-detail{position:absolute;inset:0;z-index:5;border-radius:inherit;overflow:hidden}
+.app .integration-detail-layout{display:grid;grid-template-columns:200px minmax(0,1fr);flex:1;min-height:0;min-width:0}
+.app .integration-detail-nav{padding:20px 12px;border-right:1px solid var(--line);overflow:auto;display:flex;flex-direction:column;gap:4px}
+.app .integration-detail-nav button{height:36px;flex:none;justify-content:flex-start;border:0;background:transparent;padding:8px 12px;font-size:14px;border-radius:8px}
+.app .integration-detail-nav button[aria-current="true"]{background:var(--hover);color:var(--accent);font-weight:600}
+.app .integration-detail-main{display:flex;flex-direction:column;min-height:0;min-width:0}
+.app .integration-detail-head .integration-detail-close{width:36px;padding:8px}
+.app .integration-detail-body>[data-i-section]{scroll-margin-top:16px}
+.app .integration-detail .integration-detail-body .integration-record{margin-bottom:12px}
+@container workbase (max-width:850px){.app .integration-detail-layout{grid-template-columns:160px minmax(0,1fr)}}
+@container workbase (max-width:650px){.app .integration-records{grid-template-columns:minmax(0,1fr)}.app .integration-detail-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.app .integration-detail-nav{flex-direction:row;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line)}}
+@media (prefers-reduced-motion:reduce){.app .integration-record{transition:none}}
 .app .integration-detail-head{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--line)}
 .app .integration-detail .integration-detail-head h3{flex:1;min-width:0;margin:0;font-size:16px;line-height:24px}
 .app .integration-detail-head button{height:36px;padding:7px 12px;flex:none;font-size:14px;line-height:20px;border-radius:8px}
@@ -1375,12 +1421,14 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .integration-detail .dialog-footer{margin:0;min-height:0;padding:12px 16px;flex-wrap:wrap;gap:8px}
 .app #stat-cards-note[data-limit="true"]{color:var(--danger-text)}
 @media (prefers-reduced-motion:reduce){.app .integration-tools>summary>svg{transition:none}}
-@container workbase (max-width:850px){.app .integration-workspace{grid-template-columns:140px minmax(0,1fr);gap:12px}.app .integration-toolbar{gap:8px}.app .integration-record{gap:8px}}
+@container workbase (max-width:900px){.app .integration-workspace{grid-template-columns:180px minmax(0,1fr);gap:16px}.app .integration-groups{padding-right:12px}}
+@container workbase (max-width:850px){.app .integration-toolbar{gap:8px}.app .integration-record{gap:8px}}
 @container workbase (max-width:650px){
  .app .stats-drawer .settings-panel:has(.integration-manager){height:100%;min-height:0}
  .app .stats-drawer:has(.integration-manager) .settings-content{overflow:hidden}
  .app .integration-workspace{display:flex;flex-direction:column;min-height:0}
- .app .integration-groups{display:none}
+ .app .integration-groups{display:flex;flex:none;padding-right:0}
+ .app .integration-group-list{display:none}
  .app .integration-mobile-group{display:block;flex:none;margin-bottom:12px}
  .app .integration-mobile-group .theme-select,.app .integration-mobile-group .theme-select-trigger{width:100%}
  .app .integration-detail-body{padding:16px}
@@ -1388,7 +1436,7 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
  .app .integration-record{padding:16px 8px}
  .app .integration-record-title{flex-wrap:wrap;gap:4px 8px}
  .app .integration-record-title>button{max-width:100%}
- .app .integration-record-icon{display:none}
+ .app .integration-record-icon{display:grid}
  .app .integration-manager .settings-subtabs{gap:20px}
  .app .integration-toolbar .theme-select{width:116px}
  .app .integration-toolbar .stats-group-search{flex-basis:100%}
@@ -1408,7 +1456,7 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
     <button id="preview-six-cards" title="预览六张卡：运行中、待办、诊断、技能、MCP、RSS">六卡预览</button>
     <select id="preview-stat-kind" aria-label="选择统计弹窗"><option value="running">运行中</option><option value="recent">近期会话</option><option value="pending">项目待办</option><option value="diagnostic">项目诊断</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></select>
     <button id="preview-stats">统计弹窗</button>
-    <select id="preview-demo-target" aria-label="选择功能预览"><optgroup label="原始工作台 UI"><option value="todo">待办详情</option><option value="stats-flow">统计与待办跳转</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></optgroup><optgroup label="独立演示与对照"><option value="plugin-update">插件更新</option><option value="todo-alternatives">待办布局对照</option><option value="todo-title">标题对照</option><option value="card-tone">卡片配色对照</option></optgroup></select>
+    <select id="preview-demo-target" aria-label="选择功能预览"><optgroup label="原始工作台 UI"><option value="todo">待办详情</option><option value="stats-flow">统计与待办跳转</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></optgroup><optgroup label="独立演示与对照"><option value="appearance-layout">外观布局合并</option><option value="plugin-update">插件更新</option><option value="todo-alternatives">待办布局对照</option><option value="todo-title">标题对照</option><option value="card-tone">卡片配色对照</option></optgroup></select>
     <button id="preview-demo-gallery">打开功能预览</button>
   </div>
 </header>
@@ -1664,7 +1712,7 @@ function integrationSeed(){
 let integrationDB=integrationSeed();
 try{const stored=JSON.parse(localStorage.getItem('dsh-ui-integrations-v1')||'null');if(stored&&['sources','categories','skills','connections','feeds','articles'].every(k=>Array.isArray(stored[k])))integrationDB={...integrationDB,...stored}}catch{}
 integrationDB.feedGroups=[...new Set([...(integrationDB.feedGroups||[]),...integrationDB.feeds.map(f=>f.category)].filter(name=>name&&name!=='未分组'))];
-const integrationMenus={skills:[['global','全局技能'],['project','项目技能'],['sources','技能来源'],['market','技能市场'],['trash','回收站']],mcp:[['connections','我的连接'],['catalog','MCP 市场'],['marketSources','市场来源']],rss:[['subscriptions','我的订阅'],['catalog','推荐订阅源'],['transfer','导入与导出']]};
+const integrationMenus={skills:[['global','全局技能'],['project','项目技能'],['sources','技能来源'],['market','技能市场'],['trash','回收站'],['transfer','导入与导出']],mcp:[['connections','我的连接'],['catalog','MCP 市场'],['marketSources','市场来源'],['transfer','导入与导出']],rss:[['subscriptions','我的订阅'],['catalog','推荐订阅源'],['transfer','导入与导出']]};
 const integrationViews={};
 let integrationDetail=null;
 const integrationDrafts=new Map();
@@ -1690,7 +1738,22 @@ function integrationScopeName(scope){return scope==='global'?'全局':projects.f
 function integrationState(label,state=''){return `<span class="integration-state" data-state="${state}">${icon(state==='ok'?'check-circle':state==='error'?'alert':'clock')}${esc(label)}</span>`}
 function integrationAction(action,id,symbol,label,extra=''){return `<button type="button" data-i-action="${action}" data-i-id="${esc(id)}" aria-label="${esc(label)}" title="${esc(label)}" ${extra}>${icon(symbol)}</button>`}
 function integrationRow(kind,item,title,description,meta,state,actions='',symbol='file'){
- return `<article class="integration-record" data-i-row="${esc(item.id)}"><span class="integration-record-icon">${icon(symbol)}</span><div class="integration-record-copy"><div class="integration-record-title"><button type="button" data-i-action="detail" data-i-kind="${kind}" data-i-id="${esc(item.id)}" title="${esc(title)}">${esc(title)}</button>${state}</div><p title="${esc(description)}">${esc(description)}</p><small title="${esc(meta)}">${esc(meta)}</small></div><div class="integration-record-actions">${actions}${integrationAction('detail',item.id,'chevron','查看'+title,`data-i-kind="${kind}"`)}</div></article>`;
+ const button=(action,id,label,extra='',primary=false)=>`<button type="button" ${primary?'class="primary"':''} data-i-action="${action}" data-i-id="${esc(id)}" aria-label="${esc(label+' '+title)}" ${extra}>${label}</button>`;
+ const toggle=(type,record)=>`<label class="integration-card-toggle" title="${record.enabled?'已启用，点击关闭':'已关闭，点击启用'}"><input type="checkbox" role="switch" class="integration-card-switch" data-i-action="toggle-${type}" data-i-id="${esc(record.id)}" aria-label="启用 ${esc(title)}" ${record.enabled?'checked':''}></label>`;
+ let control='',brief=description,record=item;
+ if(['skill','source','market-source','connection','feed'].includes(kind)){
+  control=item.deletedAt?button('restore-skill',item.id,'恢复','',true):toggle(kind,item);
+ }else if(['skill-market','mcp-catalog','rss-catalog'].includes(kind)){
+  const owner=kind==='skill-market'?'skills':kind==='mcp-catalog'?'mcp':'rss',type={skills:'skill',mcp:'connection',rss:'feed'}[owner];
+  const installed=owner==='skills'?integrationDB.skills.find(s=>!s.deletedAt&&s.name===item.name&&s.scope==='global'):owner==='rss'?integrationDB.feeds.find(f=>f.url===item.url):integrationDB.connections.find(c=>item.transport==='stdio'?c.transport==='stdio'&&c.command===item.command&&c.args===item.args:c.transport!=='stdio'&&c.url===item.url);
+  if(installed){record=installed;control=toggle(type,installed)}else control=button('catalog-add',item.id,'添加',`data-i-kind="${owner}"`,true);
+ }else control=actions;
+ if(kind==='connection')brief=item.description||item.tools?.[0]?.description||'连接外部服务，提供 MCP 工具。';
+ if(kind==='feed')brief=item.description||(item.category?item.category+'资讯与更新。':'RSS 与 Atom 内容订阅。');
+ if(kind==='source')brief='管理此目录中的技能。';
+ if(kind==='market-source')brief='浏览此来源提供的 MCP 连接。';
+ const warning=record.issue?`<span class="integration-card-warning" role="img" aria-label="${esc(record.issue)}" title="${esc(record.issue)}">${icon('alert')}</span>`:'';
+ return `<article class="integration-record" data-i-row="${esc(item.id)}"><span class="integration-record-icon">${icon(symbol)}</span><div class="integration-record-copy"><div class="integration-record-title"><button type="button" data-i-action="detail" data-i-kind="${kind}" data-i-id="${esc(item.id)}" title="${esc(title)}">${esc(title)}</button>${warning}</div><p title="${esc(brief)}">${esc(brief)}</p></div><div class="integration-record-actions">${control}</div></article>`;
 }
 const integrationCatalog={
  skills:[{id:'market-meeting',name:'meeting-notes',description:'整理会议决策、负责人和后续行动。',category:'writing',body:'# 会议整理\n\n提取决策、负责人和后续行动。'},{id:'market-api',name:'api-review',description:'检查接口契约、错误处理与兼容性。',category:'engineering',body:'# 接口审查\n\n核对输入输出、错误边界和兼容性。'},{id:'market-research',name:'research-summary',description:'整理研究资料，生成有出处的摘要。',category:'research',body:'# 研究摘要\n\n提取结论并记录原始出处。'}],
@@ -1708,7 +1771,10 @@ function integrationGroups(kind,v){
 }
 function integrationScopeOptions(value){return `<option value="all" ${value==='all'?'selected':''}>全部作用域</option><option value="global" ${value==='global'?'selected':''}>全局</option>${projects.filter(p=>!p.removed&&!p.merged).map(p=>`<option value="${esc(p.id)}" ${value===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}`}
 function integrationRecords(kind,v){
- if(kind==='rss'&&v.tab==='transfer')return {count:2,html:`<article class="integration-record"><span class="integration-record-icon">${icon('archive')}</span><div class="integration-record-copy"><h3>导入订阅</h3><p>粘贴 OPML 内容，预览订阅与分组后选择导入。</p><small>自动跳过重复地址，保留已有订阅</small></div><div class="integration-record-actions"><button type="button" data-i-action="import" data-i-kind="rss">导入 OPML</button></div></article><article class="integration-record"><span class="integration-record-icon">${icon('file')}</span><div class="integration-record-copy"><h3>导出订阅</h3><p>将当前订阅与自定义分组导出为 OPML 文件。</p><small>共 ${integrationDB.feeds.length} 项订阅</small></div><div class="integration-record-actions"><button type="button" data-i-action="export" data-i-kind="rss">导出 OPML</button></div></article>`};
+ if(v.tab==='transfer'){
+  const labels={skills:['技能','支持 SKILL.md、技能 JSON、本地目录及仓库地址。','导出技能名称、说明、正文及启用状态。'],mcp:['MCP 配置','粘贴 JSON 配置，预览连接后选择导入。','导出连接地址、命令和参数，不包含凭据。'],rss:['订阅','粘贴 OPML，预览订阅与分组后选择导入。','导出当前订阅与自定义分组为 OPML。']}[kind];
+  return {count:2,html:`<nav class="integration-transfer-menu" aria-label="${labels[0]}导入与导出">${[['import','导入','archive',labels[1]],['export','导出','file',labels[2]]].map(([action,label,symbol,description])=>`<button type="button" class="stats-group-entry" data-i-action="${action}" data-i-kind="${kind}">${icon(symbol)}<span class="stats-group-copy"><strong>${label}${labels[0]}</strong><small>${description}</small></span>${icon('chevron')}</button>`).join('')}</nav>`};
+ }
  let list=[],renderRow;
  if(kind==='skills'&&['global','project'].includes(v.tab)){
   list=integrationDB.skills.filter(s=>!s.deletedAt&&(v.tab==='global'?s.scope==='global':s.scope!=='global')&&(!v.group||(v.tab==='global'?s.source===v.group:s.scope===v.group))&&(v.state==='all'||(v.state==='issue'?!!s.issue:v.state==='enabled'?integrationVisibleSkills().includes(s)&&s.enabled:!integrationVisibleSkills().includes(s)||!s.enabled)));
@@ -1744,11 +1810,14 @@ function integrationPanel(kind){
  const mainLabel=kind==='skills'?'添加技能':kind==='mcp'?'添加链接':'添加订阅';
  const primary=`<button type="button" class="primary" data-i-action="create" data-i-kind="${kind}">${icon('plus')}${mainLabel}</button>`;
  const scoped=kind==='mcp'&&v.tab==='connections',skillList=kind==='skills'&&['global','project'].includes(v.tab),grouped=groups.length>0;
+ const search=`<label class="stats-group-search">${icon('search')}<input type="search" data-i-query aria-label="搜索${labels[kind]}" placeholder="搜索名称或说明" value="${esc(v.query)}"></label>`;
  const tabs=`<div class="settings-subtabs" role="tablist" aria-label="${labels[kind]}二级菜单">${integrationMenus[kind].map(([tab,label])=>`<button type="button" id="integration-${kind}-tab-${tab}" data-i-tab="${tab}" role="tab" aria-selected="${v.tab===tab}" tabindex="${v.tab===tab?0:-1}" aria-controls="integration-${kind}-page">${label}</button>`).join('')}</div>`;
  const mobile=grouped?`<div class="integration-mobile-group"><select id="integration-${kind}-group" data-i-select="group" aria-label="选择${labels[kind]}分组">${groups.map(([id,label])=>`<option value="${esc(id)}" ${v.group===id?'selected':''}>${esc(label)}</option>`).join('')}</select></div>`:'';
- const aside=grouped?`<aside class="integration-groups" aria-label="${labels[kind]}分组"><p class="integration-group-title">${skillList?(v.tab==='global'?'按技能来源':'按项目'):kind==='mcp'&&v.tab==='connections'?'按启用状态':kind==='rss'?'自定义分组':'按分类'}</p>${groups.map(([id,label])=>`<button type="button" class="stats-group-entry" data-i-group="${esc(id)}" aria-pressed="${v.group===id}" title="${esc(label)}">${icon(id?'folder':'grid')}<span class="stats-group-copy"><strong>${esc(label)}</strong></span></button>`).join('')}</aside>`:'';
- const tools=v.tab==='transfer'?'':`<div class="integration-toolbar"><label class="stats-group-search">${icon('search')}<input type="search" data-i-query aria-label="搜索${labels[kind]}" placeholder="搜索名称或说明" value="${esc(v.query)}"></label>${scoped?`<select id="integration-${kind}-scope" data-i-select="scope" aria-label="筛选作用域">${integrationScopeOptions(v.scope)}</select>`:''}${skillList?`<select id="integration-skills-state" data-i-select="state" aria-label="筛选技能状态">${[['all','全部状态'],['enabled','已启用'],['disabled','已停用'],['issue','解析异常']].map(([id,label])=>`<option value="${id}" ${v.state===id?'selected':''}>${label}</option>`).join('')}</select>`:''}${skillList||v.tab==='connections'?`<button type="button" data-i-action="import" data-i-kind="${kind}">${icon('archive')}导入</button>`:''}${kind==='skills'&&v.tab==='sources'?`<button type="button" data-i-action="add-source">${icon('plus')}添加路径</button>`:''}${v.tab==='marketSources'?`<button type="button" data-i-action="add-market-source">${icon('plus')}添加来源</button>`:''}${v.tab==='connections'?`<button type="button" data-i-action="export" data-i-kind="${kind}">导出</button>`:''}${kind==='rss'&&v.tab==='subscriptions'?`<button type="button" data-i-action="add-rss-group">${icon('plus')}添加分组</button>${v.group&&v.group!=='未分组'?`<button type="button" data-i-action="edit-rss-group" data-i-id="${esc(v.group)}">编辑分组</button>`:''}<button type="button" data-i-action="refresh-all" data-i-kind="rss">${icon('refresh')}刷新</button><button type="button" data-i-action="rss-settings" aria-label="订阅刷新设置" title="刷新设置">${icon('settings')}</button>`:''}</div>`;
- return `<div class="integration-manager" data-integration="${kind}"><div class="integration-heading"><h3>${labels[kind]}<span class="number" data-i-count>${results.count}</span></h3>${primary}</div><p class="integration-caption">${captions[kind]}</p>${tabs}${mobile}<div class="integration-workspace" data-grouped="${grouped}" id="integration-${kind}-page" role="tabpanel" aria-labelledby="integration-${kind}-tab-${v.tab}">${aside}<div class="integration-main">${tools}<p class="integration-status-line" role="status">${icon('info')}演示数据 · ${kind==='mcp'?'连接与授权仅模拟，不启动外部服务':kind==='rss'?'刷新仅更新本地示例，不请求订阅源':'编辑与启停仅保存到此浏览器'}</p><div class="integration-records" tabindex="0" aria-label="${labels[kind]}记录" data-i-records>${results.html}</div></div></div></div>`;
+ const groupTitle=skillList?(v.tab==='global'?'按技能来源':'按项目'):kind==='mcp'&&v.tab==='connections'?'按启用状态':kind==='rss'?'自定义分组':'按分类';
+ const groupHeading=kind==='rss'&&v.tab==='subscriptions'?`<div class="integration-group-heading"><p class="integration-group-title">${groupTitle}</p><button type="button" class="flat" data-i-action="add-rss-group" aria-label="添加分组" title="添加分组">${icon('plus')}</button>${v.group&&v.group!=='未分组'?`<button type="button" class="flat" data-i-action="edit-rss-group" data-i-id="${esc(v.group)}" aria-label="编辑分组 ${esc(v.group)}" title="编辑分组">${icon('pencil')}</button>`:''}</div>`:`<p class="integration-group-title">${groupTitle}</p>`;
+ const aside=grouped?`<aside class="integration-groups" aria-label="${labels[kind]}分组">${search}${groupHeading}<div class="integration-group-list">${groups.map(([id,label])=>`<button type="button" class="stats-group-entry" data-i-group="${esc(id)}" aria-pressed="${v.group===id}" title="${esc(label)}">${icon(id?'folder':'grid')}<span class="stats-group-copy"><strong>${esc(label)}</strong></span></button>`).join('')}</div>${mobile}</aside>`:'';
+ const tools=v.tab==='transfer'?'':`<div class="integration-toolbar">${grouped?'':search}${scoped?`<select id="integration-${kind}-scope" data-i-select="scope" aria-label="筛选作用域">${integrationScopeOptions(v.scope)}</select>`:''}${skillList?`<select id="integration-skills-state" data-i-select="state" aria-label="筛选技能状态">${[['all','全部状态'],['enabled','已启用'],['disabled','已停用'],['issue','解析异常']].map(([id,label])=>`<option value="${id}" ${v.state===id?'selected':''}>${label}</option>`).join('')}</select>`:''}${kind==='skills'&&v.tab==='sources'?`<button type="button" data-i-action="add-source">${icon('plus')}添加路径</button>`:''}${v.tab==='marketSources'?`<button type="button" data-i-action="add-market-source">${icon('plus')}添加来源</button>`:''}</div>`;
+ return `<div class="integration-manager" data-integration="${kind}"><div class="integration-heading"><h3>${labels[kind]}<span class="number" data-i-count>${results.count}</span></h3>${primary}</div><p class="integration-caption">${captions[kind]}</p>${tabs}<div class="integration-workspace" data-grouped="${grouped}" id="integration-${kind}-page" role="tabpanel" aria-labelledby="integration-${kind}-tab-${v.tab}">${aside}<div class="integration-main">${tools}<p class="integration-status-line" role="status">${icon('info')}演示数据 · ${kind==='mcp'?'连接与授权仅模拟，不启动外部服务':kind==='rss'?'订阅管理仅保存本地示例，不请求订阅源':'编辑与启停仅保存到此浏览器'}</p><div class="integration-records" tabindex="0" aria-label="${labels[kind]}记录" data-i-records>${results.html}</div></div></div></div>`;
 }
 function integrationRemember(kind){
  const root=document.querySelector(`[data-integration="${kind}"]`);if(!root)return;
@@ -1761,9 +1830,10 @@ function integrationUpdateResults(kind){
  if(inline&&integrationDetail)integrationMountDetail(inline);
 }
 function integrationMountDetail(detail){
- const d=integrationDetail,root=document.querySelector(`[data-integration="${d.owner}"]`),main=root?.querySelector('.integration-main');if(!main)return;
- for(const child of main.children)if(child!==detail&&!child.hidden){child.hidden=true;child.setAttribute('data-config-hidden','')}
- main.append(detail);
+ const dialog=document.querySelector('.stats-drawer');if(!dialog)return;
+ for(const child of dialog.children)if(child!==detail&&!child.inert){child.inert=true;child.setAttribute('data-detail-inert','')}
+ dialog.setAttribute('aria-modal','false');
+ dialog.append(detail);
 }
 function integrationRerender(kind,focusTab=false){
  const root=document.querySelector(`[data-integration="${kind}"]`);if(!root)return;
@@ -1792,7 +1862,7 @@ function integrationDetailOpen(kind,id='',mode='read'){
  const owner=kind.startsWith('rss')||kind==='feed'||kind==='article'?'rss':kind.startsWith('skill')||kind==='source'||kind==='category'?'skills':'mcp';
  integrationRemember(owner);
  integrationDetail={kind,id,mode,owner,origin,originAction:origin?.dataset.iAction,anchorId:origin?.closest('[data-i-row]')?.dataset.iRow||id,formKey:kind+':'+id};
- const detail=document.createElement('section');detail.className='integration-detail';detail.id='integration-config-page';detail.setAttribute('aria-labelledby','integration-config-title');integrationMountDetail(detail);
+ const detail=document.createElement('section');detail.className='integration-detail';detail.id='integration-config-page';detail.setAttribute('role','dialog');detail.setAttribute('aria-modal','true');detail.setAttribute('aria-labelledby','integration-config-title');integrationMountDetail(detail);
  integrationDetailRender();
 }
 function integrationToolRows(connection,query=''){
@@ -1872,7 +1942,7 @@ function integrationDetailRender(){
  }else if(d.kind.endsWith('-import')){
   const kind=d.kind.split('-')[0];title={skill:'导入技能',mcp:'导入 MCP 配置',rss:'导入订阅'}[kind];
   const example=kind==='mcp'?JSON.stringify({mcpServers:{'文档检索':{url:'https://docs.example.com/mcp'},'本地文件':{command:'npx',args:['-y','@modelcontextprotocol/server-filesystem','/workspace']}}},null,2):kind==='rss'?'<opml version="2.0"><body>\n  <outline text="工程开发">\n    <outline text="工程实践" xmlUrl="https://practice.example.com/rss"/>\n  </outline>\n</body></opml>':'---\nname: meeting-notes\ndescription: 整理会议记录与后续行动\n---\n\n# 会议整理\n\n记录决策、负责人和后续行动。';
-  body=`<form id="integration-edit-form"><div class="integration-form-grid">${kind!=='rss'?integrationScopeSelect('global'):integrationSelect('默认分组','i-category',[['未分组','未分组'],...integrationDB.feedGroups.map(name=>[name,name])],'未分组')}${kind==='skill'?integrationSelect('导入方式','i-import-mode',[['markdown','粘贴 SKILL.md'],['directory','本地目录'],['repository','仓库地址']],'markdown'):''}${kind==='skill'?`<div class="integration-span" data-i-import-source hidden>${integrationInput('来源路径或仓库地址','i-import-path','','原型模拟候选扫描，不读取本机或网络。')}</div>`:''}${integrationText(kind==='skill'?'技能内容':kind==='mcp'?'JSON 配置':'OPML 内容','i-import-text',example,kind==='skill'?'粘贴内容可预览候选。路径导入仅模拟扫描。':kind==='rss'?'保留 OPML 分组；无分组的订阅使用默认分组。先预览，再选择导入。':'粘贴内容后先预览，再选择要导入的条目。',true)}</div></form><div class="integration-import-items" data-i-import-preview></div>`;
+  body=`<form id="integration-edit-form"><div class="integration-form-grid">${kind!=='rss'?integrationScopeSelect('global'):integrationSelect('默认分组','i-category',[['未分组','未分组'],...integrationDB.feedGroups.map(name=>[name,name])],'未分组')}${kind==='skill'?integrationSelect('导入方式','i-import-mode',[['markdown','粘贴 SKILL.md'],['json','粘贴技能 JSON'],['directory','本地目录'],['repository','仓库地址']],'markdown'):''}${kind==='skill'?`<div class="integration-span" data-i-import-source hidden>${integrationInput('来源路径或仓库地址','i-import-path','','原型模拟候选扫描，不读取本机或网络。')}</div>`:''}${integrationText(kind==='skill'?'技能内容':kind==='mcp'?'JSON 配置':'OPML 内容','i-import-text',example,kind==='skill'?'支持 SKILL.md 或导出的技能 JSON；按所选作用域导入，同名跳过。路径导入仅模拟扫描。':kind==='rss'?'保留 OPML 分组；无分组的订阅使用默认分组。先预览，再选择导入。':'粘贴内容后先预览，再选择要导入的条目。',true)}</div></form><div class="integration-import-items" data-i-import-preview></div>`;
   footer=back+`<button type="button" data-i-action="import-preview">预览导入</button><button type="button" class="primary" data-i-action="import-confirm" disabled>导入所选</button>`;
  }
  integrationFinishDetail(d,detail,title,body,footer,editing,item,back,save);
@@ -1897,6 +1967,7 @@ function integrationDetailRender(){
     <h2 id="demo-library-title">独立演示与对照</h2>
     <p class="demo-library-note" id="demo-library-note">示例数据 · 待办、统计及扩展管理已融入主工作台；此处保留插件更新与备选设计</p>
     <label for="demo-library-select">演示<select id="demo-library-select" aria-label="选择交互演示">
+      <option value="appearance-layout">外观布局二级菜单对照</option>
       <option value="plugin-update">插件更新</option>
       <option value="todo-alternatives">待办布局对照</option>
       <option value="todo-title">待办标题对照</option>
@@ -4320,6 +4391,62 @@ function integrationDetailRender(){
   ""
 ]
 </script>
+<script type="application/json" id="demo-source-appearance-layout" data-demo-label="外观布局二级菜单顺序">
+[
+  "\u003c!doctype html>",
+  "\u003chtml lang='zh-CN'>\u003chead>\u003cmeta charset='utf-8'>\u003cmeta name='viewport' content='width=device-width,initial-scale=1'>\u003ctitle>外观布局 · 合并方案\u003c/title>",
+  "\u003cstyle data-demo-style>",
+  "*{box-sizing:border-box}body{margin:0;font:14px/20px 'Avenir Next','PingFang SC','Microsoft YaHei',sans-serif;background:#e9ecef;color:#22303c}button,select,input{font:inherit}button{cursor:pointer}button:disabled,select:disabled{cursor:not-allowed;opacity:.45}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--muted,#75818d);outline-offset:3px}[hidden]{display:none!important}h1,h2,h3,p{margin:0}svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line,#e0e6eb);border-radius:8px;background:var(--surface,#fff);color:var(--text,#22303c);height:36px;padding:7px 12px;transition:background .15s}button:hover:not(:disabled){background:var(--hover,#edf3f0)}small{display:block;font-size:12px;line-height:20px;color:var(--muted)}",
+  ".review-bar{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:16px 24px;background:#fff;border-bottom:1px solid #dce1e5}.review-copy{flex:1;min-width:200px}.review-copy strong{font-size:16px;line-height:24px;font-weight:600}.review-copy p{font-size:12px;line-height:20px;color:#75818d;margin-top:4px}.review-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.review-controls label{display:flex;align-items:center;gap:8px;font-size:12px}.review-controls select{height:36px;padding:7px 12px;border:1px solid #dce1e5;border-radius:8px;background:#fff;color:#22303c}",
+  ".stage{--bg:#f7f9fb;--surface:#fff;--text:#22303c;--muted:#75818d;--line:#e0e6eb;--accent:#19654f;--on:#fff;--hover:#edf3f0;--soft:#e8f3ed;container:workbase / inline-size;width:100%;margin:auto;color:var(--text);min-height:calc(100dvh - 100px);background:var(--bg)}.stage.compact{width:min(100%,560px)}.stage[data-palette=warm]{--bg:#f6f3ed;--surface:#fcfaf6;--text:#393c34;--muted:#827f70;--line:#dfdccf;--accent:#785a39;--hover:#efeade;--soft:#eee5d5}.stage[data-palette=violet]{--bg:#f7f7fa;--surface:#fff;--text:#303242;--muted:#777b8e;--line:#e1e2eb;--accent:#6854ac;--hover:#f0edf8;--soft:#eee9f8}.stage[data-palette=dsh]{--bg:#f7f8fa;--surface:#fff;--text:#263148;--muted:#7b8495;--line:#e0e4eb;--accent:#4d6bfe;--hover:#f0f2f7;--soft:#edf0ff}",
+  ".stage.dark{--bg:#171f24;--surface:#1d282e;--text:#e3eae9;--muted:#92a3a6;--line:#334248;--accent:#a1d2ba;--on:#153326;--hover:#283a38;--soft:#263e35}.stage.dark[data-palette=warm]{--bg:#242420;--surface:#2c2c27;--text:#eeeadf;--muted:#aaa694;--line:#44433b;--accent:#dcc49e;--on:#322717;--hover:#39382e;--soft:#40392c}.stage.dark[data-palette=violet]{--bg:#211f2b;--surface:#292633;--text:#eae6f3;--muted:#a29bb5;--line:#40394f;--accent:#c5b6f0;--on:#31254c;--hover:#353044;--soft:#3b3250}.stage.dark[data-palette=dsh]{--bg:#1b1e25;--surface:#232733;--text:#e5e8ef;--muted:#9da5b8;--line:#363e50;--accent:#a9b9ff;--on:#23335e;--hover:#2d3344;--soft:#303b5c}",
+  ".overlay{display:flex;justify-content:center;align-items:flex-end;padding:50px 0 0;background:#0d152359;min-height:calc(100dvh - 100px)}.drawer{width:90%;max-width:860px;height:calc(100dvh - 150px);min-height:460px;background:var(--surface);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px #0d152318;animation:enter .2s ease-out}.dialog-head{height:72px;flex:none;display:flex;align-items:center;gap:16px;padding:0 24px;border-bottom:1px solid var(--line)}.dialog-head h1{font-size:20px;line-height:28px;font-weight:600;flex:1}.icon-button{width:36px;padding:0;background:transparent;border-color:transparent}.settings-layout{display:flex;flex:1;min-height:0}.nav{width:184px;flex:none;background:var(--bg);border-right:1px solid var(--line);padding:20px 12px;display:flex;flex-direction:column;gap:6px}.nav button{justify-content:flex-start;min-height:40px;height:auto;border:0;padding:10px 12px;font-weight:500;background:transparent}.nav button[aria-current=page]{background:var(--soft);color:var(--accent);font-weight:600}.nav button:disabled{opacity:.6}.content{min-width:0;flex:1;overflow:auto;overscroll-behavior:contain;padding:24px 28px}.content h2{font-size:16px;line-height:24px;font-weight:600}.description{font-size:12px;line-height:20px;color:var(--muted);margin-top:6px}.subtabs{display:flex;gap:24px;border-bottom:1px solid var(--line);margin:20px 0 24px}.subtabs button{padding:10px 0;height:42px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font-weight:500}.subtabs button[aria-selected=true]{border-bottom-color:var(--accent);color:var(--accent);font-weight:600}",
+  ".setting-row{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:64px;padding:14px 0;border-bottom:1px solid var(--line)}.setting-row strong{font-weight:500}.setting-row small{margin-top:4px}.setting-row>div{min-width:0}.switch{appearance:none;position:relative;flex:none;width:32px;height:18px;padding:0;margin:0;border:0;border-radius:20px;background:var(--muted);cursor:pointer}.switch:before{content:'';position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0002;transition:transform .15s}.switch:checked{background:var(--accent)}.switch:checked:before{transform:translateX(14px)}.dependent{padding-left:16px;border-left:2px solid var(--line);margin:12px 0 20px}.dependent .setting-row{border-bottom:0}.select-control{width:180px;height:40px;flex:none;min-width:0;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--text);padding:9px 12px}.note{font-size:12px;line-height:20px;color:var(--muted);margin-top:12px}.mode-note{display:flex;gap:12px;padding:14px 16px;background:var(--bg);border:1px solid var(--line);border-radius:7px}.mode-note svg{margin-top:2px;color:var(--muted)}.mode-note strong{font-size:12px;font-weight:500}.themes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:20px}.theme-card{display:flex;gap:12px;align-items:flex-start;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer}.theme-card:hover{background:var(--hover)}.theme-card:has(input:checked){background:var(--soft);border-color:var(--accent)}.theme-card input{flex:none;width:16px;height:16px;margin:2px 0 0;accent-color:var(--accent)}.theme-card strong{font-size:14px;font-weight:500}.theme-card small{margin-top:6px}",
+  ".dialog-footer{flex:none;display:flex;gap:8px;align-items:center;min-height:72px;padding:16px 24px;border-top:1px solid var(--line)}.save-note{font-size:12px;color:var(--muted);margin-right:auto}.primary{background:var(--accent);border-color:var(--accent);color:var(--on)}.primary:hover:not(:disabled){background:var(--accent);filter:brightness(.95)}.closed{padding:64px 24px;text-align:center}.closed p{margin-bottom:16px;color:var(--muted)}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 20px;border:1px solid var(--line,#e0e6eb);border-radius:8px;background:var(--surface,#fff);color:var(--text,#22303c);box-shadow:0 4px 20px #0d152318;font-size:12px;max-width:90%;z-index:2}@keyframes enter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}",
+  "@container workbase (max-width:650px){.overlay{padding-top:24px}.drawer{width:100%;height:calc(100dvh - 124px)}.dialog-head{height:60px;padding:0 18px}.settings-layout{flex-direction:column}.nav{width:100%;flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line);padding:8px;gap:4px}.nav button{flex:1 1 28%;justify-content:center;padding:8px 4px;gap:4px}.content{padding:20px 18px}.subtabs{gap:20px}.themes{grid-template-columns:1fr}.select-control{width:140px}.dialog-footer{min-height:64px;padding:14px 18px;padding-bottom:max(14px,env(safe-area-inset-bottom))}.save-note{display:none}.dialog-footer button:first-of-type{margin-left:auto}}@container workbase (max-width:480px){.setting-row:has(.select-control){flex-direction:column;align-items:stretch;gap:12px}.select-control{width:100%}.nav svg{display:none}}@media(prefers-reduced-motion:reduce){.drawer{animation:none}button,.switch:before{transition:none}}",
+  "\u003c/style>\u003c/head>\u003cbody>",
+  "\u003cheader class='review-bar'>\u003cdiv class='review-copy'>\u003cstrong>外观布局 · 二级菜单顺序\u003c/strong>\u003cp>首页模块 → 统计卡片 → 主题配色；默认页在首位，首页相关设置相邻。\u003c/p>\u003c/div>\u003cdiv class='review-controls'>\u003clabel for='panel-width'>面板\u003cselect id='panel-width'>\u003coption value='wide'>常规\u003c/option>\u003coption value='compact'>窄面板\u003c/option>\u003c/select>\u003c/label>\u003clabel for='host-mode'>宿主外观（模拟）\u003cselect id='host-mode'>\u003coption value='light'>浅色\u003c/option>\u003coption value='dark'>深色\u003c/option>\u003c/select>\u003c/label>\u003cbutton id='reopen' type='button'>打开设置\u003c/button>\u003c/div>\u003c/header>",
+  "\u003cmain id='stage' class='stage' data-palette='dsh'>\u003cdiv id='overlay' class='overlay'>\u003csection class='drawer' aria-labelledby='settings-title'>\u003cheader class='dialog-head'>\u003ch1 id='settings-title'>工作台设置\u003c/h1>\u003cbutton id='close' class='icon-button' type='button' aria-label='取消修改并关闭设置'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='m18 6-12 12M6 6l12 12'/>\u003c/svg>\u003c/button>\u003c/header>",
+  "\u003cdiv class='settings-layout'>\u003cnav class='nav' aria-label='设置分类'>\u003cbutton disabled title='本次仅演示外观布局，其他设置沿用现有页面'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z'/>\u003c/svg>通用配置\u003c/button>\u003cbutton type='button' aria-current='page' id='appearance-nav'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='M12 3a9 9 0 1 0 0 18h1.5a2.5 2.5 0 0 0 1.8-4.3 1 1 0 0 1 .7-1.7h1a4 4 0 0 0 4-4 8 8 0 0 0-9-8'/>\u003ccircle cx='7.5' cy='10' r='.5'/>\u003ccircle cx='10' cy='6.5' r='.5'/>\u003ccircle cx='15' cy='6.5' r='.5'/>\u003ccircle cx='17.5' cy='10' r='.5'/>\u003c/svg>外观布局\u003c/button>\u003cbutton disabled title='沿用现有项目配置'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v2M3 7h17l-3 13H3z'/>\u003c/svg>项目配置\u003c/button>\u003cbutton disabled title='沿用现有备份恢复'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='M3 3h18v4H3zM5 7v14h14V7M10 11h4'/>\u003c/svg>备份恢复\u003c/button>\u003cbutton disabled title='沿用现有其他组件'>\u003csvg viewBox='0 0 24 24'>\u003cpath d='M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z'/>\u003c/svg>其他组件\u003c/button>\u003c/nav>",
+  "\u003cdiv id='content' class='content'>\u003ch2>外观布局\u003c/h2>\u003cp class='description'>选择工作台主题，调整首页模块与统计卡片。\u003c/p>\u003cdiv class='subtabs' role='tablist' aria-label='外观布局分类'>\u003cbutton id='tab-layout' type='button' role='tab' data-tab='layout' aria-controls='panel-layout'>首页模块\u003c/button>\u003cbutton id='tab-stats' type='button' role='tab' data-tab='stats' aria-controls='panel-stats'>统计卡片\u003c/button>\u003cbutton id='tab-theme' type='button' role='tab' data-tab='theme' aria-controls='panel-theme'>主题配色\u003c/button>\u003c/div>",
+  "\u003csection id='panel-theme' role='tabpanel' aria-labelledby='tab-theme' hidden>\u003cdiv class='mode-note'>\u003csvg viewBox='0 0 24 24'>\u003ccircle cx='12' cy='12' r='10'/>\u003cpath d='M12 16v-4M12 8h.01'/>\u003c/svg>\u003cdiv>\u003cstrong id='mode-copy'>当前外观：浅色\u003c/strong>\u003csmall>切换明暗模式，请前往 DSH 设置 → 外观。\u003c/small>\u003c/div>\u003c/div>\u003cdiv id='themes' class='themes' role='radiogroup' aria-label='工作台主题'>\u003c/div>\u003cp class='note'>选择后即时预览；保存保留，取消恢复。\u003c/p>\u003c/section>",
+  "\u003csection id='panel-layout' role='tabpanel' aria-labelledby='tab-layout'>\u003cdiv id='home-rows'>\u003c/div>\u003cp class='note'>隐藏模块后仍可使用顶部搜索与设置。\u003c/p>\u003c/section>",
+  "\u003csection id='panel-stats' role='tabpanel' aria-labelledby='tab-stats' hidden>\u003cdiv id='stat-rows'>\u003c/div>\u003cp id='stats-note' class='note' role='status'>\u003c/p>\u003clabel class='setting-row' for='stat-days'>\u003cdiv>\u003cstrong>时间范围\u003c/strong>\u003csmall>同时影响会话统计卡与项目「近期活跃」数量。\u003c/small>\u003c/div>\u003cselect id='stat-days' class='select-control'>\u003coption value='7'>最近 7 天\u003c/option>\u003coption value='14'>最近 14 天\u003c/option>\u003coption value='30'>最近 30 天\u003c/option>\u003c/select>\u003c/label>\u003c/section>\u003c/div>\u003c/div>",
+  "\u003cfooter class='dialog-footer'>\u003cspan id='save-note' class='save-note'>统一保存 · 主题即时预览\u003c/span>\u003cbutton id='cancel' type='button'>取消\u003c/button>\u003cbutton id='save' class='primary' type='button'>保存设置\u003c/button>\u003c/footer>\u003c/section>\u003c/div>\u003cdiv id='closed' class='closed' hidden>\u003cp>设置已关闭。\u003c/p>\u003cbutton id='open-again' type='button'>重新打开设置\u003c/button>\u003c/div>\u003c/main>\u003cdiv id='toast' class='toast' role='status' hidden>\u003c/div>",
+  "\u003cscript>",
+  "// 仅模拟现有偏好字段；原型存储与正式工作台完全独立。",
+  "const DB={themes:[['follow','跟随 DSH 主题','同步 DSH 当前配置的主题及后续变更。'],['dsh','DSH 默认主题','固定使用 DSH 官方默认配色。'],['fresh','清爽主题','冷白与森林绿，清晰紧凑的工具风格。'],['warm','温暖阅读','纸色与棕色，柔和的阅读式字体。'],['violet','紫晶工作台','白底、冷灰与紫色强调，深色采用柔和紫晶色。']],homeRows:[['quick','快捷会话','输入任务并选择项目，直接开始新会话。'],['stats','数据统计','展示统计卡，并开启「统计卡片」页签。'],['recent','最近会话','显示输入框下方的最近会话入口。'],['projects','项目总览','显示项目列表 / 宫格与筛选、视图切换按钮。']],statRows:[['running','运行统计','尚未结束的会话。'],['recent','会话统计','所选时间范围内更新的未归档会话。'],['pending','待办统计','跨项目的未完成待办。'],['diagnostic','项目诊断','项目目录可用性检查。']]};",
+  "const defaults={theme:'follow',home:{quick:true,recent:false,stats:true,projects:true,recentStyle:'cards',statCards:{running:true,recent:true,pending:true,diagnostic:true},statDays:7}};",
+  "const clone=value=>JSON.parse(JSON.stringify(value));const byId=id=>document.getElementById(id);const storageKey='dsh-prototype-appearance-layout-v1';let saved=clone(defaults);",
+  "try{const candidate=JSON.parse(localStorage.getItem(storageKey));if(candidate&&DB.themes.some(t=>t[0]===candidate.theme)&&candidate.home&&DB.homeRows.every(r=>typeof candidate.home[r[0]]==='boolean')&&['cards','buttons'].includes(candidate.home.recentStyle)&&[7,14,30].includes(candidate.home.statDays)&&candidate.home.statCards&&DB.statRows.every(r=>typeof candidate.home.statCards[r[0]]==='boolean'))saved=clone(candidate)}catch{}",
+  "const state={draft:clone(saved),tab:'layout',busy:false,open:true};let toastTimer;",
+  "// 正式实现继续使用现有 settings 命令；此服务只模拟成功或本地存储失败。",
+  "const api={async savePreferences(value){await new Promise(resolve=>setTimeout(resolve,240));localStorage.setItem(storageKey,JSON.stringify(value));return clone(value)}};",
+  "function notify(message){clearTimeout(toastTimer);byId('toast').textContent=message;byId('toast').hidden=false;toastTimer=setTimeout(()=>{byId('toast').hidden=true},3200)}",
+  "function palette(){byId('stage').dataset.palette=state.draft.theme==='follow'?'dsh':state.draft.theme;byId('stage').classList.toggle('dark',byId('host-mode').value==='dark');byId('mode-copy').textContent='当前外观：'+(byId('host-mode').value==='dark'?'深色':'浅色')}",
+  "function switchTab(tab){if(tab==='stats'&&!state.draft.home.stats)return;state.tab=tab;renderTabs();byId('content').scrollTop=0}",
+  "function renderTabs(){document.querySelectorAll('[data-tab]').forEach(button=>{const id=button.dataset.tab;button.hidden=id==='stats'&&!state.draft.home.stats;button.setAttribute('aria-selected',String(id===state.tab));button.tabIndex=id===state.tab?0:-1;byId('panel-'+id).hidden=id!==state.tab})}",
+  "function row(prefix,key,label,hint,checked){return `<label class='setting-row' for='${prefix}-${key}'><div><strong>显示${label}</strong><small>${hint}</small></div><input id='${prefix}-${key}' class='switch' type='checkbox' data-${prefix}='${key}' ${checked?'checked':''}></label>`}",
+  "function render(){const h=state.draft.home;palette();if(!h.stats&&state.tab==='stats')state.tab='layout';renderTabs();",
+  "byId('themes').innerHTML=DB.themes.map(([id,label,description])=>`<label class='theme-card' for='theme-${id}'><input id='theme-${id}' type='radio' name='theme' value='${id}' ${state.draft.theme===id?'checked':''} aria-describedby='theme-description-${id}'><span><strong>${label}</strong><small id='theme-description-${id}'>${description}</small></span></label>`).join('');",
+  "byId('home-rows').innerHTML=DB.homeRows.map(([key,label,hint])=>row('home',key,label,hint,h[key])+(key==='recent'&&h.recent?`<div class='dependent'><label class='setting-row' for='recent-style'><div><strong>最近会话样式</strong><small>${h.stats?'统计区域开启时使用按钮样式。':'关闭统计区域后，恢复你选择的展示样式。'}</small></div><select id='recent-style' class='select-control' ${h.stats?'disabled':''}><option value='cards'>卡片</option><option value='buttons'>按钮</option></select></label>${h.stats?`<p class='note'>关闭数据统计后恢复所选样式；当前偏好：${h.recentStyle==='cards'?'卡片':'按钮'}。</p>`:''}</div>`:'')).join('');",
+  "if(byId('recent-style'))byId('recent-style').value=h.stats?'buttons':h.recentStyle;",
+  "byId('stat-rows').innerHTML=DB.statRows.map(([key,label,hint])=>row('stat',key,label,hint,h.statCards[key])).join('');byId('stat-days').value=String(h.statDays);",
+  "byId('stats-note').textContent=Object.values(h.statCards).some(Boolean)?'统计卡可单独隐藏，点击后查看概览对应分类。':'全部关闭时，首页统计区域不显示。';",
+  "byId('save-note').textContent=JSON.stringify(state.draft)===JSON.stringify(saved)?'统一保存 · 主题即时预览':'有未保存修改 · 主题即时预览';",
+  "document.querySelectorAll('.drawer button,.drawer input,.drawer select').forEach(control=>{if(control.closest('.nav'))return;control.disabled=state.busy||(control.id==='recent-style'&&h.stats)});byId('save').textContent=state.busy?'保存中…':'保存设置'}",
+  "document.querySelector('.subtabs').addEventListener('click',event=>{const button=event.target.closest('[data-tab]');if(button&&!state.busy)switchTab(button.dataset.tab)});",
+  "document.querySelector('.subtabs').addEventListener('keydown',event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)||state.busy)return;event.preventDefault();const tabs=[...document.querySelectorAll('[data-tab]')].filter(b=>!b.hidden);const index=tabs.findIndex(b=>b.dataset.tab===state.tab);const next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;switchTab(tabs[next].dataset.tab);tabs[next].focus()});",
+  "byId('content').addEventListener('change',event=>{if(state.busy)return;const input=event.target;const focusId=input.id;if(input.name==='theme'){state.draft.theme=input.value}else if(input.dataset.home){state.draft.home[input.dataset.home]=input.checked}else if(input.dataset.stat){state.draft.home.statCards[input.dataset.stat]=input.checked}else if(input.id==='recent-style'){state.draft.home.recentStyle=input.value}else if(input.id==='stat-days'){state.draft.home.statDays=Number(input.value)}else return;render();byId(focusId)?.focus({preventScroll:true})});",
+  "function closeSettings(){if(state.busy)return;state.draft=clone(saved);state.open=false;render();byId('overlay').hidden=true;byId('closed').hidden=false;byId('reopen').focus()}",
+  "function openSettings(){if(state.busy)return;if(state.open){byId('tab-'+state.tab).focus();return}state.draft=clone(saved);state.open=true;state.tab='layout';byId('overlay').hidden=false;byId('closed').hidden=true;render();byId('content').scrollTop=0;byId('tab-layout').focus()}",
+  "byId('close').onclick=closeSettings;byId('cancel').onclick=closeSettings;byId('reopen').onclick=openSettings;byId('open-again').onclick=openSettings;byId('appearance-nav').onclick=()=>switchTab('layout');",
+  "byId('save').onclick=async()=>{if(state.busy)return;state.busy=true;render();try{saved=await api.savePreferences(state.draft);state.busy=false;closeSettings();notify('原型设置已保存')}catch{state.busy=false;render();notify('原型设置保存失败，修改已保留，请重试')}};",
+  "byId('host-mode').onchange=palette;byId('panel-width').onchange=event=>byId('stage').classList.toggle('compact',event.target.value==='compact');",
+  "document.addEventListener('keydown',event=>{if(event.key==='Escape'&&state.open)closeSettings()});render();",
+  "\u003c/script>\u003c/body>\u003c/html>"
+]
+</script>
 <script>
 // 这里只装载内嵌演示，不调用宿主接口；主原型仍是唯一构建基线。
 (()=>{
@@ -4400,9 +4527,9 @@ function integrationFinishDetail(d,detail,title,body,footer,editing,item,back,sa
  if(d.kind==='rss-settings'){
   title='订阅刷新设置';body=`<form id="integration-edit-form"><div class="integration-form-grid">${integrationSelect('自动刷新','i-interval',[['0','仅手动刷新'],['15','每 15 分钟'],['30','每 30 分钟'],['60','每小时']],integrationDB.refreshInterval)}</div><p class="integration-help">原型只保存此选项，不创建实际定时任务；正式功能只刷新已启用的来源。</p></form>`;footer=back+save;
  }else if(d.kind.endsWith('-export')){
-  title=d.owner==='rss'?'导出 OPML':'导出 MCP 配置';
-  const content=d.owner==='rss'?integrationOpml():JSON.stringify({mcpServers:Object.fromEntries(integrationDB.connections.map(c=>[c.name,c.transport==='stdio'?{command:c.command,args:JSON.parse(c.args),env:{}}:{url:c.url}]))},null,2);
-  body=`<p class="integration-help">${d.owner==='rss'?'导出当前订阅与自定义分组。':'仅导出地址、命令和参数，不包含任何凭据。'}</p><pre class="integration-code-view" data-i-export-text>${esc(content)}</pre>`;footer=back+`<button type="button" class="primary" data-i-action="download-export">下载${d.owner==='rss'?' OPML':' JSON'}</button>`;
+  title={rss:'导出 OPML',skills:'导出技能',mcp:'导出 MCP 配置'}[d.owner];
+  const content=d.owner==='rss'?integrationOpml():d.owner==='skills'?JSON.stringify({version:1,skills:integrationDB.skills.filter(s=>!s.deletedAt).map(({name,description,body,scope,enabled})=>({name,description,body,scope,enabled}))},null,2):JSON.stringify({mcpServers:Object.fromEntries(integrationDB.connections.map(c=>[c.name,c.transport==='stdio'?{command:c.command,args:JSON.parse(c.args),env:{}}:{url:c.url}]))},null,2);
+  body=`<p class="integration-help">${d.owner==='rss'?'导出当前订阅与自定义分组。':d.owner==='skills'?'导出未回收技能的名称、说明、正文、原作用域及启用状态；不包含关联文件。导入时选择目标作用域，同名项跳过。':'仅导出地址、命令和参数，不包含任何凭据。'}</p><pre class="integration-code-view" data-i-export-text>${esc(content)}</pre>`;footer=back+`<button type="button" class="primary" data-i-action="download-export">下载${d.owner==='rss'?' OPML':' JSON'}</button>`;
  }
  if(item&&['connection','feed','skill','category','source','market-source'].includes(d.kind)&&d.mode!=='edit'&&(d.kind!=='skill'||item.deletedAt||integrationDB.sources.find(s=>s.id===item.source)?.writable)&&(d.kind!=='source'||!['dsh','agents','claude','project'].includes(item.id)))footer+=`<button type="button" class="integration-danger" data-i-action="remove-detail">${icon('trash')}${d.kind==='skill'?(item.deletedAt?'永久删除':'移入回收站'):'移除'}</button>`;
  if(d.mode==='remove'){
@@ -4417,7 +4544,16 @@ function integrationFinishDetail(d,detail,title,body,footer,editing,item,back,sa
  }
  if(!body)body='<div class="integration-empty"><strong>记录已不可用</strong><p>请返回列表重新选择。</p></div>';
  const toDetail=(editing&&d.returnMode)||['oauth','remove'].includes(d.mode),returnAction=toDetail?(editing?'cancel-edit':d.mode==='oauth'?'cancel-oauth':'cancel-remove'):'back',returnLabel=toDetail?'返回详情':d.parentFeed?'返回订阅':'返回列表';
- detail.innerHTML=`<div class="integration-detail-head"><button type="button" class="flat" data-i-action="${returnAction}" aria-label="${returnLabel}">${icon('back')}${returnLabel}</button><h3 id="integration-config-title">${esc(title)}</h3></div><div class="integration-detail-body">${body}<p class="integration-form-error" id="integration-form-error" role="alert" hidden></p></div><div class="dialog-footer">${footer}</div>`;
+ detail.innerHTML=`<div class="integration-detail-head"><button type="button" class="flat" data-i-action="${returnAction}" aria-label="${returnLabel}">${icon('back')}</button><h3 id="integration-config-title">${esc(item?.name?item.name+' · '+title:title)}</h3><button type="button" class="flat integration-detail-close" data-i-action="close-detail" aria-label="关闭详情弹窗">${icon('close')}</button></div><div class="integration-detail-layout"><nav class="integration-detail-nav" aria-label="详情分区"></nav><div class="integration-detail-main"><div class="integration-detail-body">${body}<p class="integration-form-error" id="integration-form-error" role="alert" hidden></p></div><div class="dialog-footer">${footer}</div></div></div>`;
+ const content=detail.querySelector('.integration-detail-body'),nav=detail.querySelector('.integration-detail-nav');
+ const sections=[{node:content.firstElementChild,label:editing||content.querySelector('form')?'基本设置':'概览'},...[...content.querySelectorAll('h3,.integration-tools')].filter(node=>!node.closest('.integration-detail-identity')).map(node=>({node,label:node.matches('.integration-tools')?'工具详情':node.textContent.trim()}))];
+ for(const [field,label]of [['i-body','技能正文'],['i-auth','认证设置'],['i-url','服务地址'],['i-import-text','导入内容']]){
+  const node=content.querySelector('#'+field)?.closest('div');if(node)sections.push({node,label});
+ }
+ sections.filter((section,index,all)=>section.node&&all.findIndex(other=>other.node===section.node)===index).forEach(({node,label},index)=>{
+  node.id=node.id||'integration-section-'+index;node.setAttribute('data-i-section','');
+  nav.insertAdjacentHTML('beforeend',`<button type="button" data-i-action="detail-section" data-i-section-target="${node.id}" aria-controls="${node.id}" aria-current="${index===0}">${icon(index===0?'info':'settings')}${esc(label)}</button>`);
+ });
  const form=detail.querySelector('form');
  if(form){
   const draft=integrationDrafts.get(d.formKey);if(draft)for(const [name,value]of Object.entries(draft)){const input=form.elements.namedItem(name);if(input)input.value=value}
@@ -4431,7 +4567,7 @@ function integrationFinishDetail(d,detail,title,body,footer,editing,item,back,sa
 function integrationConditionalFields(){
  const detail=document.querySelector('.integration-detail');if(!detail)return;
  const transport=detail.querySelector('#i-transport')?.value,auth=detail.querySelector('#i-auth')?.value,importMode=detail.querySelector('#i-import-mode')?.value;
- for(const [selector,hidden]of [['[data-i-http]',transport==='stdio'],['[data-i-headers]',transport==='stdio'],['[data-i-stdio]',transport!=='stdio'],['[data-i-secret]',!['bearer','api-key'].includes(auth)],['[data-i-key-header]',auth!=='api-key'],['[data-i-oauth]',auth!=='oauth'],['[data-i-import-source]',importMode==='markdown']]){
+ for(const [selector,hidden]of [['[data-i-http]',transport==='stdio'],['[data-i-headers]',transport==='stdio'],['[data-i-stdio]',transport!=='stdio'],['[data-i-secret]',!['bearer','api-key'].includes(auth)],['[data-i-key-header]',auth!=='api-key'],['[data-i-oauth]',auth!=='oauth'],['[data-i-import-source]',!['directory','repository'].includes(importMode)]]){
   const group=detail.querySelector(selector);if(!group)continue;group.hidden=hidden;for(const field of group.querySelectorAll('input,textarea,select'))field.disabled=hidden;
  }
  if(['connection','mcp-catalog'].includes(integrationDetail?.kind)&&integrationDetail.mode==='edit'){
@@ -4443,7 +4579,8 @@ function integrationBack(restoreFocus=true){
  const d=integrationDetail;if(!d)return;
  if(d.parentFeed&&restoreFocus){d.kind='feed';d.id=d.parentFeed;d.mode='read';delete d.parentFeed;integrationDetailRender();return}
  const dialog=document.querySelector('.stats-drawer');document.querySelector('.integration-detail')?.remove();integrationDetail=null;
- for(const child of dialog.querySelectorAll('[data-config-hidden]')){child.hidden=false;child.removeAttribute('data-config-hidden')}
+ for(const child of dialog.querySelectorAll('[data-detail-inert]')){child.inert=false;child.removeAttribute('data-detail-inert')}
+ dialog.setAttribute('aria-modal','true');
  integrationRerender(d.owner);
  const root=dialog.querySelector(`[data-integration="${d.owner}"]`),focus=d.origin?.isConnected?d.origin:root?.querySelector(`[data-i-row="${CSS.escape(d.anchorId)}"] [data-i-action="detail"]`)||(d.originAction?root?.querySelector(`[data-i-action="${CSS.escape(d.originAction)}"]`):null)||root?.querySelector('[data-i-tab][aria-selected="true"]');
  if(restoreFocus)focus?.focus({preventScroll:true});
@@ -4529,7 +4666,15 @@ function integrationImportPreview(){
    }
   }else{
    const mode=document.querySelector('#i-import-mode').value;let name,description,body;
-   if(mode==='markdown'){
+   if(mode==='json'){
+    const parsed=JSON.parse(text);if(parsed.version!==1||!Array.isArray(parsed.skills))throw Error('需要包含 version: 1 与 skills 数组的技能 JSON。');
+    const seen=new Set();
+    for(const skill of parsed.skills){
+     if(!skill||typeof skill.name!=='string'||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.name)||typeof skill.description!=='string'||!skill.description.trim()||typeof skill.body!=='string'||!skill.body.trim()||(skill.enabled!==undefined&&typeof skill.enabled!=='boolean'))throw Error('技能 JSON 中的名称、说明、正文或启用状态无效。');
+     candidates.push({name:skill.name,description:skill.description,body:skill.body,scope,source:scope==='global'?'dsh':'project',category:'',enabled:skill.enabled!==false,issue:'',files:['SKILL.md'],duplicate:seen.has(skill.name)||integrationDB.skills.some(s=>!s.deletedAt&&s.name===skill.name&&s.scope===scope)});
+     seen.add(skill.name);
+    }
+   }else if(mode==='markdown'){
     const match=text.match(/^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/);if(!match)throw Error('技能内容需要包含 YAML 头部和正文。');
     name=match[1].match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g,'');description=match[1].match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g,'');body=match[2].trim();
     if(!name||!description||!body||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name))throw Error('请填写有效的 name、description 与技能正文。');
@@ -4538,7 +4683,7 @@ function integrationImportPreview(){
     if(mode==='repository'&&!/^https:\/\/[^/]+\/.+/.test(path))throw Error('请填写 HTTPS 仓库地址。');
     name='meeting-notes';description='整理会议记录与后续行动';body='# 会议整理\n\n记录决策、负责人和后续行动。';
    }
-   candidates.push({name,description,body,scope,source:scope==='global'?'dsh':'project',category:'',enabled:true,issue:'',files:['SKILL.md'],duplicate:integrationDB.skills.some(s=>!s.deletedAt&&s.name===name&&s.scope===scope)});
+   if(mode!=='json')candidates.push({name,description,body,scope,source:scope==='global'?'dsh':'project',category:'',enabled:true,issue:'',files:['SKILL.md'],duplicate:integrationDB.skills.some(s=>!s.deletedAt&&s.name===name&&s.scope===scope)});
   }
   if(!candidates.length)throw Error('没有可导入的条目。');
   if(candidates.length>100)throw Error('单次最多导入 100 项，请拆分内容。');
@@ -4558,11 +4703,12 @@ function integrationImportConfirm(){
 function integrationToggle(kind,id){
  const key={skill:'skills',source:'sources',category:'categories','market-source':'marketSources',connection:'connections',feed:'feeds'}[kind],item=integrationDB[key]?.find(x=>x.id===id);
  if(!item||item.deletedAt)return;
- const next=!item.enabled;
+ const next=!item.enabled,origin=document.activeElement,owner=origin?.closest('[data-integration]')?.dataset.integration;
  if(integrationSave(()=>{item.enabled=next;if(kind==='connection')item.state=next?(item.auth==='oauth'?'auth':'connected'):'disabled'})){
   for(const module of ['skills','mcp','rss'])integrationUpdateResults(module);
   if(integrationDetail&&integrationDetail.mode!=='edit')integrationDetailRender();
   integrationRefreshCards();toast(next?'已启用 · 演示操作':'已停用 · 演示操作');
+  if(owner&&!integrationDetail){const root=document.querySelector(`[data-integration="${owner}"]`);(root?.querySelector(`[data-i-action="toggle-${kind}"][data-i-id="${CSS.escape(id)}"]`)||root?.querySelector('[data-i-tab][aria-selected="true"]'))?.focus({preventScroll:true})}
  }
 }
 function integrationToggleTool(id,value){
@@ -4611,7 +4757,9 @@ function bindIntegrations(dialog){
   if(target.hasAttribute('data-i-tab')){if(integrationDetail)integrationBack(false);integrationRemember(kind);integrationViews[kind].tab=target.dataset.iTab;integrationRerender(kind,true);return}
   if(target.hasAttribute('data-i-group')){if(integrationDetail)integrationBack(false);integrationRemember(kind);integrationPageState(kind).group=target.dataset.iGroup;integrationPageState(kind).scroll=0;integrationRerender(kind);document.querySelector(`[data-integration="${kind}"] [data-i-group="${CSS.escape(target.dataset.iGroup)}"]`)?.focus({preventScroll:true});return}
   const action=target.dataset.iAction,id=target.dataset.iId,owner=target.dataset.iKind||kind||integrationDetail?.owner;
-  if(action==='back')integrationBack();
+  if(action==='detail-section'){const detail=target.closest('.integration-detail');for(const button of detail.querySelectorAll('[data-i-section-target]'))button.setAttribute('aria-current',String(button===target));detail.querySelector('#'+CSS.escape(target.dataset.iSectionTarget))?.scrollIntoView({block:'start',behavior:'instant'});return}
+  if(action==='close-detail'){delete integrationDetail.parentFeed;integrationBack()}
+  else if(action==='back')integrationBack();
   else if(action==='collapse-detail'){delete integrationDetail.parentFeed;integrationBack()}
   else if(action==='detail')integrationDetailOpen(target.dataset.iKind,id);
   else if(action==='edit-detail'){integrationDetail.returnMode=integrationDetail.mode;integrationDetail.readScroll=document.querySelector('.integration-detail-body')?.scrollTop||0;integrationDetail.mode='edit';integrationDetailRender()}
@@ -4642,7 +4790,7 @@ function bindIntegrations(dialog){
   else if(action==='import-preview')integrationImportPreview();
   else if(action==='import-confirm')integrationImportConfirm();
   else if(action==='download-export'){
-   const content=document.querySelector('[data-i-export-text]').textContent,rss=integrationDetail.owner==='rss',url=URL.createObjectURL(new Blob([content],{type:rss?'text/x-opml':'application/json'})),link=document.createElement('a');link.href=url;link.download=rss?'subscriptions.opml':'mcp.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+   const content=document.querySelector('[data-i-export-text]').textContent,owner=integrationDetail.owner,rss=owner==='rss',url=URL.createObjectURL(new Blob([content],{type:rss?'text/x-opml':'application/json'})),link=document.createElement('a');link.href=url;link.download={rss:'subscriptions.opml',skills:'skills.json',mcp:'mcp.json'}[owner];link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }else if(action==='open-original'){const article=integrationDB.articles.find(a=>a.id===id);if(article)toast('原文地址：'+article.url+' · 示例文章，不访问真实网站',null,null,6500)}
  });
  dialog.addEventListener('input',e=>{
@@ -4684,12 +4832,13 @@ function statsHTML(){
 }
 function statsPanel(key,data){
  if(['skills','mcp','rss'].includes(key))return integrationPanel(key);
- if(key==='diagnostic')return `<div class="stats-page-header"><h3 class="stats-page-heading">项目诊断</h3>${button(`${icon('refresh')}${scene==='loading'?'检查中…':'重新检查'}`,'refresh','diagnostic-refresh',scene==='loading'?'disabled':'')}</div><p class="dialog-description stats-page-description">检查目录、普通冷会话列表缓存、孤儿子代理及空会话；检查不读取正文。</p>${scene==='error'||scene==='sync'?'<p class="diagnostic-message">部分检查失败，请重新检查。</p>':''}${statsDiagnosticContent(data,data.diagnostic.length?data.diagnostic.map(p=>button(`<span class="stats-item-copy"><strong>${esc(p.name)} · 目录不可用</strong><small>${esc(p.path)}</small></span>${icon('chevron')}`,'stats-target','stats-item',`data-project-id="${p.id}" data-diagnostic-kind="directory" data-target-type="project"`)).join(''):'')}`;
+ if(key==='diagnostic')return `<div class="stats-page-header"><h3 class="stats-page-heading">项目诊断</h3>${button(`${icon('refresh')}${scene==='loading'?'检查中…':'重新检查'}`,'refresh','diagnostic-refresh primary',scene==='loading'?'disabled':'')}</div><p class="dialog-description stats-page-description">检查目录、普通冷会话列表缓存、孤儿子代理及空会话；检查不读取正文。</p>${scene==='error'||scene==='sync'?'<p class="diagnostic-message">部分检查失败，请重新检查。</p>':''}${statsDiagnosticContent(data,data.diagnostic.length?data.diagnostic.map(p=>button(`<span class="stats-item-copy"><strong>${esc(p.name)} · 目录不可用</strong><small>${esc(p.path)}</small></span>${icon('chevron')}`,'stats-target','stats-item',`data-project-id="${p.id}" data-diagnostic-kind="directory" data-target-type="project"`)).join(''):'')}`;
  const labels={running:['运行中','活跃项目内尚未结束的会话。'],recent:['近期会话',`最近 ${homepage.statDays} 天更新的未归档会话，按更新时间倒序。运行中会话也包含在内。`],pending:['项目待办','汇总活跃项目中的待处理事项，点击进入所属项目并定位。']};
  const [title,description]=labels[key],entries=data[key];
  const notice=scene==='error'||scene==='sync'?'<p class="stats-notice" role="status">读取未完成，以下为上次成功结果，可能不是最新。</p>':'';
  const body=scene==='loading'?'<p class="stats-empty" role="status">正在读取数据，请稍候…</p>':entries.length?`<div class="stats-items">${entries.map(({p,s,t})=>button(`<span class="stats-item-copy"><strong>${esc((s||t).title)}</strong><small>${esc((s||t).time||'时间未知')}</small></span>${icon('chevron')}`,'stats-target','stats-item',`data-project-id="${p.id}" data-id="${(s||t).id}" data-target-type="${t?'todo':'session'}" title="${esc((s||t).title)}"`)).join('')}</div>`:`<p class="stats-empty">${key==='running'?'当前没有运行中会话。':key==='recent'?`最近 ${homepage.statDays} 天没有更新的会话。`:'当前没有未完成待办。'}</p>`;
- return `<h3 class="stats-page-heading">${title}</h3><p class="dialog-description stats-page-description">${description} 已归档、已移除或已合并项目不计入。</p>${notice}${statsGroupedContent(key,data,body)}`;
+ const heading=key==='pending'?`<div class="stats-page-header"><h3 class="stats-page-heading">${title}</h3>${button(icon('plus')+'添加待办','stats-create-todo','stats-create-todo primary',scene==='loading'||!projects.some(p=>!p.archived&&!p.removed&&!p.merged)?'disabled title="需要可用的活跃项目"':'')}</div>`:`<h3 class="stats-page-heading">${title}</h3>`;
+ return `${heading}<p class="dialog-description stats-page-description">${description} 已归档、已移除或已合并项目不计入。</p>${notice}${statsGroupedContent(key,data,body)}`;
 }
 function statsGroupedContent(key,data,body){
  const groups=new Map();for(const entry of data[key]){const p=entry.p;const group=groups.get(p.id)||{p,count:0};group.count++;groups.set(p.id,group)}
@@ -4698,7 +4847,7 @@ function statsGroupedContent(key,data,body){
 function statsDiagnosticContent(data,body){
  const types=[['directory','目录异常'],['cache','列表缓存'],['orphan','孤儿子代理'],['empty','空会话']];
  const state=statsDiagnosticEmpty('');
- return `<div class="stats-project-browser" data-stats-diagnostic><aside class="stats-project-groups" aria-label="诊断类型分组"><label class="stats-group-search">${icon('search')}<input type="search" aria-label="搜索诊断异常" placeholder="搜索异常"></label><nav class="stats-group-items" aria-label="选择诊断类型">${[['','全部异常'],...types].map(([kind,label])=>`<button type="button" class="stats-group-entry" data-diagnostic-group="${kind}" aria-pressed="${kind===''}">${icon(kind?'alert':'grid')}<span class="stats-group-copy"><strong>${label}</strong></span><span class="stats-group-count">${!kind||kind==='directory'?data.diagnostic.length:0}</span></button>`).join('')}</nav></aside><div class="stats-group-content diagnostic-group-content"><div class="diagnostic-list-header"><strong>全部异常 · ${data.diagnostic.length}</strong></div><div class="stats-group-results${body?'':' diagnostic-results-empty'}" role="region" aria-label="诊断分组内容" tabindex="0"><div class="stats-group-records">${body}</div><div class="diagnostic-empty diagnostic-filter-empty" role="status" ${body?'hidden':''}><strong>${state[0]}</strong><p>${state[1]}</p></div></div></div></div>`;
+ return `<div class="stats-project-browser" data-stats-diagnostic><aside class="stats-project-groups" aria-label="诊断类型分组"><label class="stats-group-search">${icon('search')}<input type="search" aria-label="搜索诊断异常" placeholder="搜索异常"></label><nav class="stats-group-items" aria-label="选择诊断类型">${[['','全部异常'],...types].map(([kind,label])=>`<button type="button" class="stats-group-entry" data-diagnostic-group="${kind}" aria-pressed="${kind===''}">${icon(kind?'alert':'grid')}<span class="stats-group-copy"><strong>${label}</strong></span><span class="stats-group-count">${!kind||kind==='directory'?data.diagnostic.length:0}</span></button>`).join('')}</nav></aside><div class="stats-group-content diagnostic-group-content"><div class="stats-group-results${body?'':' diagnostic-results-empty'}" role="region" aria-label="诊断分组内容" tabindex="0"><div class="stats-group-records">${body}</div><div class="diagnostic-empty diagnostic-filter-empty" role="status" ${body?'hidden':''}><strong>${state[0]}</strong><p>${state[1]}</p></div></div></div></div>`;
 }
 function statsDiagnosticEmpty(selected,query=''){
  if(query)return ['没有匹配的异常','请尝试其他关键词或清空搜索'];
@@ -4713,7 +4862,7 @@ function bindStatsGroups(dialog){
    const query=input.value.trim().toLocaleLowerCase(),matches=rows.filter(row=>row.textContent.toLocaleLowerCase().includes(query));
    for(const row of rows)row.hidden=!matches.includes(row)||(selected&&row.dataset.diagnosticKind!==selected);
    for(const b of buttons){b.setAttribute('aria-pressed',String(b.dataset.diagnosticGroup===selected));b.querySelector('.stats-group-count').textContent=matches.filter(row=>!b.dataset.diagnosticGroup||row.dataset.diagnosticKind===b.dataset.diagnosticGroup).length}
-   root.querySelector('.diagnostic-list-header strong').textContent=`${buttons.find(b=>b.dataset.diagnosticGroup===selected).querySelector('strong').textContent} · ${rows.filter(row=>!row.hidden).length}`;
+   root.querySelector('.stats-group-results').setAttribute('aria-label',`${buttons.find(b=>b.dataset.diagnosticGroup===selected).querySelector('strong').textContent}，${rows.filter(row=>!row.hidden).length} 项异常`);
    const empty=root.querySelector('.diagnostic-filter-empty'),state=statsDiagnosticEmpty(selected,query);empty.hidden=rows.some(row=>!row.hidden);empty.querySelector('strong').textContent=state[0];empty.querySelector('p').textContent=state[1];root.querySelector('.stats-group-results').classList.toggle('diagnostic-results-empty',!empty.hidden);
   };
   input.addEventListener('input',()=>{selected='';update()});
@@ -4739,7 +4888,7 @@ function openStats(initial='running'){
  if(!statsTabs.some(([key])=>key===initial))initial='running';
  closeModal(true);
  const data=statsData();
- modal('工作台概览',`<div class="settings-layout"><nav class="settings-nav" role="tablist" aria-label="统计分类">${statsTabs.map(([key,label,symbol])=>`<button type="button" id="settings-tab-${key}" data-settings-tab="${key}" role="tab" aria-controls="settings-panel-${key}">${icon(symbol)}${label}</button>`).join('')}</nav><div class="settings-content">${statsTabs.map(([key])=>`<section class="settings-panel" id="settings-panel-${key}" data-settings-panel="${key}" role="tabpanel" aria-labelledby="settings-tab-${key}" hidden>${statsPanel(key,data)}</section>`).join('')}</div></div>`,button('关闭','close-modal'));
+ modal('工作台概览',`<div class="settings-layout"><aside class="stats-sidebar"><nav class="settings-nav" role="tablist" aria-label="统计分类">${statsTabs.map(([key,label,symbol])=>`<button type="button" id="settings-tab-${key}" data-settings-tab="${key}" role="tab" aria-controls="settings-panel-${key}">${icon(symbol)}${label}</button>`).join('')}</nav><div class="stats-sidebar-actions">${button(icon('close')+'关闭概览','close-modal','flat')}</div></aside><div class="settings-content">${statsTabs.map(([key])=>`<section class="settings-panel" id="settings-panel-${key}" data-settings-panel="${key}" role="tabpanel" aria-labelledby="settings-tab-${key}" hidden>${statsPanel(key,data)}</section>`).join('')}</div></div>`);
  const dialog=document.querySelector('.dialog');dialog.classList.add('workspace-settings','stats-drawer');dialog.closest('.overlay').classList.add('settings-overlay');
  bindSettingsTabs(dialog.querySelector('.settings-layout'),initial);
  bindStatsGroups(dialog);
@@ -4759,6 +4908,25 @@ function openStatsTarget(target){
  statsReturn={overlay,origin:target,focus:previousFocus,overflow:previousOverflow,scroll:[...overlay.querySelectorAll('*')].filter(node=>node.scrollTop||node.scrollLeft).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}))};
  overlay.remove();
  openTodoEditor(t,p);
+}
+function openStatsTodoCreate(target){
+ const overlay=target.closest('.overlay'),root=overlay.querySelector('[data-stats-groups="pending"]'),group=root?.querySelector('[data-project-group][aria-pressed="true"]')?.dataset.projectGroup;
+ const active=projects.filter(p=>!p.archived&&!p.removed&&!p.merged),project=active.find(p=>p.id===group)||active.find(p=>p.id===selected)||active[0];
+ if(!project)return toast('请先添加一个活跃项目。');
+ statsReturn={overlay,origin:target,creating:true,focus:previousFocus,overflow:previousOverflow,scroll:[...overlay.querySelectorAll('*')].filter(node=>node.scrollTop||node.scrollLeft).map(node=>({node,top:node.scrollTop,left:node.scrollLeft}))};
+ overlay.remove();openTodoEditor(null,project);
+}
+function refreshStatsTodoList(){
+ const state=statsReturn,panel=state?.overlay.querySelector('[data-settings-panel="pending"]');if(!panel)return;
+ const root=panel.querySelector('[data-stats-groups="pending"]'),query=root?.querySelector('input')?.value||'',group=root?.querySelector('[data-project-group][aria-pressed="true"]')?.dataset.projectGroup||'';
+ const scroll=['.stats-group-results','.stats-group-items'].map(selector=>({selector,top:root?.querySelector(selector)?.scrollTop||0,left:root?.querySelector(selector)?.scrollLeft||0}));
+ state.scroll=state.scroll.filter(({node})=>!panel.contains(node));
+ panel.innerHTML=statsPanel('pending',statsData());bindStatsGroups(panel);
+ const input=panel.querySelector('[data-stats-groups] input');input.value=query;input.dispatchEvent(new Event('input',{bubbles:true}));
+ panel.querySelector(`[data-project-group="${CSS.escape(group)}"]`)?.click();
+ for(const {selector,top,left}of scroll){const node=panel.querySelector(selector);if(node)state.scroll.push({node,top,left})}
+ state.origin=panel.querySelector('[data-action="stats-create-todo"]');
+ integrationRefreshCards();
 }
 function overview(){const list=orderedProjects();return `<main class="main home-main">${syncBanner()}${homepage.composer?composerHTML():''}
 ${homepage.recent?recentHTML():''}
@@ -4823,16 +4991,21 @@ function toggleTodoSearch(){
 let todoEditorImages=[];
 function openTodoEditor(t,p=current()){
  todoEditorImages=[...(t?.images||[])];
- const body=`<form class="todo-detail-form"><div class="todo-detail-body"><section class="todo-detail-section"><div class="todo-compact-fields"><label class="todo-title-field"><span>标题</span><input id="edit-title" maxlength="500" value="${esc(t?.title||'')}"></label>
+ const projectField=!t&&statsReturn?.creating?`<div class="todo-project-field"><label class="field" for="todo-create-project">所属项目</label><select id="todo-create-project" aria-label="所属项目">${projects.filter(x=>!x.archived&&!x.removed&&!x.merged).map(x=>`<option value="${esc(x.id)}" ${x.id===p.id?'selected':''}>${esc(x.name)}</option>`).join('')}</select></div>`:'';
+ const body=`<form class="todo-detail-form"><div class="todo-detail-body"><section class="todo-detail-section">${projectField}<div class="todo-compact-fields"><label class="todo-title-field"><span>标题</span><input id="edit-title" maxlength="500" value="${esc(t?.title||'')}"></label>
  <div class="todo-priority-field"><span>优先级</span><select id="edit-priority" aria-label="待办优先级" ${p.archived?'disabled':''}><option value="">未设置</option>${Object.entries(todoPriorityNames).map(([key,name])=>`<option value="${key}" ${t?.priority===key?'selected':''}>${name}</option>`).join('')}</select></div></div>
- <div class="todo-detail-meta"><span class="todo-status ${t?.status===2?'done':''}">${t?.status===2?'已完成':'待处理'}</span><span>${esc(p.name)}</span><span>${esc(t?.by||'用户')} 创建${t?.time?' · '+esc(t.time):''}</span></div></section>
+ <div class="todo-detail-meta"><span class="todo-status ${t?.status===2?'done':''}">${t?.status===2?'已完成':'待处理'}</span><span data-todo-project-label>${esc(p.name)}</span><span>${esc(t?.by||'用户')} 创建${t?.time?' · '+esc(t.time):''}</span></div></section>
  <section class="todo-detail-section"><div class="todo-note-tabs"><strong>描述</strong>${button('预览','todo-note-preview')}</div>
  <textarea id="edit-note" aria-label="待办描述" rows="8" maxlength="10000" ${p.archived?'readonly':''} placeholder="支持 Markdown：背景、实施步骤、验收标准…">${esc(t?.note||'')}</textarea><div class="todo-markdown" id="edit-note-preview" hidden></div>
  </section><section class="todo-detail-section"><div class="todo-attachment-heading"><strong>附件 <span id="todo-image-total">${todoEditorImages.length}</span>/10</strong><span>单个不超过10MiB</span></div>
  <div class="todo-attachment-grid" id="todo-editor-images"></div>${p.archived?'':'<label class="todo-attachment-picker">'+icon('plus')+'添加附件即上传，或拖入 / 粘贴文件<input id="todo-images" type="file" multiple></label>'}</section></div>
  <footer><span class="todo-save-state">有未保存修改</span>${p.archived?'':`<div class="todo-primary-actions">${button('发起会话','todo-start-session','',`data-id="${t?.id||''}" data-todo-project-id="${p.id}"`)}${button('保存','save-todo','wb-primary',`data-id="${t?.id||''}" data-todo-project-id="${p.id}"`)}</div>`}</footer></form>`;
- modal(t?'待办详情':'新建待办',body);
+ modal(t?'待办详情':statsReturn?.creating?'添加待办':'新建待办',body);
  const dialog=document.querySelector('.dialog');dialog.classList.add('todo-detail-dialog');document.getElementById('edit-title').readOnly=p.archived;
+ dialog.querySelector('#todo-create-project')?.addEventListener('change',e=>{
+  const project=projects.find(x=>x.id===e.target.value&&!x.archived&&!x.removed&&!x.merged);if(!project){e.target.value=p.id;return error('项目已不可访问，请选择其他活跃项目。')}
+  p=project;dialog.querySelector('[data-todo-project-label]').textContent=p.name;for(const action of dialog.querySelectorAll('[data-todo-project-id]'))action.dataset.todoProjectId=p.id;
+ });
  dialog.querySelector('form').onsubmit=e=>{e.preventDefault();dialog.querySelector('[data-action="save-todo"]')?.click()};
  const renderImages=()=>{document.getElementById('todo-image-total').textContent=todoEditorImages.length;document.getElementById('todo-editor-images').innerHTML=todoEditorImages.map((item,i)=>{const file=typeof item==='string'?{url:item,name:'待办图片',image:true}:item;return `<div class="todo-attachment-card">${file.image?`<img src="${esc(file.url)}" alt="${esc(file.name)}">`:`<div class="todo-file-preview">${icon('file')}</div>`}<span title="${esc(file.name)}">${esc(file.name)}</span>${p.archived?'':button(icon('close'),'todo-remove-preview-image','wb-icon',`data-index="${i}" aria-label="移除附件"`)}</div>`}).join('')};
  const addFiles=async files=>{if(todoEditorImages.length+files.length>10||files.some(f=>f.size>10*1024*1024))return error('最多10个附件，单个不超过10MiB');const items=await Promise.all(files.map(f=>new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve({url:reader.result,name:f.name,image:f.type.startsWith('image/')});reader.readAsDataURL(f)})));todoEditorImages.push(...items);renderImages()};
@@ -4846,7 +5019,7 @@ function todoRow(t,p){
  const meta=[t.by?`${t.by} 创建`:'',t.time].filter(Boolean).join(' · ');
  return `<article class="todo-row ${done?'completed':''}" data-todo="${t.id}">
  ${button(`<span class="completion-circle" aria-hidden="true">${icon('check')}</span>`,done?'reopen-todo':'complete-todo','todo-complete',`data-id="${t.id}" ${disabled} aria-label="${esc((done?'重新打开：':'完成：')+t.title)}" title="${done?'重新打开':'标记完成'} · 当前${state}"`)}
- <div class="todo-copy">${button(esc(t.title),'edit-todo','todo-title',`data-id="${t.id}" title="${esc(t.title)}"`)}<div class="todo-meta-line">${t.priority?`<span class="todo-priority ${t.priority}">${todoPriorityNames[t.priority]}优先级</span>`:''}<div class="todo-meta">${esc(meta)}</div>${t.images?.length?`<span class="todo-attachment-count">${icon('paperclip')}${t.images.length} 个附件</span>`:''}</div></div>
+ <div class="todo-copy">${button(esc(t.title),'edit-todo','todo-title',`data-id="${t.id}" title="${esc(t.title)}"`)}<div class="todo-meta-line">${t.priority?`<span class="todo-priority ${t.priority}">${todoPriorityNames[t.priority]}优先级</span>`:''}<div class="todo-meta" title="${esc(meta)}">${esc(meta)}</div>${t.images?.length?`<span class="todo-attachment-count" role="img" aria-label="${t.images.length} 个附件" title="${t.images.length} 个附件">${icon('paperclip')}<span aria-hidden="true">${t.images.length}<span class="todo-attachment-unit"> 个附件</span></span></span>`:''}</div></div>
  ${!p.archived?button(icon('trash'),'delete-todo','more todo-delete',`data-id="${t.id}" aria-label="${esc('删除待办：'+t.title)}" title="删除待办"`):''}</article>`
 }
 function agentPermissionHTML(p){return `<details class="agent-permission"><summary aria-label="查看全局 Agent 待办权限">${icon('bot')}<span>Agent 待办权限${p.archived?' · 只读':!homepage.agentManageTodos?' · 仅查询':''}</span><span class="permission-chevron">${icon('down')}</span></summary><div class="agent-info"><strong>${p.archived?'归档只读':homepage.agentManageTodos?'允许管理待办':'仅允许查询待办'}</strong><p>${p.archived?'归档期间所有写入暂停。':homepage.agentManageTodos?'Agent 可创建、查询、编辑、删除待办及修改完成状态。':'Agent 仅可查询待办。'}全局权限在「工作台设置 → 项目配置」中调整，对所有项目统一生效。</p></div></details>`}
@@ -5329,7 +5502,7 @@ function selectBackupSettingsTab(name,focus=false){const dialog=document.querySe
 function selectSettingsTab(name,focus=false){const dialog=document.querySelector('.workspace-settings');if(!dialog)return;if(integrationDetail)integrationBack(false);closeComposerPicker();for(const tab of dialog.querySelectorAll('[data-settings-tab]')){const active=tab.dataset.settingsTab===name;tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1}for(const panel of dialog.querySelectorAll('.settings-panel'))panel.hidden=panel.dataset.settingsPanel!==name;dialog.querySelector('.settings-content').scrollTop=0;if(focus)dialog.querySelector(`[data-settings-tab="${name}"]`)?.focus()}
 function saveWorkspaceSettings(){
  const value=id=>document.getElementById(id).value,checked=id=>document.getElementById(id).checked;
- if(statsTabs.filter(([key])=>checked('show-stat-'+key)).length>6){selectSettingsTab('home');selectHomeSettingsTab('stats');const note=document.getElementById('stat-cards-note');note.dataset.limit='true';note.textContent='最多显示 6 张统计卡，请先关闭一项。';return}
+ if(statsTabs.filter(([key])=>checked('show-stat-'+key)).length>6){selectSettingsTab('appearance');selectAppearanceSettingsTab('stats');const note=document.getElementById('stat-cards-note');note.dataset.limit='true';note.textContent='最多显示 6 张统计卡，请先关闭一项。';return}
  const enteredRoot=value('root-path').trim(),nextRoot=enteredRoot==='/'?'/':enteredRoot.replace(/\/+$/,'');
  if(nextRoot&&!nextRoot.startsWith('/')){selectSettingsTab('project');selectProjectSettingsTab('global');document.getElementById('root-path').focus();return error('请填写默认根目录的绝对路径。')}
  const enteredName=value('sidebar-name').trim();if(checked('sidebar-visible')&&!enteredName){selectSettingsTab('general');document.getElementById('sidebar-name').focus();return error('请填写侧栏入口名称。')}
@@ -5417,6 +5590,7 @@ else if(action==='session-details')openReadDetails('session',id,b.dataset.projec
 else if(action==='todo-details')openReadDetails('todo',id);
 else if(action==='open-stats')openStats(b.dataset.statTab);
 else if(action==='stats-target')openStatsTarget(b);
+else if(action==='stats-create-todo')openStatsTodoCreate(b);
 else if(action==='save-workspace-settings')saveWorkspaceSettings();
 else if(action==='project-menu'){const x=projects.find(x=>x.id===id&&!x.removed&&!x.merged);if(!x)return;const copyItems=view==='detail'?[['复制路径','copy-project-path',id]]:[],details=['打开目录','open-project-directory',id];menu(x.archived?[...organizingItems(x,'project'),...copyItems,details,['恢复项目','restore',id]]:[['重命名','rename',id],...organizingItems(x,'project'),...copyItems,details,['项目迁移','project-migrate',id],['迁移记录','migration-record',id],['归档项目','archive-project',id],['移除项目','remove-project',id,'danger']],b)}
 else if(action==='rename'){const x=projects.find(x=>x.id===id);if(!x||x.archived||x.removed||x.merged)return;closeMenu();modal('重命名项目',field('项目名称','rename-name',x.name)+`<p class="dialog-description" style="margin-top:14px">名称与 Harness 同步；不改变本地文件夹名称和路径。Enter 保存，Esc 取消。</p><div class="path-preview">${esc(x.path)}</div>`,button('取消','close-modal')+button('保存','save-name','primary',`data-id="${x.id}"`));const input=document.getElementById('rename-name');input.focus();input.select();input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();document.querySelector('[data-action="save-name"]')?.click()}})}
@@ -5438,7 +5612,7 @@ else if(action==='clear-todo-query'){todoSearchState().query='';render();documen
 else if(action==='todo-note-preview'){const note=document.getElementById('edit-note');document.getElementById('edit-note-preview').innerHTML='<pre>'+esc(note.value)+'</pre>';document.getElementById('edit-note-preview').hidden=false;note.hidden=true;b.dataset.action='todo-note-edit';b.textContent='编辑'}
 else if(action==='todo-note-edit'){document.getElementById('edit-note').hidden=false;document.getElementById('edit-note-preview').hidden=true;b.dataset.action='todo-note-preview';b.textContent='预览'}
 else if(action==='todo-start-session'){if(p.archived)return;composerProject=p.id;composerDraft=[document.getElementById('edit-title').value,document.getElementById('edit-note').value].filter(Boolean).join('\n\n');closeModal(true);go('overview');toast('已填入会话草稿，未发送消息；真实宿主负责附件交接')}
-else if(action==='save-todo'){const title=document.getElementById('edit-title').value.trim();if(!title)return error('待办标题不能为空。');if(p.archived)return;let t=p.todos.find(t=>t.id===id);if(statsReturn&&!t)return error('待办已不可访问，请关闭后重新打开。');const created=!t;if(!t)t={id:uid(),status:0,by:'用户'};const before={...t};commitWrite(()=>{t.title=title;t.note=document.getElementById('edit-note').value;t.priority=document.getElementById('edit-priority').value||null;t.images=[...todoEditorImages];t.time='刚刚';if(created)p.todos.unshift(t)},()=>{if(created)p.todos=p.todos.filter(x=>x!==t);else Object.assign(t,before)},()=>{const restoreStats=!!statsReturn;if(restoreStats){statsReturn.origin.querySelector('strong').textContent=t.title;statsReturn.origin.querySelector('small').textContent=t.time}closeModal();if(!restoreStats)render();toast('待办已保存')},'待办保存失败，原内容及本次输入已保留。')}
+else if(action==='save-todo'){const title=document.getElementById('edit-title').value.trim();if(!title)return error('待办标题不能为空。');if(p.archived)return;let t=p.todos.find(t=>t.id===id);if(statsReturn&&!t&&!statsReturn.creating)return error('待办已不可访问，请关闭后重新打开。');const created=!t;if(!t)t={id:uid(),status:0,by:'用户'};const before={...t};commitWrite(()=>{t.title=title;t.note=document.getElementById('edit-note').value;t.priority=document.getElementById('edit-priority').value||null;t.images=[...todoEditorImages];t.time='刚刚';if(created)p.todos.unshift(t)},()=>{if(created)p.todos=p.todos.filter(x=>x!==t);else Object.assign(t,before)},()=>{const restoreStats=!!statsReturn;if(statsReturn?.creating)refreshStatsTodoList();else if(restoreStats){statsReturn.origin.querySelector('strong').textContent=t.title;statsReturn.origin.querySelector('small').textContent=t.time}closeModal();if(!restoreStats)render();toast('待办已保存')},'待办保存失败，原内容及本次输入已保留。')}
 else if(action==='todo-menu')menu([['编辑待办','edit-todo',id],['查看完整标题与备注','todo-details',id],['删除待办','delete-todo',id,'danger']],b);
 else if(action==='delete-todo'){closeMenu();const t=p.todos.find(t=>t.id===id);if(!t||p.archived)return;const before=p.todos;commitWrite(()=>{p.todos=p.todos.filter(t=>t.id!==id)},()=>{p.todos=before},()=>{deletedTodoUndo={projectId:p.id,todo:{...t},expiresAt:Date.now()+5000};render();document.getElementById('todo-title')?.focus({preventScroll:true});toast('待办已删除','undo-delete-todo','撤销',5000)},'删除保存失败，待办已保留。')}
 else if(action==='undo-delete-todo'){const undo=deletedTodoUndo,owner=projects.find(x=>x.id===undo?.projectId);if(!undo||!owner||owner.archived||owner.removed||Date.now()>=undo.expiresAt)return toast('撤销已失效');const before=owner.todos;commitWrite(()=>{owner.todos=[...owner.todos,undo.todo]},()=>{owner.todos=before},()=>{deletedTodoUndo=null;render();toast('待办已恢复')},'恢复失败，请重试。')}
@@ -5465,7 +5639,7 @@ else if(action==='workbase'){const next=workbaseReturn;go(next?.view||'detail',n
 else if(action==='agent-add'){if(p.archived||p.sessions.find(s=>s.id===openedSession)?.archived)return;if(!homepage.agentManageTodos)return toast('Agent 当前仅可查询待办，可在项目配置中开启管理权限');const task={id:uid(),title:'补充项目路径变更的验证',status:0,by:'Agent',time:'刚刚'};commitWrite(()=>p.todos.unshift(task),()=>p.todos.shift(),()=>toast('Agent 已创建待办，进入工作台可查看'),'Agent 待办保存失败，请重试。')}
 else if(action==='confirm'){const fn=confirmation;if(fn?.()!==false){confirmation=null;closeModal()}}
 });
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeMenu()}const overlay=document.querySelector('.overlay');if(e.key==='Tab'&&overlay){const focusable=[...overlay.querySelectorAll('button,input,select,textarea')].filter(x=>!x.disabled&&x.tabIndex>=0&&x.getClientRects().length);const first=focusable[0],end=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();end?.focus()}else if(!e.shiftKey&&document.activeElement===end){e.preventDefault();first?.focus()}}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeModal();closeMenu()}const overlay=document.querySelector('.overlay');if(e.key==='Tab'&&overlay){const scope=overlay.querySelector('.integration-detail')||overlay;const focusable=[...scope.querySelectorAll('button,input,select,textarea')].filter(x=>!x.disabled&&!x.closest('[inert]')&&x.tabIndex>=0&&x.getClientRects().length);const first=focusable[0],end=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();end?.focus()}else if(!e.shiftKey&&document.activeElement===end){e.preventDefault();first?.focus()}}});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'&&!document.querySelector('.overlay')){e.preventDefault();document.getElementById('global-search')?.focus();return}if(e.key==='Escape'){closeSearch();return}if(!searchOpen||!e.target.closest('.global-search'))return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(!searchHits.length)return;searchIndex=e.key==='ArrowDown'?(searchIndex+1)%searchHits.length:(searchIndex<=0?searchHits.length-1:searchIndex-1);document.querySelectorAll('.search-hit').forEach((el,i)=>el.setAttribute('aria-selected',String(i===searchIndex)));const active=document.getElementById('search-hit-'+searchIndex);active?.scrollIntoView({block:'nearest'});document.getElementById('global-search').setAttribute('aria-activedescendant','search-hit-'+searchIndex)}else if(e.key==='Enter'&&e.target.id==='global-search'){e.preventDefault();if(searchHits.length)openSearchHit(searchIndex<0?0:searchIndex)}});
 document.getElementById('scene').onchange=e=>{closeModal(true);scene=e.target.value;if(scene==='path'||scene==='empty'){selected='p1';view='detail'}render()};
 document.getElementById('reset-demo').onclick=()=>{closeModal();projects=seed();migrations=[];scene='normal';view='overview';selected='p1';query='';globalQuery='';searchType='all';searchOpen=false;searchIndex=-1;openedSession=null;matchedMessage=-1;messageKeyword='';highlightTodo=null;filter='active';layout='grid';showDone=false;sessionFilter='active';detailPanel='sessions';last={view,selected};positions={};viewStates={};root='/Users/example/Projects';homepage=defaultHomepage();composerDraft='';composerProject='p1';composerMode='standard';composerModel='demo-v4-flash';workbaseReturn=null;document.getElementById('scene').value='normal';saveSearch();save();render();window.scrollTo(0,0);toast('示例已重置')};

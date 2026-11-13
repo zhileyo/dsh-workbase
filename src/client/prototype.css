@@ -143,6 +143,12 @@ input::placeholder{color:var(--muted)}h1,h2,h3,p{margin:0}h1{font-size:29px;line
 :scope .stats-drawer .settings-content{overflow:hidden}
 :scope .stats-drawer .settings-panel{height:100%;display:flex;flex-direction:column;min-height:0}
 :scope .stats-drawer .settings-panel[hidden]{display:none}
+:scope .stats-sidebar{display:flex;flex-direction:column;width:200px;flex:none;min-height:0;background:var(--bg);border-right:1px solid var(--line)}
+:scope .stats-sidebar>.settings-nav{width:100%;flex:1;min-height:0;overflow:auto;border-right:0}
+:scope .stats-sidebar-actions{flex:none;margin:0 12px;padding:12px 0 max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+:scope .stats-sidebar-actions>button{display:flex;justify-content:flex-start;gap:10px;width:100%;height:36px;padding:7px 12px;border:0;border-radius:8px;background:transparent;font-size:14px;line-height:20px;color:var(--muted)}
+:scope .stats-sidebar-actions>button:hover{background:var(--hover);color:var(--text)}
+@container workbase (max-width:650px){:scope .stats-sidebar{width:100%;border-right:0;flex:none}:scope .stats-sidebar>.settings-nav{flex:none;overflow:visible}:scope .stats-sidebar-actions{display:none}}
 :scope .stats-drawer .stats-page-heading{margin:0 0 8px;font-size:16px;line-height:24px}
 :scope .stats-page-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:none;margin-bottom:8px}
 :scope .stats-drawer .stats-page-header>.stats-page-heading{min-width:0;margin:0}
@@ -401,11 +407,11 @@ textarea::placeholder{color:var(--muted);opacity:1}
 :scope .workspace-settings .setting-row strong,:scope .workspace-settings label.field,:scope .workspace-settings .theme-choice strong{font-size:14px;font-weight:500;line-height:20px}
 :scope .workspace-settings .setting-row small,:scope .workspace-settings .theme-choice small{font-size:12px;line-height:20px}
 .workspace-settings .setting-row small{margin-top:4px}
-.workspace-settings .setting-row input[type=checkbox]{appearance:none;position:relative;width:32px;height:18px;flex:none;border:0;border-radius:20px;background:var(--muted);padding:0;margin:0;cursor:pointer;transition:background .15s}
-.workspace-settings .setting-row input[type=checkbox]::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
-.workspace-settings .setting-row input[type=checkbox]:checked{background:var(--accent)}
-.workspace-settings .setting-row input[type=checkbox]:checked::before{transform:translateX(14px)}
-.workspace-settings .setting-row input[type=checkbox]:disabled{opacity:.4;cursor:not-allowed}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch){appearance:none;position:relative;width:32px;height:18px;flex:none;border:0;border-radius:20px;background:var(--muted);padding:0;margin:0;cursor:pointer;transition:background .15s}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch)::before{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):checked{background:var(--accent)}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):checked::before{transform:translateX(14px)}
+.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch):disabled{opacity:.4;cursor:not-allowed}
 .workspace-settings #recent-layout{width:180px;flex:none;font-size:12px}
 .workspace-settings .setting-row:has(#recent-layout)>strong{flex:1}
 .workspace-settings #stats-layout-note{margin:8px 0 0;color:var(--warntext)}
@@ -1288,21 +1294,48 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .integration-heading .number{margin-left:8px;font-size:12px}
 :scope .integration-caption{font-size:12px;line-height:20px;color:var(--muted);margin:8px 0 0}
 :scope .integration-manager .settings-subtabs{flex:none;margin:16px 0;overflow:auto;gap:24px;white-space:nowrap}
-:scope .integration-workspace{display:grid;grid-template-columns:168px minmax(0,1fr);gap:20px;flex:1;min-height:0;min-width:0}
+:scope .integration-workspace{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;flex:1;min-height:0;min-width:0}
 :scope .integration-workspace[data-grouped="false"]{grid-template-columns:minmax(0,1fr)}
-:scope .integration-groups{min-width:0;min-height:0;overflow:auto;border-right:1px solid var(--line);padding-right:12px}
+:scope .integration-groups{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:0;padding-right:16px}
+:scope .integration-group-list{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+:scope .integration-group-list>.stats-group-entry,:scope .integration-group-list>.integration-group-title{flex:none}
 :scope .integration-group-title{font-size:12px;color:var(--muted);margin:16px 8px 6px}
 :scope .integration-group-title:first-child{margin-top:0}
+:scope .integration-group-heading{display:flex;align-items:center;gap:4px;flex:none;margin:8px 0 4px}
+:scope .integration-group-heading .integration-group-title{flex:1;min-width:0;margin:0 8px}
+:scope .integration-group-heading button{flex:none;width:36px;height:36px;padding:7px;border-radius:8px}
 :scope .integration-main{display:flex;flex-direction:column;min-width:0;min-height:0}
 :scope .integration-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;flex:none}
+:scope .integration-toolbar:empty{display:none}
 :scope .integration-toolbar .stats-group-search{margin:0;flex:1;min-width:140px}
-:scope .integration-toolbar button,:scope .integration-heading button{height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px;flex:none}
+:scope .integration-toolbar button,:scope .integration-heading button,:scope .diagnostic-refresh,:scope .stats-create-todo{height:36px;padding:7px 12px;font-size:14px;line-height:20px;border-radius:8px;flex:none}
 :scope .integration-toolbar .theme-select{width:140px}
 :scope .integration-toolbar .theme-select-trigger{height:36px;padding:7px 10px;border-radius:8px}
 :scope .integration-mobile-group{display:none}
-:scope .integration-records{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding-right:4px}
-:scope .integration-record{display:flex;align-items:center;gap:12px;padding:16px 12px;border-bottom:1px solid var(--line);min-width:0}
-:scope .integration-record:last-of-type{border-bottom:0}
+:scope .integration-records{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;align-content:start}
+:scope .integration-transfer-menu{grid-column:1/-1;display:flex;flex-direction:column;gap:4px;min-width:0}
+:scope .integration-transfer-menu .stats-group-copy{flex:1;min-width:0}
+:scope .integration-transfer-menu small{display:block;color:var(--muted);font-size:12px;font-weight:400;white-space:normal;overflow-wrap:anywhere}
+:scope .integration-record{position:relative;display:flex;align-items:flex-start;gap:12px;padding:16px;border:1px solid var(--line);border-radius:10px;min-width:0;background:var(--surface);transition:box-shadow .2s,border-color .2s}
+:scope .integration-record:hover,:scope .integration-record:focus-within{border-color:var(--control-line);box-shadow:0 4px 12px color-mix(in srgb,var(--text) 6%,transparent)}
+:scope .integration-record-title>button::after{content:"";position:absolute;inset:0;border-radius:10px}
+:scope .integration-record-actions{position:relative;z-index:1}
+:scope .integration-records>.integration-empty{grid-column:1/-1}
+:scope .integration-records .integration-record-title{flex-wrap:wrap}
+:scope .integration-records .integration-record-actions{position:relative;align-self:center}
+:scope .integration-records .integration-record-copy{padding-bottom:0}
+:scope .integration-records .integration-record-icon{width:40px;height:40px}
+:scope .integration-records .integration-record-actions button{width:auto;min-width:60px;height:36px;padding:7px 12px;font-size:14px;line-height:20px;border:1px solid var(--control-line);border-radius:8px;background:var(--surface);color:var(--text);white-space:nowrap}
+:scope .integration-records .integration-record-actions button.primary{background:var(--primary-bg);border-color:var(--primary-bg);color:var(--on-primary)}
+:scope .integration-records .integration-record-actions button:hover{background:var(--hover)}
+:scope .integration-records .integration-record-actions button.primary:hover{background:var(--primary-bg)}
+:scope .integration-card-toggle{display:grid;place-items:center;width:36px;height:36px;cursor:pointer;flex:none}
+:scope .integration-card-switch:focus-visible{outline:2px solid var(--focus-tone);outline-offset:3px}
+:scope .todo-project-field{margin-bottom:16px}
+@media (prefers-reduced-motion:reduce){.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch),.workspace-settings :is(.setting-row input[type=checkbox],.integration-card-switch)::before{transition:none}}
+:scope .integration-card-warning{display:inline-flex;flex:none;color:var(--danger-text)}
+:scope .integration-card-warning svg{width:14px;height:14px}
+@container workbase (min-width:1050px){:scope .integration-workspace[data-grouped="false"] .integration-records{grid-template-columns:repeat(3,minmax(0,1fr))}}
 :scope .integration-record-icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:var(--hover);color:var(--muted);flex:none}
 :scope .integration-record-icon svg{width:18px;height:18px}
 :scope .integration-record-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
@@ -1324,6 +1357,19 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .integration-status-line{display:flex;align-items:center;gap:8px;flex:none;margin:0 0 12px;font-size:12px;line-height:20px;color:var(--muted)}
 :scope .integration-status-line svg{width:14px;height:14px;flex:none}
 :scope .integration-detail{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;margin:0;background:var(--surface)}
+:scope .stats-drawer{position:relative}
+:scope .stats-drawer>.integration-detail{position:absolute;inset:0;z-index:5;border-radius:inherit;overflow:hidden}
+:scope .integration-detail-layout{display:grid;grid-template-columns:200px minmax(0,1fr);flex:1;min-height:0;min-width:0}
+:scope .integration-detail-nav{padding:20px 12px;border-right:1px solid var(--line);overflow:auto;display:flex;flex-direction:column;gap:4px}
+:scope .integration-detail-nav button{height:36px;flex:none;justify-content:flex-start;border:0;background:transparent;padding:8px 12px;font-size:14px;border-radius:8px}
+:scope .integration-detail-nav button[aria-current="true"]{background:var(--hover);color:var(--accent);font-weight:600}
+:scope .integration-detail-main{display:flex;flex-direction:column;min-height:0;min-width:0}
+:scope .integration-detail-head .integration-detail-close{width:36px;padding:8px}
+:scope .integration-detail-body>[data-i-section]{scroll-margin-top:16px}
+:scope .integration-detail .integration-detail-body .integration-record{margin-bottom:12px}
+@container workbase (max-width:850px){:scope .integration-detail-layout{grid-template-columns:160px minmax(0,1fr)}}
+@container workbase (max-width:650px){:scope .integration-records{grid-template-columns:minmax(0,1fr)}:scope .integration-detail-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}:scope .integration-detail-nav{flex-direction:row;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line)}}
+@media (prefers-reduced-motion:reduce){:scope .integration-record{transition:none}}
 :scope .integration-detail-head{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:1px solid var(--line)}
 :scope .integration-detail .integration-detail-head h3{flex:1;min-width:0;margin:0;font-size:16px;line-height:24px}
 :scope .integration-detail-head button{height:36px;padding:7px 12px;flex:none;font-size:14px;line-height:20px;border-radius:8px}
@@ -1370,12 +1416,14 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .integration-detail .dialog-footer{margin:0;min-height:0;padding:12px 16px;flex-wrap:wrap;gap:8px}
 :scope #stat-cards-note[data-limit="true"]{color:var(--danger-text)}
 @media (prefers-reduced-motion:reduce){:scope .integration-tools>summary>svg{transition:none}}
-@container workbase (max-width:850px){:scope .integration-workspace{grid-template-columns:140px minmax(0,1fr);gap:12px}:scope .integration-toolbar{gap:8px}:scope .integration-record{gap:8px}}
+@container workbase (max-width:900px){:scope .integration-workspace{grid-template-columns:180px minmax(0,1fr);gap:16px}:scope .integration-groups{padding-right:12px}}
+@container workbase (max-width:850px){:scope .integration-toolbar{gap:8px}:scope .integration-record{gap:8px}}
 @container workbase (max-width:650px){
  :scope .stats-drawer .settings-panel:has(.integration-manager){height:100%;min-height:0}
  :scope .stats-drawer:has(.integration-manager) .settings-content{overflow:hidden}
  :scope .integration-workspace{display:flex;flex-direction:column;min-height:0}
- :scope .integration-groups{display:none}
+ :scope .integration-groups{display:flex;flex:none;padding-right:0}
+ :scope .integration-group-list{display:none}
  :scope .integration-mobile-group{display:block;flex:none;margin-bottom:12px}
  :scope .integration-mobile-group .theme-select,:scope .integration-mobile-group .theme-select-trigger{width:100%}
  :scope .integration-detail-body{padding:16px}
@@ -1383,7 +1431,7 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
  :scope .integration-record{padding:16px 8px}
  :scope .integration-record-title{flex-wrap:wrap;gap:4px 8px}
  :scope .integration-record-title>button{max-width:100%}
- :scope .integration-record-icon{display:none}
+ :scope .integration-record-icon{display:grid}
  :scope .integration-manager .settings-subtabs{gap:20px}
  :scope .integration-toolbar .theme-select{width:116px}
  :scope .integration-toolbar .stats-group-search{flex-basis:100%}
