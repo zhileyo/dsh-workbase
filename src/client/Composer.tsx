@@ -39,6 +39,8 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   const [nativeReady, setNativeReady] = useState(false);
   const [fileDrag, setFileDrag] = useState(false);
   const [modelTarget, setModelTarget] = useState<HTMLDivElement | null>(null);
+  const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
   const [nativeModel, setNativeModel] = useState({ ready: false, busy: false });
   const onModelState = useCallback((state: { ready: boolean; busy: boolean }) =>
     setNativeModel(previous => previous.ready === state.ready && previous.busy === state.busy ? previous : state), []);
@@ -107,7 +109,7 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   }, [api]);
   const worktreeOn = worktree && forge && !!branches?.git;
   const send = async () => {
-    if (locked.current || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;
+    if (locked.current || voiceActive || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;
     if (worktreeOn && !branch) { setError('新建工作树需要先选择基准分支。'); return; }
     locked.current = true; setBusy(true); setError('');
     try {
@@ -170,11 +172,11 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
         if (!e.metaKey && !e.ctrlKey && bridge.current?.key(e.key === 'Tab' && e.shiftKey ? 'ShiftTab' : e.key, e.nativeEvent.isComposing)) { e.preventDefault(); return; }
         if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
       }}/>
-    <div className="wb-composer-actions composer-actions">
+    <div className="wb-composer-actions composer-actions" data-voice-active={voiceActive || undefined}>
       <div className="wb-composer-leading composer-leading">
         {api.renderComposerMenu && project?.available && preset && !pending
           ? api.renderComposerMenu({ workspaceId: project.workspaceId, preset, disabled: busy || nativeBusy,
-            modelTarget, onModelState,
+            modelTarget, onModelState, activityTarget, activityLocked: editingLocked, onActivityChange: setVoiceActive,
             onReady: value => { bridge.current = value; setNativeReady(!!value); if (!value) onModelState({ ready: false, busy: false }); },
             onState: (text, hasAttachments, sending) => { setDraft(text); setAttachments(hasAttachments); setNativeBusy(sending); } })
           : api.renderComposerMenu ? <button className="wb-icon field-settings" type="button" aria-label="添加上下文" disabled><Icon name="plus"/></button>
@@ -192,8 +194,9 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
       {api.renderComposerMenu ? <div className="wb-composer-model" ref={setModelTarget} aria-label="会话模型"/>
         : <Picker kind="model" label="会话模型" value={model} disabled={!catalog || editingLocked} onChange={setModel}
         options={catalog?.models.map(m => ({ value: JSON.stringify([m.provider, m.id]), label: m.name, description: m.providerName })) ?? [{ value: '', label: '读取模型…' }]}/>}
+      {api.renderComposerMenu && <div className="wb-composer-activity" ref={setActivityTarget}/>}
       <button id="composer-send" className="wb-send wb-primary primary" type="button" title={pending ? '重试首条消息' : '发送 · ⌘ Enter'} aria-label={pending ? '重试首条消息' : '发送首条消息'}
-        disabled={busy || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
+        disabled={voiceActive || busy || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
       </div>
     </div>
     {!project?.available && projectId && <p className="wb-warning">所选项目目录不可用，请选择可用项目。</p>}

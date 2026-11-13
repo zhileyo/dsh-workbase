@@ -1105,6 +1105,15 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .composer-shell .composer-actions{display:flex!important;justify-content:space-between!important;padding-top:2px}
 :scope .composer-shell .composer-leading{display:flex!important;flex:1 1 auto!important;justify-content:flex-start!important;align-items:center!important;gap:4px!important;min-width:0}
 :scope .composer-shell .composer-trailing{display:flex!important;flex:0 0 auto!important;align-items:center!important}
+/* 官方语音活动：保留组件自身按钮与波形规格，只适配工作台工具栏空间。 */
+:scope .composer-shell .wb-composer-activity:empty{display:none}
+:scope .composer-shell .wb-composer-activity{display:flex;align-items:center;min-width:0}
+:scope .composer-shell .wb-composer-activity button{margin-left:0!important}
+:scope .composer-shell .composer-actions[data-voice-active="true"]>.composer-leading{display:none!important}
+:scope .composer-shell .composer-actions[data-voice-active="true"]>.composer-trailing{flex:1 1 auto!important;width:100%;max-width:100%;margin-left:0}
+:scope .composer-shell .composer-actions[data-voice-active="true"] .wb-composer-model{display:none!important}
+:scope .composer-shell .composer-actions[data-voice-active="true"] .wb-composer-activity{flex:1 1 auto}
+:scope .composer-shell .composer-actions[data-voice-active="true"] .wb-composer-activity>*{width:100%;min-width:0}
 :scope .composer-leading>.wb-icon{width:32px!important;height:32px!important;border:0!important;background:var(--hover)!important;color:var(--muted)!important;border-radius:50%!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;flex:none}
 :scope .composer-leading>.wb-icon:hover{color:var(--text)!important}
 :scope .composer-leading>.wb-icon svg{width:16px!important;height:16px!important}

@@ -14,7 +14,7 @@ import { Workbase } from './Workbase.js';
 import { WorkbaseButton } from './WorkbaseButton.js';
 import { PluginUpdate } from './PluginUpdate.js';
 import { PluginUpdateController, type PluginManagerPort, type UpdateProgress } from './plugin-update.js';
-import { ComposerMenu, ComposerModelState, ComposerProjectPicker } from './NativeComposer.js';
+import { ComposerActivity, ComposerMenu, ComposerModelState, ComposerProjectPicker } from './NativeComposer.js';
 import type { ComponentType } from 'react';
 import { createElement } from 'react';
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -286,6 +286,7 @@ export function apply(ctx: Context) {
       { name: 'main', key: 'dsh-workbase', children: {
         'workbase.command-menu': { kind: 'single', scope: 'session' },
         'workbase.model-selector': { kind: 'single', scope: 'session' },
+        'workbase.input-activity': { kind: 'single', scope: 'session' },
       } },
       props => {
         if (props?.renderSlot) api.renderComposerMenu = options => <ComposerMenu ctx={ctx} memory={memory} {...options}
@@ -295,8 +296,10 @@ export function apply(ctx: Context) {
     );
     let disposeComposer: (() => void) | undefined;
     let disposeModel: (() => void) | undefined;
+    let disposeActivity: (() => void) | undefined;
     let previous: unknown;
     let previousModel: unknown;
+    let previousActivity: unknown;
     const updateMenu = () => {
       const menu = ctx.slots.entriesOfSlot?.('conversation.input.overlay').find(entry => entry.options.id === 'slash-menu');
       if (menu !== previous) {
@@ -317,13 +320,24 @@ export function apply(ctx: Context) {
           {createElement(model.component as ComponentType<Record<string, unknown>>, props)}
         </ComposerModelState>);
       }
+      const activity = ctx.slots.entriesOfSlot?.('conversation.input.activity').find(entry => entry.locale === 'voice-input');
+      if (activity !== previousActivity) {
+        previousActivity = activity; disposeActivity?.(); disposeActivity = undefined;
+        if (activity) disposeActivity = ctx.slots.register({
+          name: 'workbase.input-activity', locale: activity.locale as (keyof LocaleNamespaceMap & string) | undefined,
+          children: activity.children,
+          inject: (sessionId: SessionId) => (activity.inject as unknown as (id: SessionId) => Record<string, unknown>)(sessionId),
+        }, props => <ComposerActivity {...props} component={activity.component as ComponentType<Record<string, unknown>>}/>);
+      }
     };
     updateMenu();
     const stopMenu = ctx.on?.('slots/changed', updateMenu);
+    // 订阅官方语音插槽的注册变化，跟随套件启停，不以“已安装”或首次探测缓存判断。
+    const stopActivity = ctx.slots.subscribe?.('conversation.input.activity', updateMenu);
     mainReady = true;
     openStartupPanel();
     startStartupBackup();
-    return () => { mainReady = false; stopMenu?.(); disposeComposer?.(); disposeModel?.(); dispose(); };
+    return () => { mainReady = false; stopMenu?.(); stopActivity?.(); disposeComposer?.(); disposeModel?.(); disposeActivity?.(); dispose(); };
   });
   ctx.slots.inject('sidebar.panellist', () => {
     let dispose: (() => void) | undefined;

@@ -1,12 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { errorText, useWorkbaseLocale } from './i18n.js';
 import type { Context } from '@deepseek-ai/cordis';
 import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types';
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots';
-import type { DraftSnapshot, SessionInput, ArbitrateKey, DraftAttachmentId, ComposerBarInjected } from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
+import type { DraftSnapshot, SessionInput, ArbitrateKey, DraftAttachmentId, ComposerBarInjected, InputActions, TokenSpan } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { ComposerBridge, ComposerMenuProps, ComposerProjectProps, UiMemory } from './api.js';
 import { Icon, positionPopup } from './ui.js';
@@ -17,11 +17,82 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'workbase.model-selector': { kind: 'single'; scope: 'session'; owner: {
       locked: boolean; onState(state: { ready: boolean; busy: boolean }): void;
     }; };
+    'workbase.input-activity': { kind: 'single'; scope: 'session'; owner: {
+      locked: boolean; onActiveChange(active: boolean): void;
+      editor: HTMLTextAreaElement | null; readDraft(): DraftSnapshot;
+    }; };
   }
   interface LocaleNamespaceMap { 'slash.menu': string; model: string; }
 }
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { workbaseComposer: unknown; }
+}
+
+/** textarea 是展开的剪贴板文本；宿主 TokenSpan 中每个引用／命令／引用块只占一位。 */
+function composerInsertionRange(draft: DraftSnapshot, start: number, end: number) {
+  const atoms = [...draft.references, ...(draft.quotes ?? []),
+    ...(draft.command ? [{ offset: 0, length: draft.command.token.trimEnd().length }] : [])]
+    .filter(atom => atom.length > 0).sort((a, b) => a.offset - b.offset);
+  const map = (offset: number) => {
+    let removed = 0;
+    for (const atom of atoms) {
+      if (offset <= atom.offset) break;
+      // 选区落在不可拆分引用内部时，按官方投影规则移动到引用之后。
+      if (offset < atom.offset + atom.length)
+        return { detect: atom.offset - removed + 1, clipboard: atom.offset + atom.length };
+      removed += atom.length - 1;
+    }
+    return { detect: offset - removed, clipboard: offset };
+  };
+  return { start: map(start), end: map(end) };
+}
+
+/** 仅替换官方活动组件的选区动作，写入仍由宿主完成并保留一次撤销与版本保护。 */
+export function composerActivityActions(actions: InputActions, editor: HTMLTextAreaElement | null,
+  readDraft: () => DraftSnapshot, locked: () => boolean): InputActions {
+  const captures = new WeakMap<TokenSpan, { text: string; start: number; end: number }>();
+  return {
+    ...actions,
+    captureInsertion() {
+      const draft = readDraft();
+      const range = composerInsertionRange(draft, editor?.selectionStart ?? draft.text.length,
+        editor?.selectionEnd ?? draft.text.length);
+      const span = { start: editor?.value === draft.text ? range.start.detect : -1,
+        end: range.end.detect, draftRev: actions.captureInsertion().draftRev };
+      captures.set(span, { text: draft.text, start: range.start.clipboard, end: range.end.clipboard });
+      return span;
+    },
+    insertText(text, span) {
+      const capture = captures.get(span), draft = readDraft();
+      if (!capture || !editor || !editor.isConnected || editor.disabled || locked()
+        || editor.value !== draft.text || capture.text !== draft.text
+        || actions.captureInsertion().draftRev !== span.draftRev) return false;
+      const clean = text.replace(/\uFFFC/g, '');
+      if (editor.maxLength >= 0 && draft.text.length - (capture.end - capture.start) + clean.length > editor.maxLength) return false;
+      if (!actions.insertText(clean, span)) return false;
+      captures.delete(span);
+      actions.persistDraft();
+      const next = readDraft().text, caret = capture.start + clean.length;
+      requestAnimationFrame(() => {
+        if (!editor.isConnected || editor.disabled || editor.value !== next || readDraft().text !== next) return;
+        editor.focus({ preventScroll: true });
+        editor.setSelectionRange(caret, caret);
+      });
+      return true;
+    },
+  };
+}
+
+/** 运行时会话动作来自 SessionProvider，适配层只把 textarea 的选区交给官方组件。 */
+export function ComposerActivity({ component, ...props }: PropsRuntime<'workbase.input-activity'> & {
+  component: React.ComponentType<Record<string, unknown>>;
+}) {
+  const live = useRef(props);
+  live.current = props;
+  const actions = useMemo(() => composerActivityActions(props.inputActions, props.editor,
+    () => live.current.readDraft(), () => live.current.locked), [props.inputActions, props.editor, props.sessionId]);
+  const Component = component;
+  return <Component {...props} inputActions={actions}/>;
 }
 
 interface ModelDirectoryState {
@@ -210,9 +281,10 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
   finally { signal.removeEventListener('abort', release); }
 }
 
-type MenuRender = PropsRenderSlots<'workbase.command-menu' | 'workbase.model-selector'>;
+type MenuRender = PropsRenderSlots<'workbase.command-menu' | 'workbase.model-selector' | 'workbase.input-activity'>;
 /** 只挂菜单及输入服务桥接，不渲染官方输入栏或会话布局。 */
-export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, onModelState, onReady, onState, SessionProvider, renderSlot }:
+export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, activityTarget, activityLocked,
+  onActivityChange, onModelState, onReady, onState, SessionProvider, renderSlot }:
   ComposerMenuProps & MenuRender & { ctx: Context; memory: UiMemory }) {
   useWorkbaseLocale();
   const [reference, setReference] = useState<SessionReference | null>(null);
@@ -372,6 +444,13 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
       }}>{reference && <SessionProvider session={reference}>{renderSlot('workbase.command-menu', {})}</SessionProvider>}</div>, container)}
       {modelTarget && reference && onModelState && createPortal(
         <SessionProvider session={reference}>{renderSlot('workbase.model-selector', { locked: disabled, onState: onModelState })}</SessionProvider>, modelTarget)}
+      {activityTarget && reference && onActivityChange && memory.composer.nativeWorkspaceId === workspaceId
+        && memory.composer.nativePreset === preset && createPortal(
+        <SessionProvider key={reference.sessionId} session={reference}>{renderSlot('workbase.input-activity', {
+          locked: activityLocked ?? disabled, onActiveChange: onActivityChange,
+          editor: container?.querySelector<HTMLTextAreaElement>('textarea') ?? null,
+          readDraft: () => (ctx.conversation.input.for(reference.binding.ctx) as Shell).draftSnapshot,
+        })}</SessionProvider>, activityTarget)}
       <input ref={file} type="file" multiple hidden onChange={e => {
         const files = Array.from(e.target.files ?? []);
         e.target.value = '';

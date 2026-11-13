@@ -17,6 +17,9 @@ export interface ComposerBridge {
 export interface ComposerMenuProps {
   workspaceId: string; preset: string; disabled: boolean;
   modelTarget?: HTMLElement | null;
+  activityTarget?: HTMLElement | null;
+  activityLocked?: boolean;
+  onActivityChange?(active: boolean): void;
   onModelState?(state: { ready: boolean; busy: boolean }): void;
   onReady(bridge: ComposerBridge | null): void;
   onState(draft: string, attachments: boolean, busy: boolean): void;
