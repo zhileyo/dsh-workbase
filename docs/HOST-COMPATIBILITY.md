@@ -29,7 +29,7 @@ node check-host.mjs --accept-baseline
 
 ## 每次更新的步骤
 
-1. 记录实际安装的版本、构建提交和运行时版本，用应用包元数据确认，不依赖页面或文件名。当前已调查版本为 `0.2.2-rc.2`，构建提交 `a6b1b85f44891ee1484bed6a9fc08acaae777d90`。
+1. 记录实际安装的版本、构建提交和运行时版本，用应用包元数据确认，不依赖页面或文件名。当前已调查版本为 `0.2.2-rc.3`，构建提交 `6b729fedde0c8fd03af7afdf5a711aa64fe87c3b`；已接受基线仍为 `0.2.2-rc.2`／`a6b1b85f44891ee1484bed6a9fc08acaae777d90`。
 2. 对照上一份已接受基线、项目 SDK 与实际宿主包中的源码。方法存在仅是第一层检查，还要看参数、返回值、事件、持久化时机、错误代码和销毁行为。
 3. 阅读该版本官方 Release 与升级指南。GitHub 信息通过 `gh` 获取，固定到实际版本标签。发行说明有时汇总多个开发版本，不把每一项都视为上次安装之后新增；实际源码差异优先。
 4. 检查客户端插槽、原生输入、模型／项目菜单和宿主主题。新版 CSS 锚点、portal、滚动或视口变化不能只靠 TypeScript 判断。
@@ -69,17 +69,21 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 | 项目登记、会话创建／改名／归档 | `workspaceRegistry`、`sessionController` | 参数、事件、归属与权限 |
 | 正文搜索 | 官方`dsh-experimental-session-search`的`optional-session-search`隔离组；通过Cordis公开Entry/Fiber合同读取索引服务的`searchSessions`，不调用主索引 | 套件行标识、子节点归属、ACTIVE状态及服务provision、启停／重载、会话ID过滤和分页 |
 | 原生输入、引用、模型与附件 | `conversation`、`sessions`、官方 slots | 草稿所有权、上传失败锁定、菜单定位和 SessionProvider |
+| 语音输入 | 官方`conversation.input.activity`中`voice-input`语言命名空间的组件；镜像注入与子插槽，适配`InputActions.captureInsertion/insertText` | `locked/onActiveChange`、草稿revision、剪贴板与原子节点坐标、热挂载／卸载及取消；录音与转写阶段是组件内部状态，不按展开状态推断 |
 | 工作目录切换 | `workingDirectory.get/set` | 原始目录回退、`working-directory/access` 与刷盘 |
 | 工作树创建 | 官方 `forgePanel.requestWorktree(sessionId, from)`；启用时显示、禁用时隐藏，不自建降级 | 套件异步挂载与卸载、请求登记、首消息阻塞、失败重试和归档清理 |
 | 会话永久删除、空会话／孤儿清理 | 当前没有已确认的公开等价 API；`session-maintenance.ts` 适配官方 JSONL、工作区队列和缓存 | 新增公开维护 API、活动及 revision 复查、级联与文件归属 |
 | 列表缓存重建 | 当前没有已确认的公开重建 API；官方 `sessionProjections.restore` 与 `sessionProjectionCache.put` 组合 | checkpoint 与 snapshot 契约、持久化回读、水位 |
+| 终端显示与默认Shell | 公开侧栏显示插槽、官方`TerminalView.mount/connect`和`webTerminals.selectShell`；跟随／停用渲染原官方组件，已结束终端重新挂载时补取完整快照；Shell保存后只读核对官方浏览器偏好键`dsh.terminal.shell` | `attach`首帧完整screen与已结束终端保留、挂载／卸载、不可用反馈、官方偏好键及读写失败语义；官方`selectShell`返回void、`launchShells`可兜底首项，二者都不能单独证明持久化成功 |
 | 备份与事务恢复 | 工作台自实现归档；替换业务状态仍经官方存储 | 新增官方快照／事务接口是否满足校验、加密回滚和并发保护 |
-| 插件在线更新 | 官方 `remote.pluginManager` | `listBundles/listVersions/updateBundle`、`BundleInfo`返回字段、类型契约指纹和进度事件；新版`update=registry`优先，旧版`updatable=true`兼容，Git不走registry批量更新 |
+| 插件在线更新 | 官方 `remote.pluginManager`；同一窗口保存批次数据及首次启动选择，热重载后复用；在途请求沿用官方Promise结果，不增加远程恢复接口 | `listBundles/listVersions/updateBundle`、`BundleInfo`返回字段、类型契约指纹和进度事件；新版`update=registry`优先，旧版`updatable=true`兼容，Git不走registry批量更新；自身热重载时卸载／安装顺序、请求返回与结果未知边界 |
 
 未来扫描发现 `deleteSession`、`rebuildCache`、`backup` 等同名方法，只列为线索：它可能是内部方法、只删登记、不删物理数据，或缺少工作台要求的事务保护。人工确认后在能力表与适配源码中登记，不对猜测的接口自动接线。
 
 ## 当前版本需要注意
 
+- `rc.3` 新增实验性 DeepSeek 会话导入、`sidebar.session.action` 与 `workspace.picker` Factory，原工作台侧栏与目录流程接点保留。新增 Factory 可作为后续复用候选，不能直接替代工作台自己的项目归属与草稿交接逻辑。
+- 2026-11-13 的 rc.3 检查没有发现新增阻断性接线问题，但检查仍退出 1：最新工作台构建的 `dist/index.js`／`lib/client.js` 尚未安装。旧基线缺少声明指纹，21 个声明待复核不等于新版破坏；插件管理器与此前实际副本哈希一致，终端、语音、侧栏等本次人工补核。详细证据见 `docs/ui/verification/host/assessment.md`（被忽略的本机证据），未覆盖真实运行验收。
 - `rc.2` 删除了 Agent 的 `isOwnedBy` 与 `roots`，工作台没有调用它们。
 - 会话支持批量追加，JSONL 格式仍为 V4；工作台不包装 `Session.append`，但重建缓存需要继续核对投影兼容。
 - 官方工作树创建会发布 `plugin:worktree/created`，符合条件的目录可在归档后自动清理，分支与提交保留。旧工作台自建目录没有该记录，不自动交给官方清理；不能伪造该记录来接管旧目录。
@@ -91,6 +95,6 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 
 `check-host.mjs` 与 `host:check` 保留为维护入口，生成 Markdown／JSON 报告和显式接受的对照基线。按用户后续决定，工作树恢复 Forge 原流程，自建模块及其 RPC 已移除，显隐跟随套件启停；删除和诊断的独立实现不受本次回退影响。
 
-当前宿主源码已评估并接受基线。实际验证及安装状态以开发日志最新记录为准；模型菜单待适配仍记录在报告的验证边界中，接受基线不代表该问题已修复。
+rc.2 宿主源码曾评估并接受基线；rc.3 本次完成静态复核，因安装产物不一致及补核边界保留旧基线，没有自动接受。实际验证及安装状态以开发日志最新记录为准；模型菜单待适配仍记录在报告的验证边界中，接受基线不代表该问题已修复。
 
-官方参考：[本次 Release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.2)、[升级指南目录](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.2/docs/upgrade-guide)、[工作树服务](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.2/packages/experimental/worktree/README.zh.md)。
+官方参考：[本次 Release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.3)、[rc.2 → rc.3 源码变化](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.2...dsh-v0.2.2-rc.3)、[升级指南目录](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.3/docs/upgrade-guide)、[工作树服务](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/worktree/README.zh.md)。

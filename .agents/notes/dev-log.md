@@ -4,6 +4,46 @@
 
 ## 当前状态
 
+宿主rc.3兼容核验（2026-11-13）：实际桌面0.2.2-rc.3／构建`6b729fedde0c8fd03af7afdf5a711aa64fe87c3b`，Node24.21.0／pnpm11.28.5未变。`npm run host:check`退出1：21模块，2项阻断均为dist／lib安装产物与当前构建不同，26项待复核含21项旧基线缺失的声明指纹，不能当作新版破坏。17模块产物指纹与rc.2基线相同；插件管理器及远程封装与今天此前核验副本SHA-256一致，新版update字段、参数、结果、进度与回滚仍匹配。人工补核终端单保存／显示／Shell、语音、正文搜索隔离组、Forge及侧栏新增入口，未发现rc.3新增阻断性接线问题。最新五项审查修复尚未安装，模型菜单top与官方bottom锚点并存风险仍在。详细证据为`docs/ui/verification/host/assessment.md`；未追加测试、构建、安装重启或运行时验收，不自动接受基线。
+
+五项审查修复（2026-11-13）：终端配色切换采用保留的显示适配，跟随／停用实际渲染原官方组件；两种显示共享公开挂载适配，closed／failed且宿主仍保留的终端通过官方connect补取完整screen，避免只重放最后增量帧。默认Shell在官方保存后只读核对`dsh.terminal.shell`，失败保留草稿并显示明确提示；发现接口的默认首项不能作保存成功证据。缓存诊断新增独立sessionTitle，仅固定标签翻译；恢复阻断原因逐项翻译并补齐八类已知原因，路径保留原文。PRD与当前实现表统一“官方内置模式按工作台语言、自定义模式原文”。`npm run build`退出0、客户端1228584字符；1.0.0包528476字节、白名单6项。退出旧桌面宿主被自动审批拒绝，本轮未安装或重启；未追加测试、类型检查或实际界面验收。
+
+自动更新热重载修复（2026-11-13）：同一窗口保存批次数据、首次启动选择与自动触发标记，工作台自身热更新后接续在途官方请求结果，不重复检查安装；卸载后未开始步骤停止，未知结果仍停止后续更新。入口测试补齐官方原子字段、可选注入、插槽订阅与外部存储hook模拟，避免在断言前加载浏览器依赖或失败。`npm run typecheck`退出0，`npm test`全部253项通过；构建退出0，客户端1225879字符，六项1.0.0包527.7kB；官方desktop安装与重启完成，主27975／宿主28045。真实在线自更新及界面未验收。
+
+终端文字悬停一致性（2026-11-13）：下载／重新下载与官方恢复默认共用次级文字默认色、主文字悬停色，取消下划线，背景和尺寸不变；原型两种文字操作同步。`npm run build`退出0，客户端1224049字符；六项1.0.0包527.4kB，官方desktop安装与重启完成，主24475／宿主24525。未追加测试、类型检查或实际界面验收。
+
+终端字段操作简化（2026-11-13）：字号与命令执行限制隐藏「已自定义」标签，保留官方自定义状态及「恢复默认」动作，仅在终端扩展字段内限定适配。原型本来只展示恢复默认，无需改动。`npm run build`退出0，客户端1223989字符；六项1.0.0包527.4kB。官方desktop remove/add成功，重启后主23691／宿主23726。未追加测试、类型检查或真实界面验收。
+
+字体首次展开稳定性（2026-11-13）：枚举加载、失败与空结果提示移入固定320px的官方Menu内部，避免字体请求开始／完成时增删表单行而触发滚动及锚点重定位；滚动层预留滚动条空间。真实字体枚举、手动输入与官方定位保留，隔离原型原本使用同步示例列表，无对应异步表单行。`npm run build`退出0，客户端1223698字符；六项1.0.0包527.3kB。官方desktop remove/add成功，重启后主22692／宿主22726。未追加测试、类型检查或实际视觉验收，首次展开效果待用户实际使用确认。
+
+终端短列表高度（2026-11-13）：按用户截图，配色菜单改用独立`wb-terminal-palette-menu`，与Shell菜单均按内容高度展开、最高320px并在超出时滚动，不再为少量选项撑满空白。字体菜单仍沿用此前固定320px要求；等宽、选中、键盘与下载交互保留。正式组件、原型与UI／PRD同步，`npm run build`退出0，客户端1223526字符；六项白名单1.0.0包527.3kB。官方desktop remove/add成功，重启后主21679／宿主21710。未追加测试、类型检查或实际视觉验收。
+
+终端配色文字操作（2026-11-13）：按用户第二次截图修正，下载入口移动到左列标题行末端、选择框左侧，与字号恢复默认位置一致。采用12px无框文字、语义按钮保留禁用／焦点／键盘操作。将说明与下载完成状态合为一个短段落，中英文同步，失败信息仍独立显示；窄面板自然换行，不通过截断隐藏说明。正式组件与隔离原型同步，`npm run build`退出0，客户端1223351字符；六项白名单1.0.0包527.2kB。官方desktop remove/add与重启成功，主21110／宿主21141。未追加测试、类型检查或实际视觉验收。
+
+终端扩展布局与英文（2026-11-13）：按用户截图与prototype-craft迭代，下载动作移到左列「配色方案」标题旁，状态及错误留在说明区，右列保持320px独立选择器；按钮与选择器同高，标题组弹性换行。工作台开关改为「终端扩展」／Terminal extensions，官方目录仍叫「终端」；开关说明补配色。补齐短下载动作与终端预览英文，预览拆开固定代码和可翻译标签，避免整段中文无对应译文。既有隔离原型同步并增加配色语言切换；仅静态源码核对，不启动浏览器或视觉验收。`npm run build`退出0，客户端1222479字符；六项白名单1.0.0包527.1kB，官方desktop remove/add与重启成功，主20521／宿主20552。未追加测试、类型检查或实际界面验收。
+
+终端独立配色（2026-11-13）：新增跟随平台／自定义背景、文字、光标、选区与16ANSI／Catppuccin四风格，字号后配置、预览在默认Shell前，底部仍唯一保存。下载固定官方palette提交`07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd`，大小与超时受限、所有颜色校验后仅产生草稿，保存进`preferences.terminalPalette`后离线可用；保存以原色板校验并发修改，失败保留未保存部分。官方无完整色板入口，因此加入与宿主一致的MIT `@xterm/xterm@6.0.0`／`@xterm/addon-fit@0.11.0`构建依赖，打包入客户端并保留完整许可，仅包裹公开侧栏显示插槽；复用原官方注入的TerminalView和主题字体，连接、输入、控制权、回放确认和终端生命周期归官方。未改宿主源文件或私有实例、未伪造输出／向Shell发送配置。关闭开关／跟随平台／官方入口移除时撤下显示适配。`npm run build`退出0，客户端1221680字符，比上一轮850097增加371583（约44%）；六项白名单1.0.0包527.0kB。官方desktop remove/add成功，桌面端与宿主已重启为19383／19424。未追加测试、类型检查或实际显示／重连验收，未提交、推送或发布npm。
+
+终端整页保存接入修正（2026-11-13）：正式页保留字体／字号／Shell和预览前置、命令限制后置及唯一保存。用户截图暴露同名priority注册会在官方目录产生重复行：`config-ledger.ts`直接读取全部`entries('plugins.item')`，并非赢家视图。现只通过`plugins.detail.section`挂载整页表单，目录由原官方`shell`唯一注册提供；扩展节点实际挂载时通过限定终端详情的`:has`样式收起原配置表单，未挂载／停用后原表单自动恢复。仍复用官方模型状态／校验／动作与词典，不改目录数据、官方注册对象或源码；订阅官方赢家与开关，热卸载／更换时撤下扩展。真实字体通过点击手势请求`queryLocalFonts`，失败保留输入；统一保存与分步失败保护不变。构建安装结果见本日修正记录，实际页面及权限未验收。
+
+终端配置布局原型（2026-11-13）：按用户指定prototype-craft技能，在视觉真源新增隔离入口`#demo=terminal-settings`。字体集成输入／可搜索下拉、点击直接展开、等宽字体标记与手动输入兜底，菜单320px内部滚动；字体／字号／默认Shell使用右对齐设置行与统一底部保存，提供字号与字体预览、深浅色及窄面板切换。保留官方命令配置自身保存。字体／Shell分域模拟保存，部分成功只保留未保存草稿，重试跳过已成功字段；模拟字体列表不可读、无会话及两类保存失败。只改原型与记录，未改正式组件、构建、安装或重启；静态源码核对，未浏览器验收。字体列表为示例，不代表本机已安装列表。
+
+终端配置落地（2026-11-13）：工作台「其他组件 → 终端」默认关闭，统一保存后控制官方「插件 → 终端」中的公开详情扩展，关闭保留已保存的官方设置。字体／字号复用官方SettingsFormModel、SettingsForm与SettingsValueField，写入`ui-theme`，字号10–20px／默认13px；留空或重置后保存恢复继承值，拒绝及并发冲突保留草稿。默认Shell以官方主视图持有标记`retainedBy.mainView`确定唯一真实会话，经`webTerminals.launchShells`发现并单独保存浏览器偏好；只影响新终端，无会话、发现失败、服务卸载时禁用，切换取消旧请求并在保存时重核服务与会话。能力接线均可选，不创建新会话或终端。中英文文案、工作台开关原型、PRD及UI规范已同步；独立配色及Catppuccin仍待公开接口。`npm run build`通过，客户端840295字符，相对前轮830206增加10089字符，无新增运行时依赖；`npm pack --ignore-scripts --pack-destination /tmp`生成六项白名单1.0.0包。主进程SIGTERM正常退出，安装门禁确认桌面与宿主退出后，官方desktop CLI remove/add成功，`open -a "DeepSeek Harness"`已执行。未追加测试、类型检查或真实界面验收，未提交、推送或发布npm。
+
+终端能力核验（2026-11-13）：实际宿主0.2.2-rc.2／构建提交`a6b1b85f44891ee1484bed6a9fc08acaae777d90`。截图中的官方终端页为`plugins.item`的`shell`条目，编辑`bash-sandbox`／`pwsh-sandbox`命令执行器的超时与输出上限；可用公开`plugins.detail.section`在其后追加配置，按`subject.kind === 'item' && subject.id === 'shell'`限定。侧栏交互终端字体／字号由`ui-theme`的`terminalFontFamily`／`terminalFontSize`持久化，字号10–20px、默认13px，官方xterm随主题快照更新并重新适配网格。`webTerminals.launchShells(sessionId, signal)`发现当前会话环境中的可用Shell，`selectShell(path)`保存浏览器偏好，影响后续新终端；控制器部署级`shell`未声明volatile，不能经普通settings表单在线写入。已扫描的公开终端面未暴露xterm实例或独立ANSI调色板配置；完整Catppuccin终端配色仍缺公开接点。仅源码核验与记录，未实施功能、改宿主配置、构建、安装、重启或运行时验收。
+
+内置模式翻译与安装（2026-11-13）：官方 standard／ptc／minimal／cordis 未提供自定义名称时，服务端为既有补充文案标记 builtIn；快捷输入模式名称／说明、待办菜单名称及其可访问提示共用 presetText，随当前工作台语言渲染，自定义模式保持原值。`npm run build`通过，客户端830206字符；六项白名单的1.0.0包已生成。主进程SIGTERM正常退出、安装门禁确认桌面与宿主全部退出后，官方desktop CLI remove/add成功，`open -a "DeepSeek Harness"`已执行。未追加测试、类型检查或实际界面验收，未提交、推送或发布npm。
+
+英文布局与待办黑屏修复（2026-11-13）：`TodoDetail.tsx`补回 useEffect 导入，覆盖待办详情、完整新建和附件预览；顶栏搜索改为实际宽度参与弹性排布，避让英文同步状态与操作按钮，保留36px等高与面板断点。英文一级菜单用 Appearance 并保持单行。`npm run build`通过，客户端828384字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项白名单的1.0.0包。退出命令执行时原主进程已不存在，安装门禁确认桌面与宿主全部退出后，官方desktop CLI remove/add成功，`open -a "DeepSeek Harness"`已执行。未追加测试、类型检查或真实界面验收，未提交、推送或发布npm。
+
+多语言接入与安装（2026-11-13）：工作台提供跟随平台／简体中文／English，偏好持久化且统一保存后生效；订阅官方 locale 服务并注册独立 workbase 字典，缺失服务及非英文平台语言中文兜底。构建阶段仅处理源码静态文案和模板，不扫描 DOM 或翻译用户内容；模块级标签通过延迟视图响应语言切换。覆盖页面、设置、菜单、动态计数、日期和已知错误／备份恢复状态；官方语音／命令／模型组件沿用各自命名空间。最终`npm run build`通过，客户端828651字符，相对语音阶段746826增加81825字符（约11%），无新增运行时依赖。`npm pack --ignore-scripts --pack-destination /tmp`生成六项白名单的1.0.0包；正常退出桌面并确认全部退出后，官方desktop CLI remove/add安装成功，`open -a "DeepSeek Harness"`已执行。未发布npm、提交或推送；遵循用户约定，未追加测试、类型检查或真实语言／视觉验收。
+
+本轮版本与安装（2026-11-13）：用户明确要求安装包版本跟随更新并安装重启。按`release.config.mjs`的commit-analyzer规则分析`v0.3.1..HEAD`共12个提交，发布级别major，推断下一版本1.0.0；同步`package.json`、`package-lock.json`根条目并通过既有`release-sync-docs.mjs`更新当前版本标记。构建通过（客户端746826字符），生成六项白名单的1.0.0包。安装前确认桌面及宿主均已退出，带退出状态门禁的官方desktop CLI remove/add成功，实际安装为`dsh-workbase@1.0.0`；`open -a "DeepSeek Harness"`成功，主进程和宿主均已运行。此前安装审批阻塞已解除，本轮语音改动现已安装；未发布npm、提交或推送，未追加测试或真实语音／界面验收。
+
+语音入口跟随启停（2026-11-13）：在既有插槽变化监听之外，显式订阅官方`conversation.input.activity`的注册变化，以活跃组件控制显隐；停用后撤下镜像与当前活动，启用并挂载后恢复。模型未准备不隐藏入口，保留官方准备提示。最新`npm run build`通过，客户端746826字符；六项白名单的0.3.1包已更新。按用户约定未追加测试、类型检查或界面验收；安装与重启仍待此前自动审批要求的明确确认，未重试被拒绝命令。
+
+快捷输入语音接线（2026-11-13）：镜像官方`conversation.input.activity`中的`voice-input`组件、注入与子插槽，使用同一待发送会话的SessionProvider；套件未挂载时不显示按钮，不自动安装或启用。textarea选区按引用／引用块／命令原子节点转换后交给官方`InputActions.insertText`，保留宿主revision保护与草稿持久化；冲突或20000字符上限拒绝自动插入并沿用官方暂存结果。活动展开隐藏辅助控件、禁用发送，切换项目／模式先撤下旧语音控件，旧任务由官方生命周期取消。具体录音阶段由官方组件展示，仅接收展开布尔回调。类型检查与构建通过，客户端746763字符，0.3.1包已生成；安装／重启命令被自动审批拒绝，尚未执行，桌面端未安装本轮语音改动。
+
 插件更新兼容与审查漏项修复（2026-11-13）：当前宿主0.2.2-rc.2使用`BundleInfo.update`，工作台改为registry能力优先，缺少新字段时兼容旧`updatable`；Git来源明确跳过。`check-host.mjs`新增插件管理服务与官方插件页面扫描，全部已扫描模块记录声明契约指纹；插件更新返回字段与门禁另做无基线静态核对。旧基线没有声明记录，实际检查为0阻断／23待复核，不自动接受；类型检查、248项测试及构建通过，客户端743253字符。入口模拟换为新版返回值后另跑9项入口测试与类型检查通过；0.3.1包6项白名单，官方desktop CLI remove/add成功，安装后检查0阻断且4项安装文件一致；主进程SIGTERM退出后`open -a "DeepSeek Harness"`成功执行。真实在线更新及界面未验收。
 
 外观布局二级菜单正式顺序（2026-11-13）：正式`Settings.tsx`、主原型及隔离演示统一为「首页模块／统计卡片／主题配色」。默认首页模块在首位，统计关闭时隐藏统计卡片但保留配置；既有共享页签键盘导航沿显示顺序工作。UI规范及PRD同步。`npm run build`通过，客户端743253字符，0.3.1包6项白名单；官方desktop CLI remove/add成功。按既有约定未追加测试、类型检查或界面验收。
@@ -30,7 +70,7 @@
 
 启动主题（2026-11-12）：`UiMemory`在已有`dsh-workbase-ui-v2`键中保存服务端确认的主题，入口接受快照时同步，根组件首帧直接复用。无有效缓存时只显示既有中性骨架，顶栏保留布局但暂不可见；设置预览不持久化，明暗仍读取和订阅宿主属性。类型检查及4个相关文件19项用例通过；首次安装、存储受限及跨设备改主题仍以首次返回的服务端设置为准，未做真实启动视觉验收。
 
-主题修复安装：构建客户端736000字符，比本轮修改前增加360字符，无新增运行时依赖；0.3.1本地包6项白名单及指定敏感模式扫描通过。官方desktop CLI remove/add后正常重启，主84921／宿主84962运行；安装客户端与本地产物SHA-256均为`9a33295d6a225da5ba639749d806d6a4935ae5520ca63744176b2527a952ba07`，服务端未变。包SHA-256为`ae720039a96a1cf7b81ebeceec0e4ba00cf88ace61995ce5787208edac0d946e`，可用`shasum -a 256 lib/client.js ~/.dsh/profiles/desktop/node_modules/dsh-workbase/lib/client.js /tmp/dsh-workbase-0.3.1.tgz`复查；未提交或推送。
+主题修复安装：构建客户端736000字符，比本轮修改前增加360字符，无新增运行时依赖；0.3.1本地包6项白名单及指定敏感模式扫描通过。官方desktop CLI remove/add后正常重启，主84921／宿主84962运行；安装客户端与本地产物SHA-256均为`9a33295d6a225da5ba639749d806d6a4935ae5520ca63744176b2527a952ba07`，服务端未变。包SHA-256为`ae720039a96a1cf7b81ebeceec0e4ba00cf88ace61995ce5787208edac0d946e`，可用`shasum -a 256 lib/client.js ~/.dsh/profiles/desktop/node_modules/dsh-workbase/lib/client.js /tmp/dsh-workbase-1.0.0.tgz`复查；未提交或推送。
 
 Forge方案恢复（2026-11-12）：按用户最终要求恢复自实现前流程，官方 `dsh-experimental-forge-bundle` 启用并挂载 forgePanel 时显示分支与工作树，禁用或卸载时隐藏，持续探测双向启停。工作树通过官方 `forgePanel.requestWorktree` 登记，首消息入队后由 Forge 在回合开始前创建；已移除工作台工作树创建模块、旁置回执写入、自建降级及新增RPC。项目分支沿用原有只读Git查询；历史自建目录和代码不作物理删除，会话清理和诊断的独立实现保留。下方宿主优先工作树实现与其验证记录属于本次回退前状态。
 
@@ -48,7 +88,7 @@ Forge方案恢复（2026-11-12）：按用户最终要求恢复自实现前流�
 
 连接器交互参考（2026-11-12）：以本地`dsh-mcp-connector-main/ui/index.html`实际源码为参考，MCP市场改为先预览再配置；连接详情展示名称、状态与作用域，工具默认折叠，可搜索名称／说明并逐项展开参数。主操作随停用、需授权、失败和已连接状态调整；连接不可用禁用工具开关，开关变更保留搜索、滚动、展开项与焦点。详情编辑取消返回详情，MCP保存留在详情或继续模拟授权，授权取消保留配置，完成后展开工具；管理导航与原列表返回状态沿用既有规则。仅调整HTML原型及需求／UI文档，本轮未运行测试、构建、安装、重启或浏览器验收。
 
-文档归并（2026-11-12）：功能需求统一到`docs/PRD.md`，六个辅助HTML演示及依赖内嵌到`docs/ui/ui-directions.html`，顶部新增「更多演示」与`#demo=`入口；目录导航及演示边界归入UI规范第0.1.1节。已移除归并后的旧需求文档与独立演示目录，保留历史盘点JSON、验收脚本和忽略的生成证据。`npm run build`完成（客户端734370字符），0.3.1包输出到`/tmp/dsh-workbase-0.3.1.tgz`；正常退出桌面端，官方CLI remove成功，add首次因内部镜像缺少已有MCP依赖版本失败，指定本次`--registry=https://registry.npmjs.org`后安装成功，`open -a "DeepSeek Harness"`重新启动成功。未追加测试或浏览器验收。
+文档归并（2026-11-12）：功能需求统一到`docs/PRD.md`，六个辅助HTML演示及依赖内嵌到`docs/ui/ui-directions.html`，顶部新增「更多演示」与`#demo=`入口；目录导航及演示边界归入UI规范第0.1.1节。已移除归并后的旧需求文档与独立演示目录，保留历史盘点JSON、验收脚本和忽略的生成证据。`npm run build`完成（客户端734370字符），0.3.1包输出到`/tmp/dsh-workbase-1.0.0.tgz`；正常退出桌面端，官方CLI remove成功，add首次因内部镜像缺少已有MCP依赖版本失败，指定本次`--registry=https://registry.npmjs.org`后安装成功，`open -a "DeepSeek Harness"`重新启动成功。未追加测试或浏览器验收。
 
 管理配置页切换（2026-11-12）：配置按钮进入同一管理面板内容区的独立配置页，取代此前行内展开。保留抽屉标题、一级／二级导航及分组，只暂隐藏内容区搜索和列表；顶部返回、正文独立滚动、底部操作固定，返回列表后恢复原搜索、滚动与入口。后续连接器参考细化编辑取消回详情及MCP保存后继续授权／工具流程，见上条。仍为HTML原型；本轮未构建、安装、重启或追加测试／浏览器验收。飞书参考链接已打开到Base主页面，但浏览器桥接受阻，模板预览和自动化创建交互未实际读取，不宣称完全复刻。
 
@@ -172,9 +212,15 @@ RSS菜单补充（2026-11-11）：视觉真源按用户要求改为「我的订�
 
 最新摘要修正：诊断卡片下方只显示数量大于零的异常类型，零值项不占空间；截图所示6个空会话直接显示「空会话 6」。155项测试、类型检查和两次一致构建通过；本次desktop安装六项一致、bundle启用，主62527／宿主62561已重启。下述空会话功能的154项证据属于上一轮，当前验证以此条为准。
 
-更新日期：2026-11-10。当前源码与本地包为 `0.3.1`；诊断新增空会话检查、分类、数量统计和确认后单条／一键全部删除。官方空会话投影、冷会话状态、后代及存储水位保护已接入；逐项复查、变化项跳过、失败继续及反馈刷新已回归，归档项目只读。快捷输入保留项目／模式切换时的正文、引用与附件交接，以及拖入文件／目录、剪贴板图片和菜单共用官方导入入口、上传门禁与失败重试；模型与推理强度沿用官方控件，项目仅名称，下拉向下8px、最多360px滚动。插件更新保留互斥分组、动态卡片、后台进度及默认关闭的启动自动检查，保存和重连不重复触发，检查／更新期间禁用显隐设置。154项测试、类型检查及两次一致构建通过，六项包白名单、版本和7类指定敏感模式扫描通过。官方CLI卸载重装后六项文件逐字节一致、bundle启用，已重启主61125与宿主61215。本轮通过模拟宿主及React事件回调验证空会话候选、删除保护与确认分批，没有删除用户真实会话；实际物理删除、图片上传、模型调用、自动升级和逐主题视觉回归由用户验收。Windows记录不覆盖本轮修改。Harness／SDK `0.2.2-rc.1`。
+更新日期：2026-11-10。当前源码与本地包为 `1.0.0`；诊断新增空会话检查、分类、数量统计和确认后单条／一键全部删除。官方空会话投影、冷会话状态、后代及存储水位保护已接入；逐项复查、变化项跳过、失败继续及反馈刷新已回归，归档项目只读。快捷输入保留项目／模式切换时的正文、引用与附件交接，以及拖入文件／目录、剪贴板图片和菜单共用官方导入入口、上传门禁与失败重试；模型与推理强度沿用官方控件，项目仅名称，下拉向下8px、最多360px滚动。插件更新保留互斥分组、动态卡片、后台进度及默认关闭的启动自动检查，保存和重连不重复触发，检查／更新期间禁用显隐设置。154项测试、类型检查及两次一致构建通过，六项包白名单、版本和7类指定敏感模式扫描通过。官方CLI卸载重装后六项文件逐字节一致、bundle启用，已重启主61125与宿主61215。本轮通过模拟宿主及React事件回调验证空会话候选、删除保护与确认分批，没有删除用户真实会话；实际物理删除、图片上传、模型调用、自动升级和逐主题视觉回归由用户验收。Windows记录不覆盖本轮修改。Harness／SDK `0.2.2-rc.1`。
 
 ### 仍在约束当前实现的结论
+
+| 场景 | 约束 |
+| --- | --- |
+| 终端独立配色 | 无官方完整palette接口时只替换公开显示渲染；复用官方注入和TerminalView，不新增目录／终端，不写入Shell或伪造输出。四风格下载只更新草稿，保存后持久化，关闭保留色板并恢复官方显示；保存失败／并发修改保留未保存草稿。自定义ANSI色样是设置页局部配色例外，页面仍用宿主主题 |
+
+终端目录仅保留原官方`plugins.item#shell`，禁止同名priority注册覆盖：官方目录读取原始ledger会重复列出。整页表单通过公开`plugins.detail.section`挂载，扩展节点实际存在时仅在终端详情内收起原配置表单，停用／卸载自动恢复；依赖`:has`并先探测。复用官方命令模型，不改官方注册对象、目录数据或源码，不通过DOM代点保存，不硬依赖旧SDK中不存在的终端／插件管理包。唯一按钮协调命令、字体、配色与Shell，失败停止、保留剩余草稿、重试跳过成功部分，不伪装跨域原子提交。只在官方条目为实际赢家且接口就绪时扩展。真实字体仅通过用户手势访问本地字体API，失败保留输入；完整ANSI配色通过公开侧栏渲染插槽与原官方TerminalView实现，界面目录不增加条目。
 
 扩展原型按2026-11-12最新截图要求采用「卡片目录 → 独立详情弹窗」；此前「配置始终在管理内容区、不叠加弹窗」已被本次要求替代。底层保留列表状态但不可交互，关闭详情恢复列表，浏览器新窗口仍不用于原型配置。
 
@@ -273,6 +319,8 @@ RPC命令与服务参数有不同strict schema：操作分发层只给恢复预�
 | 待办附件与会话草稿 | 新attachments用宿主saveFile原样保存任意格式，旧images和图片路由／工具兼容；合计10个／单个10MiB，空文件可用，JSON RPC仍32KiB。正文走owner专用二进制路由，下载声明attachment、nosniff与sandbox；文件名不得携带路径或控制字符。Agent附图／文件必须来自当前会话image／file消息块并验证存储引用；不删共享对象。全部附件读取成功才创建会话，原生草稿保留文件名、按宿主实际类型导入，交接后导航；通过retainInfo等待界面接管再释放，无固定延时 |
 | 快捷输入与官方弹窗 | 保留原圆角卡、textarea、左侧添加／项目／模式、右侧模型／发送与下方分支条。独立 SessionProvider 委托官方 slash-menu 与模型／推理强度控件，不挂 `conversation.content`；项目使用官方 Menu，仅名称；模式使用官方名称、说明和开发工具可用性过滤，自定义文案不替换。官方输入服务处理引用序列化、命令与附件；本地编辑仅解除被修改的引用，并保存其余结构化草稿。未发送会话按项目与预设复用；切换时先交接正文、引用与附件并重新绑定上传，再释放旧引用，失败保留原内容。原生发送保留官方模型与推理强度，旧首消息重试保留原幂等链路 |
 | 快捷项目／模型下拉方向 | 项目与模型均向下8px展开，限高360px并按面板与可见视口余高收缩，底边8px；项目列表及模型分组内部滚动，模型搜索框保留。仅定位快捷输入关联浮层，官方菜单内容、推理强度选择与宿主会话页不变 |
+| 快捷输入语音 | 只镜像官方`voice-input`活动组件；录音与转写归官方插件，工作台转换textarea选区到原子节点坐标并保留revision保护。未挂载隐藏、不自动启用；活动展开禁用发送，切换项目／模式撤下旧活动，官方暂存冲突结果供手动插入；真实语音与视觉尚未验收 |
+| 界面语言 | `preferences.language`默认follow；通用配置统一保存后即时生效，不改变宿主全局语言。官方locale可选服务按启停接线；英文平台语言使用英文，其余中文兜底。构建只翻译源码静态中文与模板片段；模块级标签表延迟查词典，类型／键／比较／Agent草稿不自动改写。用户内容及自定义模式名称／说明原样保留，官方内置模式经服务端确认来源后跟随工作台语言；诊断用户会话名称与固定标签分离，恢复阻断原因逐项翻译并保留路径。官方复用组件保持宿主语言；未知宿主错误不改写。真实热切换／视觉未验收 |
 | 快捷输入文件导入 | 拖入文件／目录、粘贴图片与选文件共用官方bar.addFiles；桌面路径转引用，图片上传，权限与宿主图片限制预检。拖入内描边；普通文字放行，混合粘贴保留正文。订阅上传状态并允许失败重试；已进入提交或旧会话已释放时拒绝导入 |
 | 添加菜单空间与按钮数量 | 官方菜单仍在输入卡 DOM 内保证外部点击判据，通过 manual popover 脱离裁剪，独立计算上下空间与最大400px高度；添加按钮保持操作行直属圆形按钮。最近会话按钮按实测宽度和8px间距显示完整最新前缀，左右内边距 `clamp(24px,5%,48px)`，隐藏候选不可聚焦，拉宽可恢复，卡片最多5张规则不变 |
 | 项目表单校验 | 两种模式仍叠放稳定高度，但非当前模式字段必须 disabled 且不 required，避免浏览器对不可聚焦的必填字段拦截提交 |
@@ -298,6 +346,28 @@ RPC命令与服务参数有不同strict schema：操作分发层只给恢复预�
 | 最近会话样式偏好 | `home.recentStyle`保存用户选择，统计开启时仅在渲染中使用按钮；关闭统计恢复原选择，不再由保存设置或其他偏好补丁改写为按钮。已有被旧逻辑覆盖的选择无法推断，用户可在关闭统计后重新选择 |
 
 ### 当前实现
+
+终端字号与命令字段只展示「恢复默认」，不展示重复的「已自定义」状态标签；重置动作仍由官方字段模型决定。
+
+配色与Shell菜单高度随选项内容自适应、上限320px；字体菜单仍固定320px。配色不再复用字体菜单高度类。
+
+配色下载采用选择框左侧的辅助字号文字操作，说明与完成状态不再强制分成两个段落；中英文、禁用、焦点与下载动作保留。
+
+「终端扩展」开关名称与说明、下载按钮前置及新增配色英文已同步正式组件与原型；下载和统一保存状态不变，固定预览代码不翻译，文字标签明确调用`t()`。
+
+独立配色已接入`TerminalSettings.tsx`唯一保存链路、工作台持久化字段和官方侧栏显示插槽；新增`ColoredTerminal.tsx`仅管理本地xterm渲染与尺寸，官方TerminalView保留真实终端身份与动作。Catppuccin四风格下载固定源并完成结构／hex校验，不自动下载，不改变当前生效设置直至保存。源码核验和构建不代表真实显示、切换或重连已验收。
+
+终端保存与控件修正（2026-11-13）：官方插件侧SlotRegistry未提供`isLive()`实例方法，上一轮误用SlotCore接口使保存在try之外抛错。现以实际赢家身份判断有效接点，将检查纳入保存失败处理并显示成功反馈。Menu的className作用于锚点根，误当菜单样式造成字体／Shell宽度不齐与高度不生效；现根节点全宽，portal样式经listClassName应用，菜单按官方minWidthFromAnchor实时匹配锚点、固定320px高并内部滚动。字体去除独立按钮，输入直接展开，箭头只装饰；预览移到字体／字号后、Shell前。指定prototype-craft原型同步，静态核对；构建安装及未验收边界见本日记录。
+
+终端正式页同步`docs/ui/ui-directions.html#demo=terminal-settings`：字体可搜索下拉／手动输入、字号、Shell、字体预览前置，命令限制后置，底部统一保存；字体列表仅展示`queryLocalFonts`实际返回的family。保留官方命令字段组件、状态与动作；运行时核验边界见当前状态，不将构建成功视为真实字体权限或官方页面热切换已验收。
+
+已接入官方终端页中的字体、字号与默认Shell详情扩展，工作台只放显隐开关；不新增终端目录条目，官方条目热卸载时撤下扩展，终端服务缺失时只禁用Shell。复用官方表单、输入、按钮和菜单，无新增客户端运行时依赖。Shell使用当前唯一主视图会话，拒绝旧请求及切换后的旧结果保存；实际页面和Shell创建行为未验收。
+
+已接入工作台中英文词典、官方语言订阅、独立语言偏好、主页面与菜单文案、动态数量、日期格式、常见错误与备份恢复状态。保存语言不重建输入会话、不清空草稿；英文设置导航／说明允许换行并沿用共用密度，原型补语言选择入口但不模拟真实宿主切换。无新增客户端运行时依赖；TypeScript AST转换仅在构建内存执行。
+
+快捷输入已接入官方语音按钮、录音／转写反馈和草稿回填，保留官方准备提示及冲突后的手动插入；不自行录音、不直接调用转写Remote，不提供实时逐字识别。真实麦克风、模型准备、识别与界面表现未验收。
+
+语音显隐按官方活跃插槽动态判断，另订阅`slots.subscribe('conversation.input.activity')`跟随套件启停：已安装但停用隐藏、启用并挂载显示、停用撤下组件并恢复普通工具栏；模型未准备时保留官方准备入口，不将识别器就绪状态误当作插件启用状态。
 
 RSS原型移除我的订阅列表顶部刷新及设置按钮；添加分组移至左侧「自定义分组」标题右侧的36px加号入口，选中自定义分组时显示编辑图标，标题操作固定在搜索下方，窄面板保留入口。单订阅详情仍可刷新；正式组件尚未同步。
 
@@ -329,7 +399,7 @@ RSS原型移除我的订阅列表顶部刷新及设置按钮；添加分组移�
 | 首页 | 四模块配置、最近会话5张轻量卡片／按可用宽度动态显示细边框按钮、统计强制按钮；统计卡仅上浮与轻阴影、不变色，保留进入箭头；四分类统计明细提供项目搜索、分组导航、数量和记录；诊断汇总目录／缓存／孤儿异常，未分组路径不漏报，移除重复状态卡与检查摘要行、分类空状态居中展示结果与说明，标题右侧重新检查、按能力显示修复按钮、确认清理及失败重试；按钮相对输入卡两侧留白，圆形气泡与紧凑统计卡 |
 | 详情 | 65:35 默认分栏、保存比例、列表／整体卡片、窄屏页签、互斥分组与位置恢复；整体卡片内保留连续列表，行悬停共用官方侧栏令牌；项目切换列表显示项目名及不换行的完整路径；会话列表及空状态共用首页圆形气泡 |
 | 设置 | 五分类抽屉，通用配置排第一、外观布局第二，后续项目配置／备份恢复／其他组件；外观布局合并主题配色、首页模块与统计卡片，默认首页模块；项目包含全局／项目子分类、根目录、全局Agent管理。主题即时预览／取消／全部分类保存事务与原偏好字段保留；通用配置控制启动首页与侧栏及顶部入口，侧栏顺序／倒序各前三项动态位置，选择型菜单共用紧凑宽度；备份恢复独立一级菜单位于项目配置之后；其他组件控制一键更新入口，检查／更新时禁用显隐，并提供默认关闭的自动更新子设置 |
-| 插件更新 | 仅用户安装的非官方插件，三组紧凑卡片、动态列数、互斥展开、组内滚动、来源单行省略和悬停完整提示、同一行等高、统一说明；检查与更新可后台继续，重开保留进度和结果，串行更新及失败恢复反馈，自身最后更新；开启自动更新后每次客户端启动检查一次并后台安装，重连和保存不重复触发 |
+| 插件更新 | 仅用户安装的非官方插件，三组紧凑卡片、动态列数、互斥展开、组内滚动、来源单行省略和悬停完整提示、同一行等高、统一说明；检查与更新可后台继续，重开保留进度和结果，串行更新及失败恢复反馈，自身最后更新；开启自动更新后每次客户端启动检查一次并后台安装，同一窗口跨热重载复用批次和首启动选择，重连和保存不重复触发 |
 | 数据备份 | 数据备份／数据恢复／执行状态三个二级页签，切换保留表单与订阅。立即备份独立保存配置；启动默认关闭、每宿主进程一次，互斥、后台任务及中断识别；会话／SQLite／文件分类导出，age加密与摘要回读，密钥独立保存。真实短文件名、单一可输入路径的归档下拉、7／14／30天／永久期限；新备份成功后校验清理过期普通归档，回滚副本保留 |
 | 主题 | 跟随 DSH、DSH 默认、清爽、温暖阅读、紫晶工作台；明暗跟随宿主，顶部 Toast 同步面板、文字、边框和状态颜色 |
 
@@ -341,6 +411,7 @@ RSS原型移除我的订阅列表顶部刷新及设置按钮；添加分组移�
 
 | 项目 | 当前边界 |
 | --- | --- |
+| 自动更新热重载 | 同一窗口仅保留批次数据，不保留旧宿主代理；在途官方Promise返回后落账，响应丢失仍是unknown，不查询空在途记录来推断成功。卸载后停止未开始步骤，真正关闭窗口／重启清空批次；253项隔离测试及类型检查通过，未升级其他真实插件或验收在线自更新 |
 | 项目归档／恢复 | 0.2.14 起由插件实现（`binding.archived`）：归档后业务只读、会话锁定状态、个人标记可改、可恢复；宿主原生归档接口仍缺失，宿主自身的归档视图不感知该状态 |
 | 修改绑定目录、迁移及 72 小时撤销 | 缺少安全宿主接口，尚无真实迁移记录；需求保留 |
 | 会话永久删除 | 独立适配官方JSONL存储、缓存与工作区生命周期；私有宿主接口集中于session-maintenance，能力不符即拒绝。多子会话级联可能部分完成，保留未完成父目标记账以便重试；真实删除尚未验收 |
@@ -371,7 +442,7 @@ RSS原型移除我的订阅列表顶部刷新及设置按钮；添加分组移�
 | [HTML 原型](../../docs/ui/ui-directions.html) 与两个生成物 | 唯一视觉真源；生成物改了会被下一次构建覆盖 |
 | `docs/isolated-search.patch.yml` | 隔离环境的正文搜索补丁，「验证方式」要用 |
 | [视觉报告](../../docs/ui/verification/index.html) 及其引用的截图矩阵（`details.json`、`details-before.json`、`checks.json`、`geometry.json`、`header-motion-checks.json`、`current-contrast-evidence.json`、`navigation-settings-026.webp`、`host-stats-*.webp`） | 已被当前报告引用的有效证据；目录本身被 git 忽略，删了不在仓库历史里 |
-| `dsh-workbase-0.3.1.tgz` 与 `.sha256` | 当前本地构建包的校验依据；安装范围见下文，历史包不再归档 |
+| `dsh-workbase-1.0.0.tgz` 与 `.sha256` | 当前本地构建包的校验依据；安装范围见下文，历史包不再归档 |
 | `.agents/notes/`（本文件） | 随仓库提交；`.gitignore` 只忽略 `.agents/worktrees/` |
 
 ### 验证方式
@@ -405,7 +476,7 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ### 安装与发布
 
-当前版本 `0.3.1`：`dsh-workbase-0.3.1.tgz`（完整性校验用 `npm view dsh-workbase@0.3.1 dist.integrity`）已包含项目表单修复、会话永久删除与官方快捷输入，并保留会话右侧入口、待办悬停删除及 5 秒撤销、顶部主题提示、桌面启动开关与 2px 路径间距。2026-11-09 在 macOS 正式 desktop 通过应用自带 CLI 的 `plugin --profile desktop remove/add` 卸载重装；包内全部 6 项安装文件与本次构建逐字节一致，工作台仍在 profile bundles 启用列表，已停止旧宿主并通过 `open -a` 重启，确认新主进程与运行时。本轮未检查实际组件挂载，配色与布局未截图或逐主题视觉验收，真实模型／附件／引用／模式切换和删除留待用户验证。已有 Windows desktop profile 安装记录不覆盖本轮修改。本地包使用旁边的 `.tgz.sha256` 校验；registry 的 integrity 仅校验 registry 包。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
+当前版本 `1.0.0`：`dsh-workbase-1.0.0.tgz`（完整性校验用 `npm view dsh-workbase@1.0.0 dist.integrity`）已包含项目表单修复、会话永久删除与官方快捷输入，并保留会话右侧入口、待办悬停删除及 5 秒撤销、顶部主题提示、桌面启动开关与 2px 路径间距。2026-11-09 在 macOS 正式 desktop 通过应用自带 CLI 的 `plugin --profile desktop remove/add` 卸载重装；包内全部 6 项安装文件与本次构建逐字节一致，工作台仍在 profile bundles 启用列表，已停止旧宿主并通过 `open -a` 重启，确认新主进程与运行时。本轮未检查实际组件挂载，配色与布局未截图或逐主题视觉验收，真实模型／附件／引用／模式切换和删除留待用户验证。已有 Windows desktop profile 安装记录不覆盖本轮修改。本地包使用旁边的 `.tgz.sha256` 校验；registry 的 integrity 仅校验 registry 包。仓库只保留当前版本的 tgz 与 `.sha256`，历史安装包不随源码归档。
 
 2026-11-10 最新本地更新：同版本包已包含官方项目菜单、模型与推理强度选择、向下限高滚动，以及此前自动更新和布局修改；客户端 SHA-256 `a7fab3409b4e5e346ead2e545764afcb3800186c3e3fecd842f75b5c58ca28b8`，安装包 SHA-256 `122b8dc3d9989e241d67c1b59bf1ddcf34ec9ffc32f9bfc09b3516073ca5c5ec`，6项文件与desktop安装一致且bundle启用；新主进程28879与宿主29026存在。138项测试、类型检查与两次一致构建通过；隔离官方组件验证多项目／模型限高滚动、末项选择、推理强度中→高及360px温暖深色小面板无横向溢出，模拟数据与回调不替代真实桌面或模型调用验收。
 
@@ -416,6 +487,246 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。0.3.0 已发布到 npm（`latest`），后续版本由 GitHub Actions 发版。
 
 ## 日志
+
+### 2026-11-13 · 核验桌面rc.3实际接口与安装差异
+
+**背景**：用户要求检查刚更新的桌面端兼容性；此前插件更新字段曾因维护脚本与模拟接口漏项未被发现，因此本次不能仅以方法存在或脚本退出码判断兼容。
+
+**决策**：对照本机app.asar、已接受rc.2基线、此前实际插件管理器副本和官方Release／标签差异。将安装不一致、旧基线缺声明和真正接口变化分别解释；人工补核脚本尚未覆盖的终端、语音、侧栏与工作区Factory。既有数据保护及官方套件路由保留，本次只核验与记录，不接受基线或执行安装重启。
+
+**证据**：`npm run host:check`报告21模块、2阻断／26待复核、退出1；其中17模块指纹与旧基线相同。实际应用为0.2.2-rc.3、构建`6b729fedde0c8fd03af7afdf5a711aa64fe87c3b`，Node24.21.0与pnpm11.28.5未变。`shasum -a 256 /tmp/dsh-update-review/lib-index.js /tmp/dsh-compat-rc3/@deepseek-ai/dsh-plugin-manager/lib/index.js`两者均为`33cbad2bdce9679a9f4fbebe072db87ecbb162e0ceb93237f6a627de07d3ab74`，remote-client也一致。`gh release view dsh-v0.2.2-rc.3 --repo deepseek-ai/deepseek-harness --json tagName,url,body,publishedAt`与正式标签compare已获取；实际构建提交compare返回404，不能宣称逐提交远程对照完成。源码路径、参数、安装哈希及原始报告见`docs/ui/verification/host/assessment.md`。本次没有新增代码或执行额外测试／构建。
+
+**遗留**：最新五项审查修复的dist／lib仍未安装，安装客户端哈希对应上一轮自动更新修复。`NativeComposer.tsx:142`的top覆盖与官方`ModelSelect.module.css:97-102`的bottom锚点仍并存；未验证视觉或真实用户流程。终端／语音／侧栏等补核范围尚未全部进入自动指纹清单，旧基线缺类型记录且安装不同，不自动覆盖。未提交或发布。
+
+### 2026-11-13 · 修复终端显示恢复与国际化审查问题
+
+**背景**：用户要求修复审查确认的五项问题：配色切换丢失已结束终端画面、诊断误翻译用户会话名称、默认Shell存储失败仍提示成功、恢复阻断原因未翻译，以及文档对内置模式规则的矛盾。
+
+**决策**：两种终端显示共享只调用公开方法的挂载适配，closed／failed时补用connect获取官方完整快照；跟随和停用保留薄接线但渲染原官方组件，不拷贝或改写宿主私有xterm。默认Shell仍由官方保存，只读核对已确认偏好键，不用发现结果的首项兜底证明成功。诊断新增可选sessionTitle并保留旧title兼容；客户端只翻译固定标签。恢复逐条翻译已知阻断原因，动态路径作为参数原样保留。PRD和当前实现表统一内置／自定义模式规则。
+
+**证据**：官方`dsh-api-terminal-controller/src/client/model.ts`的mount跳过closed／failed，而connect通过remote.attach取得新流；服务端`src/terminal.ts`的attach首帧包含serializer.serialize完整screen。官方`src/client/shell-preference.ts`吞掉写入异常，`src/client/index.ts`的launchShells会兜底首项。工作台改动可从`ColoredTerminal.tsx`、`entry.tsx`、`TerminalSettings.tsx`、`DiagnosticsPanel.tsx`、`RestoreSettings.tsx`、`i18n-en.ts`及`shared/diagnostics.ts`复现核对。`npm run build`退出0，客户端1228584字符；`npm pack --ignore-scripts --pack-destination /tmp --json`生成1.0.0包528476字节，entryCount为6。退出主进程30325的`kill -TERM`被自动审批拒绝，操作没有执行，尚未安装和重启。
+
+**遗留**：自动审批要求本轮明确授权退出宿主进程后才能继续安装重启；按已有约定不追加测试、类型检查或界面验收。已结束终端完整快照依赖宿主仍保留该终端，宿主已清理时沿用官方不可用状态。官方偏好键若变化需按HOST-COMPATIBILITY记录复核。未提交、推送或发布npm。
+
+### 2026-11-13 · 自动更新批次跨热重载与入口测试修复
+
+**背景**：一键更新审查发现自身热更新会卸载控制器，丢失最终结果并让新实例重复自动检查；入口测试的宿主模拟落后于终端及官方组件接线，断言前即失败。
+
+**决策**：在window中保存带版本的批次数据、订阅和首次启动选择，新控制器复用状态，旧控制器只允许在途官方请求收尾。官方更新Promise仍可提供最终结果，不新增远程恢复接口，也不把不存在的在途记录当作成功；响应丢失停止后续安装。测试补齐宿主原子字段、可选注入、插槽与hook模拟，xterm保持外部依赖；按rc.2公开契约补充plugins.item类型及终端快照类型，不改变终端行为。
+
+**证据**：`test/plugin-update.test.ts`新增4项回归覆盖热重载完成、未知结果、禁用选择与检查中卸载；`test/client-entry.test.ts`新增共享window两次真实入口挂载，核对只调用一次检查安装、保留弹窗、忙状态及最终结果。`npm run typecheck`退出0；`npm test`253/253通过，完整输出在`/tmp/dsh-update-review/full-tests.log`。`npm run build`及`npm pack --ignore-scripts --pack-destination /tmp`退出0，客户端1225879字符，六项1.0.0包527.7kB；客户端SHA-256 `2a18bbeebc1f4af1e246ac3d36f955c46e2274886d646eb94e33b2089955b754`，包SHA-256 `56e61f3a115367925cd2e38585506cb91bf9bcad56d78f49579a9553bccd3229`。原主24475正常退出，经进程门禁后官方desktop remove/add与启动退出0；`pgrep -fl '^/Applications/DeepSeek Harness.app/Contents/MacOS/'`记录新主27975／宿主28045。
+
+**遗留**：未触发其他真实插件在线更新；本机工作台为file包来源，不支持registry在线自更新。真实自身在线更新、权限／网络故障和界面未验收；需要重启生效的安装不自动重启Harness。
+
+### 2026-11-13 · 下载文字悬停与恢复默认一致
+
+**背景**：用户要求重新下载的鼠标悬停样式与恢复默认一致。
+
+**决策**：按官方字段reset规则，下载文字默认使用label-secondary，hover:hover能力下未禁用时使用label-primary；移除下载下划线，保持文字动作。
+
+**证据**：官方`dsh-client-ui-primitives/lib/settings-form/fields.module.css`的reset默认／悬停颜色为依据，`styles.css`下载动作同步并保留禁用和焦点；原型reset和palette-download-text同步无下划线悬停变色，UI规范同步。`npm run build`退出0，客户端1224049字符；六项1.0.0包527.4kB，shasum `7bbfbd54028855633a09bf17d5a40f651cf8815e`。主23691正常退出并通过门禁；首次安装registry地址误写导致ENOTFOUND，已停止该命令，正确registry重试add与启动退出0；新主24475／宿主24525。
+
+**遗留**：未追加测试、类型检查或实际视觉验收。
+
+### 2026-11-13 · 终端字段去掉已自定义标签
+
+**背景**：用户认为字号旁的「已自定义」标签冗余，要求移除并只保留恢复默认。
+
+**决策**：复用原官方SettingsValueField，仅在终端扩展字段内隐藏Tag；不将overridden强制设为false，因为官方同时用它控制恢复默认按钮。
+
+**证据**：官方SettingsValueField的overridden分支同时渲染Tag与重置button；`styles.css`通过限定`data-workbase-terminal-settings`、`wb-terminal-value-field`及字段头的`data-tone`隐藏标签，字号与两项命令限制共用。UI规范同步，原型原本无该标签。`npm run build`退出0，客户端1223989字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包527.4kB，shasum `fd865882cabe79a514b7d0e49b461e450633e021`。桌面主22692正常退出，进程退出门禁通过，官方desktop remove/add与启动退出0；新主23691／宿主23726。
+
+**遗留**：未追加测试、类型检查或实际视觉验收；选择器基于当前官方字段结构，宿主更新改变该结构时需复核。
+
+### 2026-11-13 · 字体首次展开时保持表单高度
+
+**背景**：用户反馈字体下拉框第一次打开出现跳动。
+
+**决策**：将字体异步状态放入固定高度的portal菜单，并给字体滚动层预留滚动条空间；不延迟展开、不提前请求字体权限，不修改官方定位代码。
+
+**证据**：`TerminalSettings.tsx`的FontPicker原在Menu后条件渲染加载／失败／空结果段落，首次请求完成时增删表单高度；官方`useAnchoredPosition`通过ResizeObserver、scroll事件与逐帧锚点矩形追踪重新定位。现用Menu的children将提示留在菜单滚动层，`styles.css`增加字体菜单scrollbar-gutter:stable，UI规范同步。`npm run build`退出0，客户端1223698字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包527.3kB，shasum `c70f0b905c0c7c610894f14231eb5038c3489eb4`。主21679／宿主21710正常退出并通过退出门禁，官方desktop remove/add及启动退出0；新主22692／宿主22726存在。
+
+**遗留**：依据静态代码修正布局变化链路，未追加测试、类型检查或真实首次展开视觉验收；最终效果待用户实际使用确认。
+
+### 2026-11-13 · 配色与Shell短列表自适应高度
+
+**背景**：用户截图显示六项配色下方存在大面积空白，要求配色与Shell下拉均减少空白。
+
+**决策**：配色新增独立菜单类，与Shell设置height:auto，上限320px与内部滚动保留；字体继续按之前要求固定高度，避免扩大本次调整范围。
+
+**证据**：`TerminalSettings.tsx`配色`listClassName`改为`wb-terminal-palette-menu`；`styles.css`拆分字体固定高度和Shell／配色自适应高度，保持minWidthFromAnchor等宽。原型`#terminal-shell-menu,#terminal-palette-menu`只覆盖height:auto，字体规则未改。`npm run build`退出0、客户端1223526字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包527.3kB，shasum `0098f0d73a914c434b1e37206cba8cec1a3d9053`。主21110／宿主21141正常退出，退出门禁通过后官方desktop remove/add及`open -a "DeepSeek Harness"`均退出0；重启后主21679／宿主21710。
+
+**遗留**：未追加测试、类型检查或浏览器视觉验收。
+
+### 2026-11-13 · 下载文字入口右对齐并合并配色说明
+
+**背景**：用户指出配色说明固定占两行，并标注选择框左侧为下载入口位置，要求使用与小字同字号的可点击文字。
+
+**决策**：说明与已下载状态使用单段短文案；左侧标题行首放标签、末端放12px下载文字。视觉去掉按钮外观，保留原生按钮语义、键盘焦点与禁用，失败提示独立保留，窄面板自然换行。
+
+**证据**：`TerminalSettings.tsx`将完成状态并入唯一说明段，下载使用`wb-terminal-text-action`；`styles.css`标题行`justify-content:space-between`，操作继承12px辅助字与18px行高，移除边框／背景；`i18n-en.ts`补合并说明译文。原型删除`terminal-palette-note`及对应JS引用，保持下载事件与语言切换。`npm run build`退出0、客户端1223351字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包527.2kB，shasum `7cc315aa31e638f3d837e2745f12ce422143aa1d`。主20521／宿主20552正常退出，退出门禁通过后官方desktop remove/add与`open -a "DeepSeek Harness"`均退出0；重启后主21110／宿主21141。
+
+**遗留**：按约定不追加测试、类型检查或浏览器视觉验收；构建成功不代表实际显示已验收。
+
+### 2026-11-13 · 配色下载动作前置与终端扩展英文
+
+**背景**：用户截图显示下载按钮与离线说明堆在右侧选择器下，要求优化位置、工作台入口改为「终端扩展」并适配新增功能英文。
+
+**决策**：下载动作置于左列配色标题旁，右列保持统一控制宽度，离线／失败信息归左侧说明。仅更名工作台开关，官方插件目录名称保留。已有配色词典沿用，补短动作与预览标签；固定示例代码拆分后不参与翻译，避免整段混排文案查词失败。依指定技能沿既有HTML隔离演示迭代，不另建原型项目；设计约定暂存`/tmp/terminal-layout-contract.md`。
+
+**证据**：`src/client/TerminalSettings.tsx`的`wb-terminal-palette-heading`包裹标题与下载按钮，`Settings.tsx`开关及说明改名；`i18n-en.ts`补终端扩展、终端预览及短下载动作；`styles.css`沿用34px高度、弹性换行及650px面板断点。`docs/ui/ui-directions.html#demo=terminal-settings`同布局且增加配色语言切换，源码核对新ID、标签关联与下载／保存分离状态。`npm run build`退出0，客户端1222479字符，比前轮增加799；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包527.1kB，shasum `9a453f1f70b002b6802eca3d5f7763ea6f5567dd`。主19383／宿主19424正常退出，退出门禁通过后官方desktop remove/add及`open -a "DeepSeek Harness"`均退出0；重启后主20521／宿主20552。
+
+**遗留**：不追加测试、类型检查、浏览器或真实界面验收。正式配色保存链路及官方终端接线保持既有实现。
+
+### 2026-11-13 · 独立终端色板与Catppuccin显示适配
+
+**背景**：用户要求实现独立配色与Catppuccin；官方公开字体与Shell设置，但完整ANSI色板与xterm实例没有公开跨插件入口。
+
+**决策**：新增完整色板持久化和固定官方palette下载；自实现必要的本地显示层，复用官方插槽注入的TerminalView，保留创建／输入／控制权／关闭／重连归属。使用与官方一致的MIT xterm与FitAddon打入单文件，避免不完整的两色方案。只有独立色板启用时替换显示，恢复跟随或停用时撤销；不修改官方注册项或源码，不通过OSC伪造配置。
+
+**证据**：官方`dsh-client-ui-sidebar-terminal/src/client/index.ts`的`sidebar.right.pane.tab`注册提供view、keyedHooks.terminal、hooks.theme；`terminal.tsx`使用mount／write／resize／acknowledge协议。实现入口`src/client/ColoredTerminal.tsx`，共享校验`src/shared/terminal-palette.ts`，固定源下载`src/server/terminal-palette.ts`，统一保存`src/client/TerminalSettings.tsx`。源码核对发现普通snapshot钩子必须传selector，已按官方bindSnapshotSelector接线。最终`npm run build`退出0、客户端1221680字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项1.0.0包，527.0kB，shasum `5285ee5e768219ce2d8d3110e8afd78a55854b7e`。主2760／宿主2834经SIGTERM正常退出，退出门禁通过后官方desktop remove/add与`open -a "DeepSeek Harness"`退出0；`pgrep -fl '^/Applications/DeepSeek Harness.app/Contents/MacOS/'`显示重启主19383／宿主19424。
+
+**遗留**：遵循用户授权，仅构建、安装与重启；不追加测试、类型检查或界面验收。真实色板显示、程序OSC覆盖、输入控制权与重连行为尚未验收，不将源码契约核验当成运行时证据。
+
+### 2026-11-13 · 字体下拉箭头对齐
+
+**背景**：用户截图指出字体输入右侧下拉箭头样式异常，文本字符`⌄`随字体基线偏移。
+
+**决策**：复用官方12px下拉SVG图标，在16px容器内flex居中并消除文本行高；保留右侧12px与仅装饰、不独立点击的输入式下拉行为。原型已使用SVG，无需改动。
+
+**证据**：`TerminalSettings.tsx`使用`IconChevronDownOutlineRegular`，`styles.css`的`wb-terminal-font-chevron`改为固定尺寸居中；UI第0节同步。`npm run build`退出0，客户端850097字符；`npm pack --ignore-scripts --pack-destination /tmp`生成1.0.0六文件包。主PID96405／宿主96440，经SIGTERM正常退出后，带退出门禁的官方desktop remove/add及`open -a "DeepSeek Harness"`均退出0。
+
+**遗留**：未追加测试、类型检查或真实界面验收，最终视觉仍需用户确认；未提交、推送或发布npm。
+
+### 2026-11-13 · 修正终端保存与控件对齐
+
+**背景**：用户反馈正式终端页点击保存无响应，字体与其他输入宽度不齐、展开按钮独立；指定prototype-craft调整输入式下拉、菜单等宽及固定高度，并要求字体预览放在字体设置下方。
+
+**决策**：根因是混用SlotCore与插件侧SlotRegistry接口：前者有`isLive()`，后者只在内部hostFace提供，工作台直接调用会在保存try之前抛错。改以`entriesOfSlot`实际赢家身份确认接点，检查纳入失败处理，保存后显示成功提示。布局根因是官方Menu的className仅用于锚点根，listClassName才用于portal菜单；现锚点满控件列、菜单通过listClassName固定320px高及内部滚动，官方minWidthFromAnchor控制实时等宽，低高度受可用空间约束。字体输入直接展开，独立按钮改为不可点击箭头；预览紧随字体／字号、位于Shell前。原型仍用HTML/CSS/JS模拟数据，正式客户端复用原模型，无新后端或依赖。
+
+**证据**：插件侧接口见`node_modules/@deepseek-ai/dsh-client-ui-renderer/lib/types/client/registry.d.ts`及`lib/client.js`的entriesOfSlot与hostFace；核心isLive见`dsh-client-ui-slots/lib/index.js:251`。Menu根与弹层映射见`dsh-client-ui-primitives/lib/index.js:2700–2748`，对应修复在`TerminalSettings.tsx`、`entry.tsx`、`styles.css`；视觉真源`demo-source-terminal-settings`去掉terminal-font-toggle及相关事件，预览移动并同步命令输入320px列。指定技能只静态阅读核对，未启动预览或浏览器。`npm run build`退出0、客户端849959字符；`npm pack --ignore-scripts --pack-destination /tmp`六项白名单、1.0.0、429.2kB。主PID93470／宿主93501，主进程SIGTERM退出；带退出门禁的官方desktop remove/add及`open -a "DeepSeek Harness"`均退出0。
+
+**遗留**：按用户约定未追加测试、类型检查或真实界面验收；保存实际持久化、字体菜单低高度定位及全部控件最终几何仍需真实使用确认。后续宿主能力核验须区分核心内核与实际提供的服务实例，不能仅见同名公开类型就视为可调用。未提交、推送或发布npm。
+
+### 2026-11-13 · 修正终端目录重复入口
+
+**背景**：用户截图显示内置插件配置中有两个终端。上一轮以同名priority注册接管页面，只核对了详情渲染选举，漏查官方目录的原始ledger投影。
+
+**决策**：移除工作台对`plugins.item#shell`的注册，保留原官方唯一目录项；通过公开`plugins.detail.section`挂载已有整页表单。按`entriesOfSlot`实际赢家核对官方条目及注入，监听开关和条目变化，卸载先取消订阅再撤扩展。仅扩展实际挂载时，以`[data-plugin-item-detail="shell"]>div:has([data-workbase-terminal-settings])>[data-plugin-config]`收起原官方表单；关闭／移除／渲染失败时恢复原表单，缺少`:has`时不接管展示。不改目录数据、注册对象或官方源码，不代点DOM保存。前置配置、字体访问、唯一按钮及原官方保存状态保护保留。
+
+**证据**：官方`dsh-client-ui-plugin-manager/src/client/config-ledger.ts:61`直接对`entries('plugins.item')`做map，未按id去重；`PluginManagerPage.tsx:650–667`提供`data-plugin-item-detail`／`data-plugin-config`及随后渲染的详情扩展。接线位于`src/client/entry.tsx`的可选configForms／locale注入，样式位于`styles.css`终端适配段。`npm run build`退出0，客户端849002字符；`npm pack --ignore-scripts --pack-destination /tmp`生成1.0.0六文件包、428.9kB。本轮主PID92306／宿主92339，主进程SIGTERM正常退出，带桌面进程退出门禁的官方desktop CLI remove/add及`open -a "DeepSeek Harness"`均退出0。
+
+**遗留**：按用户约定未追加测试、类型检查或真实界面验收；目录修正与单按钮显隐的实际页面效果尚需用户确认。宿主未来调整详情data属性或DOM层级时需同步核对适配，不能仅核对插槽注册类型。未提交、推送或发布npm。
+
+### 2026-11-13 · 终端原型同步正式页
+
+**背景**：用户确认将已调整原型同步正式代码，要求真实本机字体下拉、配置前置，并与官方命令限制共用唯一保存按钮。
+
+**决策**：`entry.tsx`在官方`plugins.item#shell`就绪且仍为原赢家时按较低priority注册包装，继承原标签／摘要／locale及注入，订阅条目变化和显隐开关，卸载先停订阅再撤注册。`TerminalSettings.tsx`复用官方命令状态／动作与字体模型，唯一按钮按命令→字体→Shell协调；官方void保存以saving开始及结束、failed／dirty状态确认，30秒未知停止。任一失败保留未保存草稿，不回滚或重复写已成功域，离开中止后续步骤。字体列表在点击手势下调用浏览器`queryLocalFonts`，只展示真实family并去重／搜索，不支持或拒绝时保留手动输入。官方字段组件通过外层布局适配右侧320px控件列和650px容器断点，不新增运行时依赖。
+
+**证据**：实现位于`src/client/TerminalSettings.tsx`、`src/client/entry.tsx`及`styles.css`终端段；README、PRD、UI第0节和本日志当前状态已同步。`npm run build`退出0，客户端848925字符，相对上一轮840295增加8630字符。`npm pack --ignore-scripts --pack-destination /tmp`生成1.0.0包，六项白名单、428.9kB。本轮主PID87757／宿主87789，主进程SIGTERM正常退出；安装命令先确认桌面进程退出，官方desktop CLI remove/add均退出0，安装`dsh-workbase@1.0.0`后`open -a "DeepSeek Harness"`退出0。
+
+**遗留**：按用户约定未追加测试、类型检查或浏览器／真实宿主验收；本机字体权限、官方页面条目热切换、跨域部分失败及默认Shell新建终端行为仍需真实使用确认。构建安装结果不代表这些行为已验收。未提交、推送或发布npm；独立终端配色和Catppuccin继续待公开接口。
+
+### 2026-11-13 · 终端配置前置与整页单按钮方案
+
+**背景**：用户继续要求字体等新增项插到官方命令配置上方，并与官方共用同一个保存按钮。
+
+**决策**：纠正此前只考虑detail.section追加能力的判断。公开SlotCore允许同名list条目按不同priority共存并选取最低值作为展示者，可基于此适配终端页表现层，复用官方命令表单的注入状态、校验与保存动作；不需修改官方源码或模拟点击DOM。统一按钮仍是多个域的保存编排，不承诺跨域原子写入。原型移除官方独立保存，将字体／字号／Shell和字体预览放到命令限制前，底部仅一个保存。
+
+**证据**：`node_modules/@deepseek-ai/dsh-client-ui-slots/lib/types/index.d.ts:773–781`明确list同id的priority选举与精确优先级冲突；`dsh-client-ui-settings-shell/src/client/index.ts:51–53`注册官方`shell`，注入ShellCardController状态及动作；`shell-card-controller.ts:60–61`返回hook与form.actions。`PluginManagerPage.tsx:664–667`仍只在官方表单后渲染detail.section。原型`demo-source-terminal-settings`的officialDraft／officialDirty及统一save分步调用三个mock保存，已成功部分更新saved，失败草稿保留且重试不重复写入。
+
+**遗留**：本轮仅改原型与记录，正式适配尚未实施，仍需处理官方条目热重载、原始注入生命周期及void保存动作的状态确认；未构建、安装、重启或浏览器验收，未提交或推送。真实字体列表能力仍待确认。
+
+### 2026-11-13 · 终端字体下拉与保存布局原型
+
+**背景**：用户反馈终端页字体需要已安装字体下拉，配置过长且保存按钮重复，指定prototype-craft优化布局。
+
+**决策**：在既有原型内追加隔离演示，不改正式运行代码；字体可搜索下拉兼容手动输入，短控件右对齐且窄面板上下排列，新增三项合并为底部一次保存。官方命令表单保存保留；不画成当前公开接点已经支持整页统一提交。模拟两个持久化域的部分成功，保留失败部分草稿并跳过已成功写入。
+
+**证据**：原型`docs/ui/ui-directions.html`的`demo-source-terminal-settings`及两个演示选择器，加载器兼容惰性template，与既有JSON演示共用缓存与iframe。`sync-ui.mjs:168`只读取无属性的style，演示style标记data-demo-library，不进入正式CSS生成。官方`dsh-client-ui-theme/src/client/FontFamilyRow.tsx`仅提供文本输入；`dsh-client-ui-settings-shell/src/client/ShellCard.tsx`直接调用官方SettingsForm，`shell-card-controller.ts`拥有自己的SettingsFormModel。对实际app.asar桌面／主题源文件执行queryLocalFonts/listFonts/fontList/local-fonts/font-access/font-manager定向搜索，读取12文件无命中；这不证明所有宿主模块均不存在能力。按指定技能只静态核对源码，既有8765预览服务可供用户打开。
+
+**遗留**：真实字体枚举需要后续核验本地字体访问能力；当前原型只使用示例字体。正式组件仍是分区保存，未构建、安装、重启或浏览器验收，未提交或推送。
+
+### 2026-11-13 · 官方终端配置落地
+
+**背景**：用户确认落地字体、字号及默认Shell，要求开关在工作台「其他组件 → 终端」，字段在官方「插件 → 终端」页。
+
+**决策**：新增默认关闭的`terminalSettingsVisible`，增量命令去除默认值，兼容旧持久化状态；通过可选`configForms`与公开`plugins.detail.section`挂载，字体复用官方revision-fenced暂存模型。Shell以官方`mainView`持有计数选取唯一真实会话，通过可选`webTerminals`发现与保存；与字体分别保存，旧请求中止，保存时重核身份。配色无已确认公开接点，继续保留待实现项。
+
+**证据**：实现见`src/client/TerminalSettings.tsx`、`entry.tsx`、`Settings.tsx`，数据链见`src/shared/model.ts`、`commands.ts`、`src/server/service.ts`；官方主视图判定可复现于`node_modules/@deepseek-ai/dsh-client-ui-session/lib/client.js:989–990`，终端发现／保存契约见上条核验记录。`npm run build`退出0，客户端840295字符；`npm pack --ignore-scripts --pack-destination /tmp`生成`/tmp/dsh-workbase-1.0.0.tgz`，六文件、426.7kB。主PID82621经SIGTERM退出，带进程退出门禁的官方desktop CLI remove/add均退出0，重新安装`dsh-workbase@1.0.0`，`open -a "DeepSeek Harness"`退出0。
+
+**遗留**：按用户约定不追加测试、类型检查或界面验收，真实服务启停、字体热更新与默认Shell新建终端尚未验收；独立配色及Catppuccin仍待公开接口。未提交、推送或发布npm。
+
+### 2026-11-13 · 官方终端页面扩展与配置契约核验
+
+**背景**：用户指定终端美化开关放工作台「其他组件 → 终端」，字体、字号、配色与默认启动器放官方「插件 → 终端」，要求先核验官方接口。
+
+**决策**：官方终端详情扩展采用公开`plugins.detail.section`，不替换已占用的`plugins.item#shell`。字体／字号复用`ui-theme`与`ctx.configForms.get('ui-theme').mutate(ops, expectedRevision)`，支持暂存保存、拒绝和并发冲突处理；官方`theme.setFontFamily('terminal', value)`／`setFontSize('terminal', px)`也已有即时写入入口。默认启动器优先限定为浏览器记忆的交互Shell，通过官方发现／选择接口；不把部署级Shell配置误判为在线可编辑。独立ANSI配色无已确认公开面，OSC是程序输出路径，不作为配置页直接应用方案。
+
+**证据**：从`/Applications/DeepSeek Harness.app/Contents/Resources/app.asar`读取根package.json确认版本／提交，按`check-host.mjs`的archive读取方式提取官方src至`/tmp/dsh-terminal-5gB1fc`；以下路径相对于归档`dsh/node_modules/@deepseek-ai/`：`dsh-client-ui-plugin-manager/src/client/slot-contract.ts:185`声明扩展插槽，`PluginManagerPage.tsx:646–667`将item主体传入并在原表单后渲染；`dsh-client-ui-settings-shell/src/client/index.ts:51`注册`shell`，`shell-card-controller.ts:10–12`确认两平台条目。`dsh-client-ui-theme/src/index.ts:38–46`声明volatile字段，`theme-settings.ts:60`确定字号范围，`dsh-client-ui-sidebar-terminal/src/client/terminal.tsx:95–155`确认xterm读取和热更新；`face.ts`未暴露xterm或调色板。`dsh-api-terminal-controller/src/client/index.ts:180–191`为发现／选择接口，`shell-preference.ts:2`记录localStorage键`dsh.terminal.shell`，`src/index.ts:112–126`部署配置未声明volatile；`dsh-settings/src/index.ts:384–389`拒绝非volatile写入。`dsh-client-ui-sidebar-terminal/src/client/terminal-theme.ts`只由内部实例管理OSC与主题颜色，未导出跨插件配置服务。
+
+**遗留**：源码核验不证明当前连接的服务全部就绪或实际界面行为。Shell发现需要真实会话及其执行环境；浏览器偏好不改变已有终端、系统默认Shell或Agent命令执行器。尚未实现任何终端功能；完整Catppuccin下载与独立配色应用需另行确定接点，不能仅凭下载成功视为生效。
+
+### 2026-11-13 · 内置模式文案按来源翻译
+
+**背景**：用户要求标准、PTC、极简、创造模式的名称与说明跟随工作台语言，用户自定义模式保留原文。
+
+**决策**：服务端沿用既有“官方已知ID且未提供自定义名称”的识别方式，仅为工作台补充的文案返回 builtIn 标记；客户端 presetText 在渲染时翻译，快捷输入的选择器和待办菜单共用。模式ID与发送参数不变，不按用户名称是否命中词典决定翻译。
+
+**证据**：`src/server/host.ts` 的 catalog 原本补充四组固定中文名称／说明；`src/client/Composer.tsx` 和 `TodoDetail.tsx` 之前直接显示 p.name。词典新增三种模式名称及四条说明，待办初始兜底名称延迟读取当前译文。
+
+**遗留**：构建、官方CLI安装和重新启动命令均成功，结果见当前状态；按用户约定未追加测试、类型检查或实际界面验收。后续新增内置模式需同时补服务端识别与词典。
+
+### 2026-11-13 · 英文布局挤压与待办详情黑屏修复
+
+**背景**：用户反馈英文顶栏搜索与同步状态重叠、一级设置导航换行，以及待办详情／完整新建打开黑屏。
+
+**决策**：补回 TodoDetail 的 useEffect 导入；顶栏搜索参与弹性布局，按其他控件实际宽度避让，保留36px等高与既有面板断点。英文一级导航使用简洁的 Appearance 并保持单行，说明与二级页签仍可断行。快捷输入的模式名称和说明来自官方配置，继续保留原值。
+
+**证据**：`src/client/TodoDetail.tsx` 的三个组件调用 useEffect，原首行未导入；`docs/ui/ui-directions.html` 的顶栏原以固定左右宽度绝对定位，英文按钮增长不会改变预留宽度。样式修改位于真源，构建同步生成物。
+
+**遗留**：构建、官方CLI安装和重新启动命令均已成功，结果见当前状态；遵循用户约定未追加测试、类型检查或真实界面验收。官方配置的中文模式名称和说明仍按原值显示。
+
+### 2026-11-13 · 工作台中英文与官方语言服务接入
+
+**背景**：用户批准开始多语言支持；默认跟随 Harness，统计卡与三类扩展继续后排。
+
+**决策**：按实际0.2.2-rc.2的`LocaleRuntime.getSnapshot/subscribe/register`契约可选接线；工作台语言单独持久化，不改宿主全局语言，官方复用控件保持各自语言命名空间。静态中文与模板通过构建AST接入词典，模块级表采用延迟视图；用户数据不遍历、不替换。逻辑比较、共享优先级标签和后端已知错误显式适配，待办Agent草稿保持原内容。
+
+**证据**：实际归档`dsh-client-locale/src/client/index.ts`公开了active语言快照、订阅与字典注册；源码入口为`src/client/i18n.ts`、`i18n-en.ts`、`localize-ui.mjs`，偏好与保存契约在`src/shared/model.ts`、`commands.ts`及`src/server/service.ts`。最终`npm run build`通过（828651字符），六文件1.0.0安装包为423.0kB；SIGTERM正常退出主进程后，带退出门禁的官方desktop CLI remove/add与`open -a "DeepSeek Harness"`均返回0。
+
+**遗留**：按用户约定不追加测试、类型检查或真实宿主语言／视觉验收；未知宿主错误保持原文，HTML原型只展示设置与布局，不代表实际切换证据。
+
+### 2026-11-13 · 安装包跟随推断版本并安装重启
+
+**背景**：用户要求安装包版本随更新同步，并明确授权安装和重启；先前语音改动包仍沿用0.3.1。
+
+**决策**：直接使用仓库commit-analyzer与releaseRules推断下一版本，不按提交数量逐次加版本；0.3.1后的major提交共同落到1.0.0。同步源码包和锁文件元数据，通过既有文档同步插件更新当前状态。首次安装命令因未包含退出检查被自动审批拒绝；只读确认进程已退出后，在命令中加入“检测到桌面进程则停止安装”的门禁，再替换插件。
+
+**证据**：commit-analyzer分析`v0.3.1..HEAD`12个提交得到`major → 1.0.0`；`npm run build`输出客户端746826字符；`npm pack --ignore-scripts --pack-destination /tmp`输出六项白名单的`dsh-workbase-1.0.0.tgz`。官方CLI remove/add退出码0，安装目录package.json读回`dsh-workbase@1.0.0`；`open -a "DeepSeek Harness"`退出码0，`pgrep -fl '^/Applications/DeepSeek Harness.app/Contents/MacOS/'`读到桌面主进程72715与宿主72760。
+
+**遗留**：未发布npm、生成发布标签、提交或推送。未追加测试、类型检查或界面验收；实际麦克风授权、识别、冲突回填及插件启停行为仍未验收。
+
+### 2026-11-13 · 语音入口动态跟随官方套件启停
+
+**背景**：用户进一步明确语音入口需要随插件启用状态显隐，不能以是否安装作为判断。
+
+**决策**：沿用官方活跃插槽探测，补上按键订阅`slots.subscribe('conversation.input.activity', updateMenu)`；注销时同时释放订阅和镜像。停用撤下组件，让官方取消录音／转写并释放展开状态；已启用但识别器未准备时保留官方准备入口。
+
+**证据**：`src/client/entry.tsx`的`updateMenu`读取`entriesOfSlot`活跃占位者，新增专门订阅；SDK `dsh-client-ui-slots/lib/types/index.d.ts:826–838、868–875`分别定义活跃占位者查询和注册变化订阅。`npm run build`通过，客户端746826字符；`npm pack --ignore-scripts --pack-destination /tmp`更新六项白名单的0.3.1包。
+
+**遗留**：本轮未追加测试、类型检查或真实宿主启停验收。安装及重启仍受前次自动审批拒绝阻塞，未再次执行。
+
+### 2026-11-13 · 快捷输入复用官方语音控件与选区保护
+
+**背景**：用户要求按源码核验方案补上语音活动插槽挂载与光标适配；工作台只镜像命令及模型插槽，textarea选区采用展开文字坐标，不能直接当作宿主原子节点坐标使用。
+
+**决策**：镜像官方`voice-input`组件及完整注入与子插槽，保留录音、准备、停止、取消与冲突流程；只适配选区动作并委托官方写入。引用内部位置依照官方投影规则移到引用之后；同时校验revision、草稿文本、输入锁定和20000字符上限。活动展开保留组件挂载、隐藏辅助控件并禁用发送；项目／模式切换立即撤下旧活动，防止旧结果回填。按用户长期约定不追加测试或浏览器验收，不安装或启用语音套件。
+
+**证据**：本机宿主`0.2.2-rc.2`归档内`dsh-experimental-client-ui-voice-input/src/client/mount.ts:54–56`注册活动；`VoiceInput.tsx:118–122`通过`InputActions`写入，`projection.ts:2–7`定义剪贴板与原子节点两种坐标。工作台接线见`src/client/entry.tsx`、`NativeComposer.tsx`的`composerActivityActions`及`Composer.tsx`；需求、UI规范、视觉真源和README同步。`npm run typecheck`及`npm run build`通过，客户端746763字符；`npm pack --ignore-scripts --pack-destination /tmp`生成六项白名单的0.3.1包。退出主进程、官方CLI remove/add和open重启的整条命令被自动审批拒绝，未执行。
+
+**遗留**：待本轮明确授权后安装和重启；自动审批要求对进程终止及插件卸载／安装另行确认，未接受既有长期授权。实际麦克风授权、SenseVoice模型准备、转写准确度及真实宿主界面未验收；语音阶段不是公开状态流，仅由官方组件自己展示。
 
 ### 2026-11-13 · 外观布局二级菜单顺序落地
 
