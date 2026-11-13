@@ -239,3 +239,56 @@ header:has(>[data-conversation-header-leading] .wb-return) [data-conversation-he
 @container workbase (max-width:650px){.wb .wb-drawer{width:100%;max-width:100%}.wb .wb-drawer .dialog-head{height:60px;min-height:60px;padding:0 18px}.wb .wb-drawer .dialog-footer{min-height:64px;padding:14px 18px}}
 @container workbase (max-width:650px){.wb dialog.wb-drawer.workspace-settings{width:100%;max-width:100%}}
 @media(prefers-reduced-motion:reduce){.wb *{animation:none!important;transition:none!important}}
+
+/* 官方终端页包装，复用官方表单；位于工作台根作用域之外。 */
+/* 仅扩展实际挂载时收起原表单；不触及官方目录、摘要或其他插件页面。 */
+[data-plugin-item-detail="shell"]>div:has([data-workbase-terminal-settings])>[data-plugin-config]{display:none}
+[data-workbase-terminal-settings]{container:workbase-terminal/inline-size;min-width:0}
+[data-workbase-terminal-settings] h4{margin:0 0 12px;font-size:16px;line-height:24px;font-weight:600;color:var(--dsw-alias-label-primary)}
+[data-workbase-terminal-settings] .wb-terminal-description{margin:0 0 12px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-tertiary)}
+/* 官方 minWidthFromAnchor 写入实时锚点宽度；width:0 防止长选项额外撑宽。 */
+.wb-terminal-shell-menu,.wb-terminal-font-menu,.wb-terminal-palette-menu{width:0;max-width:calc(100vw - 24px);max-height:min(320px,var(--dsh-anchored-max-height,320px));overflow:hidden}
+.wb-terminal-font-menu{height:320px}
+.wb-terminal-shell-menu,.wb-terminal-palette-menu{height:auto;min-height:0}
+.wb-terminal-shell-menu>[role=presentation],.wb-terminal-font-menu>[role=presentation],.wb-terminal-palette-menu>[role=presentation]{flex:1;min-height:0;overflow:auto}
+.wb-terminal-font-menu>[role=presentation]{scrollbar-gutter:stable}
+.wb-terminal-font-status p{margin:0;padding:8px 12px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.wb-terminal-picker{display:block;width:100%;min-width:0}
+.wb-terminal-row{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:16px}
+.wb-terminal-row>div:first-child{flex:1;min-width:0}
+.wb-terminal-row label{font-size:14px;line-height:20px;font-weight:500}
+.wb-terminal-row p{margin:4px 0 0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.wb-terminal-control{flex:none;width:320px;max-width:100%;min-width:0}
+.wb-terminal-control button[aria-haspopup]{width:100%;height:34px;justify-content:space-between}
+.wb-terminal-font-input{position:relative;width:100%}
+.wb-terminal-font-input>span:first-child{box-sizing:border-box;width:100%;height:34px}
+.wb-terminal-font-input input{width:100%;padding-right:24px}
+.wb-terminal-font-chevron{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:16px;height:16px;line-height:0;pointer-events:none;color:var(--dsw-alias-label-tertiary)}
+.wb-terminal-value-field>div{display:grid;grid-template-columns:minmax(0,1fr) 320px;column-gap:24px;row-gap:6px;padding:0;margin:0 0 16px}
+.wb-terminal-value-field>div>div:first-child{grid-column:1;grid-row:1;flex-wrap:wrap}
+.wb-terminal-value-field>div>div:first-child label{font-size:14px;line-height:20px}
+/* 官方字段的自定义状态仍决定重置动作，仅隐藏重复的状态标签。 */
+[data-workbase-terminal-settings] .wb-terminal-value-field>div>div:first-child>span>[data-tone]{display:none}
+.wb-terminal-value-field>div>input{grid-column:2;grid-row:1;width:100%;box-sizing:border-box}
+.wb-terminal-value-field>div>p{grid-column:1;grid-row:2}
+.wb-terminal-value-field>div>input[aria-invalid=true]+p{grid-column:2}
+.wb-terminal-preview{margin:0 0 24px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l3);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-primary);line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.wb-terminal-preview pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.wb-terminal-swatches{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:4px;margin-top:12px}
+.wb-terminal-swatches span{height:20px;border-radius:2px}
+.wb-terminal-palette-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:34px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}
+.wb-terminal-palette-heading>.wb-terminal-text-action{appearance:none;border:0;border-radius:0;background:none;padding:0;font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;flex:none;white-space:nowrap}
+@media(hover:hover){.wb-terminal-palette-heading>.wb-terminal-text-action:hover:not(:disabled){color:var(--dsw-alias-label-primary)}}
+.wb-terminal-text-action:focus-visible{outline:auto;outline-offset:3px}
+.wb-terminal-text-action:disabled{opacity:.45;cursor:default}
+.wb-terminal-ansi{margin:0 0 16px}
+.wb-terminal-ansi summary{cursor:pointer;margin-bottom:16px;font-size:14px;color:var(--dsw-alias-label-primary)}
+/* 只包裹终端显示层；连接、关闭、控制权与回放继续由官方TerminalView管理。 */
+.wb-terminal-display{display:flex;flex:1;flex-direction:column;box-sizing:border-box;height:100%;min-height:0;min-width:0;padding-top:8px;font-size:14px;color:var(--dsw-alias-label-primary)}
+.wb-terminal-screen{flex:1;min-height:0;min-width:0;overflow:hidden;padding:8px}
+.wb-terminal-screen .xterm{height:100%}
+.wb-terminal-status{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:5px 12px;background:var(--dsw-alias-bg-l2)}
+.wb-terminal-display>p{margin:0;padding:10px 12px;overflow-wrap:anywhere}
+[data-workbase-terminal-settings] .wb-terminal-command-heading{padding-top:16px;border-top:1px solid var(--dsw-alias-border-l3)}
+.wb-terminal-row .wb-terminal-error{color:var(--dsw-alias-state-error-primary)}
+@container workbase-terminal (max-width:650px){.wb-terminal-row{flex-direction:column;gap:8px}.wb-terminal-control{width:100%}.wb-terminal-value-field>div{display:flex;flex-direction:column;gap:6px}}

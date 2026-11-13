@@ -2,6 +2,7 @@ import { ZodError } from 'zod';
 import { commandSchema } from '../shared/commands.js';
 import { WorkbaseError } from '../shared/model.js';
 import type { WorkbaseService } from './service.js';
+import { downloadCatppuccin } from './terminal-palette.js';
 
 export async function dispatch(service: WorkbaseService, payload: unknown, owner: boolean, signal: AbortSignal) {
   try {
@@ -11,6 +12,8 @@ export async function dispatch(service: WorkbaseService, payload: unknown, owner
     let value: unknown;
     switch (command.op) {
       case 'snapshot': value = await service.snapshot(signal); break;
+      case 'terminal-catppuccin': value = await downloadCatppuccin(signal); break;
+      case 'terminal-palette': value = await service.saveTerminalPalette(command.expected, command.value); break;
       case 'backup-status': value = await service.backupStatus(); break;
       case 'backup-start': value = await service.startBackup('manual'); break;
       case 'backup-startup': value = await service.startBackup('startup'); break;

@@ -9,10 +9,14 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/client';
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client';
-import type { LocaleNamespaceMap } from '@deepseek-ai/dsh-client-ui-slots';
+import type { LocaleNamespaceMap, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots';
 import { Workbase } from './Workbase.js';
 import { WorkbaseButton } from './WorkbaseButton.js';
 import { PluginUpdate } from './PluginUpdate.js';
+import { TerminalSettings, officialShellFace, type TerminalPort, type TerminalTheme, type Readable } from './TerminalSettings.js';
+import { installColoredTerminal, type TerminalSlots } from './ColoredTerminal.js';
+import { defaultTerminalPalette, type TerminalPalette, catppuccinSchema } from '../shared/terminal-palette.js';
+import type { SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives';
 import { PluginUpdateController, type PluginManagerPort, type UpdateProgress } from './plugin-update.js';
 import { ComposerActivity, ComposerMenu, ComposerModelState, ComposerProjectPicker } from './NativeComposer.js';
 import type { ComponentType } from 'react';
@@ -33,6 +37,18 @@ import css from './styles.css';
 import prototypeCss from './prototype.css';
 import { connectLocale, setLanguage, t, onWorkbaseLocaleChange, type HostLocale } from './i18n.js';
 
+// 按 rc.2 公开契约补充旧 SDK 未声明的扩展；运行时仍等官方插槽就绪。
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'plugins.item': { kind: 'list'; scope: 'root'; owner: {
+      readonly view: 'summary' | 'page'; readonly form?: unknown;
+    } };
+    'plugins.detail.section': { kind: 'list'; scope: 'root'; owner: {
+      readonly subject: { readonly kind: 'item'; readonly id: string }
+        | { readonly kind: 'bundle' | 'row'; readonly pkg: unknown };
+    } };
+  }
+}
 export const inject = ['slots', 'layout', 'uiWorkspace', 'workspaces', 'connection', 'remote', 'remote.pluginManager', 'sessions', 'conversation'];
 export function apply(ctx: Context) {
   // 语言服务按能力探测，兼容不提供 locale 的宿主；缺失时中文兜底。
@@ -55,6 +71,98 @@ export function apply(ctx: Context) {
     getSnapshot: () => pluginUpdateVisible,
     subscribe: (listener: () => void) => { updateListeners.add(listener); return () => { updateListeners.delete(listener); }; },
   };
+  let terminalSettingsVisible = false, terminalPort: TerminalPort | undefined;
+  const terminalListeners = new Set<() => void>();
+  const notifyTerminal = () => { for (const listener of terminalListeners) listener(); };
+  const terminalVisibility: Readable<boolean> = {
+    getSnapshot: () => terminalSettingsVisible,
+    subscribe: listener => { terminalListeners.add(listener); return () => { terminalListeners.delete(listener); }; },
+  };
+  const terminalService: Readable<TerminalPort | undefined> = {
+    getSnapshot: () => terminalPort, subscribe: terminalVisibility.subscribe,
+  };
+  let terminalPalette: TerminalPalette | undefined, paletteSupported = false;
+  const paletteStore: Readable<TerminalPalette | undefined> = {
+    getSnapshot: () => terminalPalette, subscribe: terminalVisibility.subscribe,
+  };
+  const paletteSupport: Readable<boolean> = {
+    getSnapshot: () => paletteSupported, subscribe: terminalVisibility.subscribe,
+  };
+  const palettePort = {
+    store: paletteStore, supported: paletteSupport,
+    async save(expected: TerminalPalette, value: TerminalPalette, signal: AbortSignal) {
+      await rawCall({ op: 'terminal-palette', expected, value }, signal);
+      if (JSON.stringify(terminalPalette) === JSON.stringify(expected)) {
+        terminalPalette = value; notifyTerminal();
+      }
+    },
+    async download(signal: AbortSignal) {
+      const value = await rawCall({ op: 'terminal-catppuccin' }, signal) as { catppuccin: unknown; sourceRevision: string };
+      return { catppuccin: catppuccinSchema.parse(value.catppuccin), sourceRevision: value.sourceRevision };
+    },
+  };
+  ctx.effect(() => installColoredTerminal(ctx.slots as unknown as TerminalSlots, paletteStore, terminalVisibility, ready => {
+    if (paletteSupported !== ready) { paletteSupported = ready; notifyTerminal(); }
+  }));
+  ctx.inject(['webTerminals'], scope => {
+    const port = (scope as unknown as { get(name: string): TerminalPort }).get('webTerminals');
+    scope.effect(() => {
+      const verified: TerminalPort = {
+        launchShells: (sessionId, signal) => port.launchShells(sessionId, signal),
+        selectShell(path) {
+          port.selectShell(path);
+          // 官方 rememberShell 吞掉存储异常；只读回官方已核对的偏好键，
+          // 不自行写入，也不把 launchShells 的首项兜底当成保存成功。
+          if (window.localStorage.getItem('dsh.terminal.shell') !== path)
+            throw new Error('默认 Shell 未能保存在当前浏览器，请检查存储权限或空间后重试。');
+        },
+      };
+      terminalPort = verified; notifyTerminal();
+      return () => { if (terminalPort === verified) { terminalPort = undefined; notifyTerminal(); } };
+    });
+  });
+  ctx.inject(['configForms', 'locale'], scope => {
+    const forms = (scope as unknown as { get(name: string): {
+      get<T>(name: string): SettingsFormScope<T>;
+    } }).get('configForms');
+    const locale = (scope as unknown as { get(name: string): {
+      bind(namespace: string): (key: string) => string;
+    } }).get('locale');
+    const officialText = locale.bind('settings.shell');
+    // 目录只由官方 plugins.item 提供；工作台仅贡献详情，复用原官方模型。
+    scope.slots.inject('plugins.detail.section', () => {
+      const slots = scope.slots;
+      let selected: StoredEntry | undefined, remove: (() => void) | undefined;
+      let closed = false;
+      const originalWinner = () => slots.entriesOfSlot('plugins.item').find(entry => entry.options.id === 'shell');
+      const reconcile = () => {
+        if (closed) return;
+        // :has 将原表单显隐绑定到实际挂载的扩展；不支持时保留原官方页面。
+        const winner = terminalSettingsVisible && CSS.supports('selector(:has(*))') ? originalWinner() : undefined;
+        const next = winner?.locale === 'settings.shell' && !winner.store && !winner.children ? winner : undefined;
+        if (next === selected) return;
+        const dispose = remove; remove = undefined; selected = undefined; dispose?.();
+        if (!next?.inject) return;
+        let face: unknown;
+        try { face = next.inject(); } catch { return; }
+        if (!officialShellFace(face)) return;
+        const official = face;
+        selected = next;
+        remove = slots.register({ name: 'plugins.detail.section', id: 'workbase.terminal-settings' }, props => {
+          if (props.subject.kind !== 'item' || props.subject.id !== 'shell') return null;
+          return <TerminalSettings theme={forms.get<TerminalTheme>('ui-theme')} terminal={terminalService} palette={palettePort}
+            sessions={ctx.sessions.list} official={official} officialText={officialText}
+            isLive={() => !closed && terminalSettingsVisible && originalWinner() === next}/>;
+        });
+      };
+      const unsubscribeSlots = slots.subscribe('plugins.item', reconcile);
+      const unsubscribeVisibility = terminalVisibility.subscribe(reconcile);
+      reconcile();
+      return () => {
+        closed = true; unsubscribeSlots(); unsubscribeVisibility(); remove?.();
+      };
+    });
+  });
   const startAutomaticUpdate = () => {
     if (stopped || !updateController || automaticChoice !== true) return;
     automaticChoice = false;
@@ -87,6 +195,10 @@ export function apply(ctx: Context) {
     if (stopped || snapshot.revision < revision) return false;
     revision = snapshot.revision;
     memory.theme = snapshot.preferences.theme;
+    const nextPalette = snapshot.preferences.terminalPalette ?? defaultTerminalPalette();
+    if (JSON.stringify(nextPalette) !== JSON.stringify(terminalPalette)) {
+      terminalPalette = nextPalette; notifyTerminal();
+    }
     setLanguage(snapshot.preferences.language ?? 'follow');
     if (automaticChoice === undefined) {
       automaticChoice = snapshot.preferences.pluginAutoUpdate === true;
@@ -99,6 +211,10 @@ export function apply(ctx: Context) {
     const headerChanged = next.headerButtonVisible !== navigation.headerButtonVisible;
     navigation = { ...next };
     const nextUpdateVisible = snapshot.preferences.pluginUpdateVisible ?? true;
+    const nextTerminalVisible = snapshot.preferences.terminalSettingsVisible ?? false;
+    if (nextTerminalVisible !== terminalSettingsVisible) {
+      terminalSettingsVisible = nextTerminalVisible; notifyTerminal();
+    }
     if (nextUpdateVisible !== pluginUpdateVisible) {
       pluginUpdateVisible = nextUpdateVisible;
       for (const listener of updateListeners) listener();

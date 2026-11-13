@@ -6,6 +6,7 @@ import {
 import type { Diagnosis, DiagnosticCandidate, DiagnosticRepairKind, DiagnosticRepairResult, HostDiagnosis } from '../shared/diagnostics.js';
 import type { BackupPort } from '../shared/backup.js';
 import type { RestorePort } from '../shared/restore.js';
+import { resolveTerminalColors, type TerminalPalette } from '../shared/terminal-palette.js';
 import { todoImageSchema, todoAttachmentSchema, todoAttachments, todoFilterSchema, MAX_TODO_IMAGE_BYTES, MAX_TODO_IMAGES, type Priority, type TodoImage, type TodoAttachment, type TodoFilter } from '../shared/todo.js';
 
 export interface Persistence { get(): State; set(next: State): Promise<void> }
@@ -551,7 +552,17 @@ export class WorkbaseService {
       return { saved: true };
     });
   }
-  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'language' | 'navigation' | 'openOnStartup' | 'agentManageTodos' | 'pluginUpdateVisible' | 'pluginAutoUpdate'>> & { backup?: Partial<Preferences['backup']> }) {
+  async saveTerminalPalette(expected: TerminalPalette, value: TerminalPalette) {
+    return this.change(state => {
+      if (JSON.stringify(state.preferences.terminalPalette) !== JSON.stringify(expected))
+        throw new WorkbaseError('conflict', '终端配色已在其他窗口修改，请重新打开设置。');
+      if (value.mode !== 'follow' && !resolveTerminalColors(value))
+        throw new WorkbaseError('invalid', '请先下载 Catppuccin 色板。');
+      state.preferences.terminalPalette = value;
+      return { saved: true };
+    });
+  }
+  async saveSettings(theme: Preferences['theme'], permissions: Record<string, boolean>, options?: Pick<Preferences, 'home' | 'root'> & Partial<Pick<Preferences, 'language' | 'navigation' | 'openOnStartup' | 'agentManageTodos' | 'pluginUpdateVisible' | 'pluginAutoUpdate' | 'terminalSettingsVisible'>> & { backup?: Partial<Preferences['backup']> }) {
     return this.change((state, workspaces) => {
       for (const [projectId, allowed] of Object.entries(permissions))
         this.writable(state, workspaces, projectId).agentCanChangeStatus = allowed;
@@ -563,6 +574,7 @@ export class WorkbaseService {
         if (options.openOnStartup !== undefined) state.preferences.openOnStartup = options.openOnStartup;
         if (options.pluginUpdateVisible !== undefined) state.preferences.pluginUpdateVisible = options.pluginUpdateVisible;
         if (options.pluginAutoUpdate !== undefined) state.preferences.pluginAutoUpdate = options.pluginAutoUpdate;
+        if (options.terminalSettingsVisible !== undefined) state.preferences.terminalSettingsVisible = options.terminalSettingsVisible;
         if (options.backup !== undefined) state.preferences.backup = { ...state.preferences.backup, ...options.backup };
         if (options.agentManageTodos !== undefined) {
           state.preferences.agentManageTodos = options.agentManageTodos;

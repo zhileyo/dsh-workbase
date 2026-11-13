@@ -4,6 +4,7 @@ import { diagnosticCandidate } from './diagnostics.js';
 import { restoreInputSchema } from './restore.js';
 import { backupPreferencesPatchSchema } from './backup.js';
 import { prioritySchema } from './todo.js';
+import { terminalPaletteSchema } from './terminal-palette.js';
 const projectId = z.string().min(1).max(200);
 const todoId = z.string().min(1).max(200);
 // 读取旧状态时需要默认值；增量更新不能让 Zod 4 给未提交字段填默认值。
@@ -16,11 +17,15 @@ const preferencesPatchSchema = preferencesSchema.extend({
   agentManageTodos: preferencesSchema.shape.agentManageTodos.removeDefault(),
   pluginUpdateVisible: preferencesSchema.shape.pluginUpdateVisible.removeDefault(),
   pluginAutoUpdate: preferencesSchema.shape.pluginAutoUpdate.removeDefault(),
+  terminalSettingsVisible: preferencesSchema.shape.terminalSettingsVisible.removeDefault(),
+  terminalPalette: preferencesSchema.shape.terminalPalette.removeDefault(),
   backup: backupPreferencesPatchSchema,
   navigation: preferencesSchema.shape.navigation.removeDefault(),
 }).partial().strict();
 export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('snapshot') }).strict(),
+  z.object({ op: z.literal('terminal-catppuccin') }).strict(),
+  z.object({ op: z.literal('terminal-palette'), expected: terminalPaletteSchema, value: terminalPaletteSchema }).strict(),
   z.object({ op: z.literal('backup-status') }).strict(),
   z.object({ op: z.literal('backup-start') }).strict(),
   z.object({ op: z.literal('backup-startup') }).strict(),
@@ -52,6 +57,7 @@ export const commandSchema = z.discriminatedUnion('op', [
       agentManageTodos: preferencesSchema.shape.agentManageTodos.removeDefault().optional(),
       pluginUpdateVisible: preferencesSchema.shape.pluginUpdateVisible.removeDefault().optional(),
       pluginAutoUpdate: preferencesSchema.shape.pluginAutoUpdate.removeDefault().optional(),
+      terminalSettingsVisible: preferencesSchema.shape.terminalSettingsVisible.removeDefault().optional(),
       backup: backupPreferencesPatchSchema.optional(),
       navigation: preferencesSchema.shape.navigation.removeDefault().optional() }).strict().optional() }).strict(),
   z.object({ op: z.literal('add-project'), path: z.string().max(4096), name: z.string().trim().min(1).max(200).optional() }).strict(),

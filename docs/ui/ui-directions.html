@@ -1471,7 +1471,7 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
     <button id="preview-six-cards" title="预览六张卡：运行中、待办、诊断、技能、MCP、RSS">六卡预览</button>
     <select id="preview-stat-kind" aria-label="选择统计弹窗"><option value="running">运行中</option><option value="recent">近期会话</option><option value="pending">项目待办</option><option value="diagnostic">项目诊断</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></select>
     <button id="preview-stats">统计弹窗</button>
-    <select id="preview-demo-target" aria-label="选择功能预览"><optgroup label="原始工作台 UI"><option value="todo">待办详情</option><option value="stats-flow">统计与待办跳转</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></optgroup><optgroup label="独立演示与对照"><option value="appearance-layout">外观布局合并</option><option value="plugin-update">插件更新</option><option value="todo-alternatives">待办布局对照</option><option value="todo-title">标题对照</option><option value="card-tone">卡片配色对照</option></optgroup></select>
+    <select id="preview-demo-target" aria-label="选择功能预览"><optgroup label="原始工作台 UI"><option value="todo">待办详情</option><option value="stats-flow">统计与待办跳转</option><option value="skills">技能管理</option><option value="mcp">MCP 管理</option><option value="rss">RSS 订阅</option></optgroup><optgroup label="独立演示与对照"><option value="terminal-settings">终端配置优化</option><option value="appearance-layout">外观布局合并</option><option value="plugin-update">插件更新</option><option value="todo-alternatives">待办布局对照</option><option value="todo-title">标题对照</option><option value="card-tone">卡片配色对照</option></optgroup></select>
     <button id="preview-demo-gallery">打开功能预览</button>
   </div>
 </header>
@@ -1570,7 +1570,7 @@ let projectFields=defaultProjectFields();
 try{const saved=JSON.parse(localStorage.getItem('dsh-ui-exploration-v1')||'null');for(const mode of ['list','grid'])for(const [key] of projectFieldChoices(mode))if(typeof saved?.projectFields?.[mode]?.[key]==='boolean')projectFields[mode][key]=saved.projectFields[mode][key]}catch{}
 let todoLayout='list';
 try{const saved=JSON.parse(localStorage.getItem('dsh-ui-exploration-v1')||'null');if(['list','cards'].includes(saved?.todoLayout))todoLayout=saved.todoLayout}catch{}
-const defaultHomepage=()=>({composer:true,recent:true,projects:true,stats:true,recentLayout:'cards',statCards:{running:true,recent:true,pending:true,diagnostic:true,skills:false,mcp:false,rss:false},statDays:7,openOnStartup:false,agentManageTodos:true,pluginUpdateVisible:true,pluginAutoUpdate:false,navigation:{sidebarVisible:true,sidebarName:'项目概览',sidebarPosition:2,headerButtonVisible:true}});
+const defaultHomepage=()=>({composer:true,recent:true,projects:true,stats:true,recentLayout:'cards',statCards:{running:true,recent:true,pending:true,diagnostic:true,skills:false,mcp:false,rss:false},statDays:7,openOnStartup:false,agentManageTodos:true,pluginUpdateVisible:true,pluginAutoUpdate:false,terminalSettingsVisible:false,navigation:{sidebarVisible:true,sidebarName:'项目概览',sidebarPosition:2,headerButtonVisible:true}});
 let homepage=defaultHomepage(),composerDraft='',composerProject='p1',composerBusy=false,workbaseReturn=null;
 const demoClock=Date.now();
 const seedSessionTimes=Object.fromEntries(Object.entries({s1:1,s6:32,s2:70,s3:274,s7:318,s4:1256,s8:1356}).map(([id,minutes])=>[id,demoClock-minutes*60000]));
@@ -1982,6 +1982,7 @@ function integrationDetailRender(){
     <h2 id="demo-library-title">独立演示与对照</h2>
     <p class="demo-library-note" id="demo-library-note">示例数据 · 待办、统计及扩展管理已融入主工作台；此处保留插件更新与备选设计</p>
     <label for="demo-library-select">演示<select id="demo-library-select" aria-label="选择交互演示">
+      <option value="terminal-settings">终端配置优化</option>
       <option value="appearance-layout">外观布局二级菜单对照</option>
       <option value="plugin-update">插件更新</option>
       <option value="todo-alternatives">待办布局对照</option>
@@ -4462,6 +4463,282 @@ function integrationDetailRender(){
   "\u003c/script>\u003c/body>\u003c/html>"
 ]
 </script>
+<!-- 终端配置方案：隔离演示，不生成正式组件样式。 -->
+<template id="demo-source-terminal-settings" data-demo-label="终端配置优化">
+<meta charset="utf-8">
+<style data-demo-library>
+:root{color-scheme:dark;--bg:#141414;--surface:#202020;--control:#303030;--line:#3b3b3b;--text:#f1f1f1;--muted:#a6a8ad;--hover:#383838;--focus:#a0bff9;--danger:#efa1a1;--mono:Menlo,Monaco,Consolas,monospace;--radius:8px}
+:root[data-theme=light]{color-scheme:light;--bg:#fff;--surface:#f7f7f8;--control:#f1f1f3;--line:#d8dadd;--text:#22252a;--muted:#686d75;--hover:#e7e9ed;--focus:#426da8;--danger:#b54a4a}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}button,input,select{border:1px solid var(--line);border-radius:var(--radius);background:var(--control);height:40px}
+button{padding:0 12px}button:hover:not(:disabled){background:var(--hover)}input{width:100%;min-width:0;padding:0 12px}select{padding:0 8px}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}[hidden]{display:none!important}
+svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.demo-bar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:12px 24px;border-bottom:1px solid var(--line);background:var(--surface)}
+.demo-bar label{display:flex;gap:8px;align-items:center}.demo-bar select{height:36px}.demo-note{font-size:12px;color:var(--muted);flex:1}
+.stage{width:100%;max-width:1120px;margin:0 auto;container:terminal-preview/inline-size}
+.stage.compact{max-width:560px}.page{padding:24px}.breadcrumb{display:flex;gap:8px;align-items:center;color:var(--muted);margin-bottom:16px}
+h2{font-size:20px;line-height:28px;margin:0}h3{font-size:16px;line-height:24px;margin:0}p{margin:0}
+.page-heading{display:flex;gap:12px;align-items:center;margin-bottom:24px}.heading-icon{display:flex;width:40px;height:40px;border-radius:var(--radius);background:var(--surface);align-items:center;justify-content:center}
+.heading-icon svg{width:24px;height:24px}.subtle{font-size:12px;color:var(--muted)}.page-heading .subtle{margin-top:4px}
+.official{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}.official .field{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:4px 24px;align-items:center;padding:16px 0;border-bottom:1px solid var(--line)}.official .field:last-of-type{border:0}
+.official label{font-weight:600;grid-column:1;grid-row:1}.official .subtle{grid-column:1;grid-row:2}.official input{grid-column:2;grid-row:1;max-width:100%}.official-save{margin-top:16px}
+.extension{margin-top:0}.section-title{display:flex;align-items:baseline;gap:12px;justify-content:space-between;margin-bottom:8px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:center;padding:16px 0;border-bottom:1px solid var(--line)}
+.row-title{font-weight:600}.row .subtle{margin-top:4px}.row-control{min-width:0}.field-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:8px}
+.reset{height:auto;padding:0;border:0;border-radius:0;background:transparent!important;color:var(--muted);font-size:12px}
+@media(hover:hover){.reset:hover:not(:disabled),.palette-heading .palette-download-text:hover:not(:disabled){color:var(--text)}}
+.picker{position:relative;width:100%}.combo{position:relative;display:flex;border:1px solid var(--line);background:var(--control);border-radius:var(--radius)}
+.combo:focus-within{outline:2px solid var(--focus);outline-offset:2px}.combo input{border:0;background:none;height:38px;outline:0;padding-right:36px}.combo .chevron{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;pointer-events:none;color:var(--muted)}
+.menu{position:absolute;inset:calc(100% + 8px) 0 auto;z-index:10;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:4px;box-shadow:0 8px 24px #0003;width:100%;height:320px;max-height:320px;overflow:auto}
+#terminal-shell-menu,#terminal-palette-menu{height:auto}
+.menu button{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;height:40px;border:0;background:transparent;text-align:left;white-space:nowrap}
+.menu button[aria-selected=true]{background:var(--hover)}.menu button small{font-size:12px;color:var(--muted)}.menu .empty{padding:12px;color:var(--muted);font-size:12px}
+.menu button>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.menu button>small{flex:none}
+.shell-trigger{display:flex;justify-content:space-between;gap:12px;align-items:center;width:100%;background:var(--control)}.shell-path{margin-top:4px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.size{position:relative}.size input{padding-right:40px}.size span{position:absolute;right:12px;top:9px;color:var(--muted)}
+.terminal-preview{margin-top:24px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.preview-head{display:flex;justify-content:space-between;gap:12px;padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
+.terminal-preview pre{font-family:var(--mono);font-size:15px;line-height:1.7;margin:0;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.palette-swatches{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:4px;padding:0 16px 16px}.palette-swatches span{height:20px;border-radius:2px}
+.palette-row{align-items:start}.palette-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;font-size:12px;color:var(--muted)}.palette-heading .row-title{font-size:14px;color:var(--text)}.palette-heading .palette-download-text{appearance:none;border:0;border-radius:0;background:none;padding:0;height:auto;font:inherit;color:inherit;flex:none;white-space:nowrap}.palette-heading .palette-download-text:hover:not(:disabled){background:none}.palette-custom summary{cursor:pointer;padding:12px 0}
+.save-bar{position:sticky;bottom:0;z-index:2;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0;margin-top:8px;background:var(--bg)}
+.save-note{font-size:12px;color:var(--muted)}.save-note.error{color:var(--danger)}.save-actions{display:flex;gap:8px;flex-shrink:0}.primary{background:var(--text);color:var(--bg);border-color:var(--text)}.primary:hover:not(:disabled){background:var(--text);filter:brightness(.9)}
+.validation{font-size:12px;color:var(--danger);margin-top:8px}
+@container terminal-preview (max-width:650px){.page{padding:16px}.row{grid-template-columns:1fr;gap:12px}.official .field{display:flex;flex-direction:column;align-items:stretch;gap:8px}.section-title{flex-wrap:wrap}.save-bar{align-items:flex-start;flex-wrap:wrap}.save-actions{margin-left:auto}.page-heading{margin-bottom:16px}}
+@media(prefers-reduced-motion:no-preference){button{transition:background 150ms ease}}
+</style>
+<div class="demo-bar">
+  <span class="demo-note">终端配置方案 · 字体与 Shell 使用示例数据</span>
+  <label>配色语言<select id="terminal-language"><option value="zh">简体中文</option><option value="en">English</option></select></label>
+  <label>外观<select id="terminal-theme"><option value="dark">深色</option><option value="light">浅色</option></select></label>
+  <label>面板<select id="terminal-width"><option value="wide">宽面板</option><option value="compact">窄面板</option></select></label>
+  <label>状态<select id="terminal-scenario"><option value="normal">正常</option><option value="fonts-unavailable">字体列表不可读</option><option value="no-session">无会话</option><option value="official-failure">命令配置保存失败</option><option value="font-failure">字体保存失败</option><option value="shell-failure">Shell 保存失败</option></select></label>
+</div>
+<div class="stage" id="terminal-stage"><main class="page">
+  <div class="breadcrumb"><span>插件</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg><span>终端</span></div>
+  <header class="page-heading"><span class="heading-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="m6 8 4 4-4 4m6 0h6"/></svg></span><div><h2>终端</h2><p class="subtle">命令运行限制与交互终端偏好</p></div></header>
+  <section class="extension" aria-labelledby="terminal-extension-title">
+    <div class="section-title"><h3 id="terminal-extension-title">交互终端</h3><span class="subtle">所有配置在页面底部统一保存</span></div>
+    <div class="row">
+      <div><label class="row-title" for="terminal-font">字体</label><p class="subtle" id="terminal-font-hint">从字体列表选择，也可直接输入字体名称。</p></div>
+      <div class="row-control"><div class="field-head"><span class="subtle">字体名称</span><button class="reset" type="button" data-terminal-reset="font">恢复默认</button></div>
+        <div class="picker" id="terminal-font-picker"><div class="combo"><input id="terminal-font" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="terminal-font-menu" aria-describedby="terminal-font-hint" autocomplete="off" spellcheck="false" placeholder="官方默认">
+          <span class="chevron" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span></div>
+          <div class="menu" id="terminal-font-menu" role="listbox" aria-label="示例字体" hidden></div>
+        </div>
+        <p class="validation" id="terminal-font-error" hidden>字体名称最多 200 个字符。</p>
+      </div>
+    </div>
+    <div class="row">
+      <div><label class="row-title" for="terminal-size">字体大小</label><p class="subtle">10–20 px；默认 13 px。</p></div>
+      <div class="row-control"><div class="field-head"><span class="subtle">字号</span><button class="reset" type="button" data-terminal-reset="size">恢复默认</button></div><div class="size"><input id="terminal-size" inputmode="numeric" value="15"><span>px</span></div><p class="validation" id="terminal-size-error" hidden>请输入 10–20 之间的整数。</p></div>
+    </div>
+    <div class="row palette-row">
+      <div><div class="palette-heading"><label class="row-title" id="terminal-palette-label">配色方案</label><button type="button" class="palette-download-text" id="terminal-palette-download">下载 Catppuccin</button></div>
+      <p class="subtle" id="terminal-palette-description">独立于平台主题，保存后应用到交互终端。</p></div>
+      <div class="row-control"><div class="picker" id="terminal-palette-picker">
+        <button class="shell-trigger" id="terminal-palette-toggle" type="button" aria-labelledby="terminal-palette-label" aria-haspopup="listbox" aria-expanded="false"><span id="terminal-palette-name">跟随平台</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+        <div class="menu" id="terminal-palette-menu" role="listbox" hidden></div>
+      </div></div>
+    </div>
+    <div id="terminal-palette-custom" class="palette-custom" hidden><div id="terminal-palette-base"></div><details><summary id="terminal-ansi-label">ANSI 色板（16 色）</summary><div id="terminal-palette-ansi"></div></details></div>
+    <div class="terminal-preview" id="terminal-preview"><div class="preview-head"><span id="terminal-preview-label">字体与配色预览</span><span id="terminal-preview-caption">官方默认 · 15 px</span></div><pre id="terminal-font-preview">~/project $ git status
+On branch main
+工作区已就绪 · 0123456789
+❯ _</pre><div class="palette-swatches" id="terminal-palette-swatches" aria-label="ANSI 色板"></div></div>
+    <div class="row">
+      <div><label class="row-title" for="terminal-shell-toggle">默认 Shell</label><p class="subtle" id="terminal-shell-hint">用于后续新建终端，已打开的终端不变。</p></div>
+      <div class="row-control"><div class="picker" id="terminal-shell-picker"><button class="shell-trigger" id="terminal-shell-toggle" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="terminal-shell-menu"><span id="terminal-shell-label">zsh</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="menu" id="terminal-shell-menu" role="listbox" aria-label="默认 Shell" hidden></div></div><p class="shell-path" id="terminal-shell-path">/bin/zsh</p></div>
+    </div>
+    <section class="official" aria-labelledby="terminal-command-title">
+      <h3 id="terminal-command-title">命令执行</h3>
+      <div class="field"><label for="terminal-timeout">命令超时（毫秒）</label><input id="terminal-timeout" inputmode="numeric" value="60000"><p class="subtle">单条命令允许运行多久，超时即终止。</p></div>
+      <div class="field"><label for="terminal-output">单流输出上限（字节）</label><input id="terminal-output" inputmode="numeric" value="64000"><p class="subtle">超出部分会转存到临时文件，而不是被丢弃。</p></div>
+      <p class="validation" id="terminal-official-error" role="status" hidden>命令超时与输出上限须为正整数。</p>
+    </section>
+    <footer class="save-bar"><p class="save-note" id="terminal-save-note" role="status" aria-live="polite">所有修改已保存</p><div class="save-actions"><button type="button" id="terminal-discard" disabled>放弃修改</button><button type="button" class="primary" id="terminal-save" disabled>保存设置</button></div></footer>
+  </section>
+</main></div>
+<script>
+(()=>{
+  const byId=id=>document.getElementById(id),copy=value=>({...value});
+  // 示例数据，不调用真实字体枚举或创建终端。
+  const mock={
+    defaults:{font:'',size:'13',shell:'/bin/zsh'},
+    fonts:[{name:'Menlo',mono:true},{name:'Monaco',mono:true},{name:'SF Mono',mono:true},{name:'JetBrains Mono',mono:true},{name:'Fira Code',mono:true},{name:'Cascadia Code',mono:true},{name:'Source Code Pro',mono:true},{name:'PingFang SC',mono:false},{name:'Helvetica Neue',mono:false}],
+    shells:[{name:'zsh',path:'/bin/zsh'},{name:'bash',path:'/bin/bash'},{name:'fish',path:'/opt/homebrew/bin/fish'}]
+  };
+  const paletteLabels={follow:'跟随平台',custom:'自定义配色',latte:'Catppuccin Latte',frappe:'Catppuccin Frappé',macchiato:'Catppuccin Macchiato',mocha:'Catppuccin Mocha'};
+  const colorKeys=['background','foreground','cursor','selectionBackground','black','red','green','yellow','blue','magenta','cyan','white','brightBlack','brightRed','brightGreen','brightYellow','brightBlue','brightMagenta','brightCyan','brightWhite'];
+  const colorLabels=['背景','文字','光标','选区','黑色','红色','绿色','黄色','蓝色','品红','青色','白色','亮黑','亮红','亮绿','亮黄','亮蓝','亮品红','亮青','亮白'];
+  const paletteEnglish={
+    '配色方案':'Color scheme','跟随平台':'Follow platform','自定义配色':'Custom colors',
+    '独立于平台主题；保存后应用到交互终端。':'Independent of the platform theme. Applies to interactive terminals after saving.',
+    '独立于平台主题，保存后应用到交互终端。':'Independent of the platform theme; save to apply to interactive terminals.',
+    '独立配色，保存后生效；Catppuccin 已下载，可离线使用。':'Independent colors; save to apply. Catppuccin is available offline.',
+    '下载 Catppuccin':'Download Catppuccin','重新下载':'Download again','正在下载…':'Downloading…',
+    '四种风格已下载，保存后可离线使用。':'All four flavors downloaded. Save to use them offline.',
+    '四种风格已模拟下载，保存后可离线使用。':'All four flavors downloaded in this demo. Save to use them offline.',
+    '演示只模拟下载，正式组件读取官方色板。':'Download is simulated here. The installed extension reads the official palette.',
+    '字体与配色预览':'Font and color preview','ANSI 色板（16 色）':'ANSI palette (16 colors)','ANSI 色板':'ANSI palette',
+    '官方默认':'Default','工作区已就绪':'Workspace ready'
+  };
+  ['Background','Text','Cursor','Selection','Black','Red','Green','Yellow','Blue','Magenta','Cyan','White','Bright black','Bright red','Bright green','Bright yellow','Bright blue','Bright magenta','Bright cyan','Bright white']
+    .forEach((label,index)=>{paletteEnglish[colorLabels[index]]=label;});
+  const tr=text=>byId('terminal-language').value==='en'?(paletteEnglish[text]||text):text;
+  // 官方palette固定提交07d02aa的真实色值；下载流程仅模拟，不能代替真实宿主验收。
+  const paletteSeeds={
+    latte:['#eff1f5','#4c4f69','#dc8a78','#bcc0cc','#acb0be','#5c5f77','#6c6f85','#d20f39','#40a02b','#df8e1d','#1e66f5','#8839ef','#179299'],
+    frappe:['#303446','#c6d0f5','#f2d5cf','#51576d','#626880','#b5bfe2','#a5adce','#e78284','#a6d189','#e5c890','#8caaee','#ca9ee6','#81c8be'],
+    macchiato:['#24273a','#cad3f5','#f4dbd6','#494d64','#5b6078','#b8c0e0','#a5adcb','#ed8796','#a6da95','#eed49f','#8aadf4','#c6a0f6','#8bd5ca'],
+    mocha:['#1e1e2e','#cdd6f4','#f5e0dc','#45475a','#585b70','#bac2de','#a6adc8','#f38ba8','#a6e3a1','#f9e2af','#89b4fa','#cba6f7','#94e2d5']
+  };
+  const palettes=Object.fromEntries(Object.entries(paletteSeeds).map(([key,p])=>[key,Object.fromEntries(colorKeys.map((name,i)=>[name,
+    [p[0],p[1],p[2],p[3],p[3],...p.slice(7),p[5],p[4],...p.slice(7),p[6]][i]]))]));
+  const state={saved:{font:'',size:'15',shell:'/bin/zsh'},draft:{font:'',size:'15',shell:'/bin/zsh'},busy:false,fontOpen:false,fontQuery:'',shellOpen:false,scenario:'normal',message:'',failed:false,official:{timeout:'60000',output:'64000'}};
+  Object.assign(mock.defaults,{palette:'follow',colors:JSON.stringify(palettes.mocha),library:false});
+  Object.assign(state.saved,{palette:'follow',colors:JSON.stringify(palettes.mocha),library:false});
+  Object.assign(state.draft,{palette:'follow',colors:JSON.stringify(palettes.mocha),library:false});
+  state.paletteOpen=false;state.downloading=false;
+  function selectedColors(){return state.draft.palette==='follow'?undefined:state.draft.palette==='custom'?JSON.parse(state.draft.colors):palettes[state.draft.palette];}
+  colorKeys.forEach((key,index)=>{
+    const row=document.createElement('div');row.className='row';
+    const label=document.createElement('label');label.className='row-title';label.htmlFor='terminal-color-'+key;label.textContent=colorLabels[index];
+    const input=document.createElement('input');input.id=label.htmlFor;input.value=palettes.mocha[key];
+    const control=document.createElement('div');control.className='row-control';control.append(input);row.append(label,control);
+    byId(index<4?'terminal-palette-base':'terminal-palette-ansi').append(row);
+    input.oninput=()=>{const colors=JSON.parse(state.draft.colors);colors[key]=input.value;state.draft.colors=JSON.stringify(colors);state.message='';render();};
+  });
+  // 统一按钮模拟调用官方命令保存、字体保存与Shell保存；部分成功后只重试未保存部分。
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,350));
+  const api={
+    async saveFont(font,size){await pause();if(state.scenario==='font-failure')throw new Error('字体保存失败，修改已保留。');return {font,size};},
+    async saveShell(shell){await pause();if(state.scenario==='shell-failure')throw new Error('Shell 保存失败，修改已保留。');return shell;},
+    async saveOfficial(value){await pause();if(state.scenario==='official-failure')throw new Error('命令配置保存失败，修改已保留。');return {...value};}
+  };
+  const officialDraft=()=>({timeout:byId('terminal-timeout').value,output:byId('terminal-output').value});
+  const officialDirty=()=>Object.entries(officialDraft()).some(([key,value])=>value!==state.official[key]);
+  const officialValid=()=>Object.values(officialDraft()).every(value=>Number.isSafeInteger(Number(value))&&Number(value)>0);
+  const dirty=()=>officialDirty()||Object.keys(mock.defaults).some(key=>state.draft[key]!==state.saved[key]);
+  const valid=()=>officialValid()&&state.draft.font.trim().length<=200&&Number.isInteger(Number(state.draft.size))&&Number(state.draft.size)>=10&&Number(state.draft.size)<=20
+    &&(state.draft.palette!=='custom'||Object.values(JSON.parse(state.draft.colors)).every(color=>/^#[0-9a-fA-F]{6}$/.test(color)));
+  function closeMenus(){state.fontOpen=false;state.shellOpen=false;state.paletteOpen=false;renderMenus();}
+  function chooseFont(font){state.draft.font=font;byId('terminal-font').value=font;state.message='';state.failed=false;closeMenus();render();byId('terminal-font').focus();}
+  function chooseShell(path){state.draft.shell=path;state.message='';state.failed=false;closeMenus();render();byId('terminal-shell-toggle').focus();}
+  function option(label,value,selected,onSelect,secondary){
+    const button=document.createElement('button');button.type='button';button.role='option';button.setAttribute('aria-selected',String(selected));button.dataset.value=value;
+    const text=document.createElement('span');text.textContent=label;button.append(text);
+    if(secondary){const small=document.createElement('small');small.textContent=secondary;button.append(small);}
+    button.onclick=()=>onSelect(value);return button;
+  }
+  function renderMenus(){
+    const fonts=byId('terminal-font-menu'),shells=byId('terminal-shell-menu');fonts.replaceChildren();shells.replaceChildren();
+    const query=state.fontQuery.trim().toLowerCase();
+    if(state.scenario!=='fonts-unavailable'){
+      fonts.append(option('官方默认','',state.draft.font==='',chooseFont,'默认'));
+      const matches=mock.fonts.filter(font=>font.name.toLowerCase().includes(query));
+      matches.forEach(font=>fonts.append(option(font.name,font.name,state.draft.font===font.name,chooseFont,font.mono?'等宽':'')));
+      if(!matches.length&&query){const empty=document.createElement('p');empty.className='empty';empty.textContent='没有匹配字体，可直接使用输入的名称。';fonts.append(empty);}
+    }
+    mock.shells.forEach(shell=>shells.append(option(shell.name,shell.path,state.draft.shell===shell.path,chooseShell)));
+    fonts.hidden=!state.fontOpen||state.scenario==='fonts-unavailable';shells.hidden=!state.shellOpen||state.scenario==='no-session';
+    byId('terminal-font').setAttribute('aria-expanded',String(!fonts.hidden));byId('terminal-shell-toggle').setAttribute('aria-expanded',String(!shells.hidden));
+    const menu=byId('terminal-palette-menu');menu.replaceChildren();
+    Object.entries(paletteLabels).forEach(([key,label])=>{
+      const item=option(tr(label),key,state.draft.palette===key,mode=>{
+        if(mode==='custom'&&state.draft.palette!=='custom')state.draft.colors=JSON.stringify(selectedColors()||JSON.parse(state.draft.colors));
+        state.draft.palette=mode;state.message='';closeMenus();render();
+      });
+      item.disabled=!['follow','custom'].includes(key)&&!state.draft.library;menu.append(item);
+    });
+    menu.hidden=!state.paletteOpen;byId('terminal-palette-toggle').setAttribute('aria-expanded',String(state.paletteOpen));
+  }
+  function render(){
+    const changed=dirty(),allowed=valid(),noSession=state.scenario==='no-session',missingFonts=state.scenario==='fonts-unavailable';
+    byId('terminal-save').disabled=state.busy||!changed||!allowed;byId('terminal-discard').disabled=state.busy||!changed;byId('terminal-save').textContent=state.busy?'保存中…':'保存设置';
+    byId('terminal-save-note').textContent=tr(state.message)||(state.busy?'正在保存…':changed?'有未保存的修改':'所有修改已保存');byId('terminal-save-note').classList.toggle('error',state.failed);
+    byId('terminal-size-error').hidden=Number.isInteger(Number(state.draft.size))&&Number(state.draft.size)>=10&&Number(state.draft.size)<=20;
+    byId('terminal-size').setAttribute('aria-invalid',String(!byId('terminal-size-error').hidden));
+    byId('terminal-font-error').hidden=state.draft.font.trim().length<=200;
+    byId('terminal-font').setAttribute('aria-invalid',String(!byId('terminal-font-error').hidden));
+    byId('terminal-official-error').hidden=officialValid();
+    for(const id of ['terminal-timeout','terminal-output']){byId(id).disabled=state.busy;byId(id).setAttribute('aria-invalid',String(!officialValid()));}
+    byId('terminal-font-hint').textContent=missingFonts?'暂时无法读取字体列表，可直接输入字体名称。':'从字体列表选择，也可直接输入字体名称。';
+    byId('terminal-shell-hint').textContent=noSession?'请先打开一个会话，再返回此页选择。':'用于后续新建终端，已打开的终端不变。';
+    byId('terminal-shell-toggle').disabled=state.busy||noSession;
+    byId('terminal-font').disabled=state.busy;byId('terminal-size').disabled=state.busy;
+    document.querySelectorAll('[data-terminal-reset]').forEach(button=>button.disabled=state.busy);
+    byId('terminal-scenario').disabled=state.busy;
+    const shell=mock.shells.find(item=>item.path===state.draft.shell);
+    byId('terminal-shell-label').textContent=noSession?'暂无可用会话':shell?.name??'选择 Shell';byId('terminal-shell-path').textContent=noSession?'':shell?.path??'';
+    byId('terminal-preview-caption').textContent=(state.draft.font||tr('官方默认'))+' · '+state.draft.size+' px';
+    byId('terminal-font-preview').textContent='~/project $ git status\nOn branch main\n'+tr('工作区已就绪')+' · 0123456789\n❯ _';
+    byId('terminal-font-preview').style.fontFamily=state.draft.font||'Menlo,Monaco,Consolas,monospace';byId('terminal-font-preview').style.fontSize=(allowed?state.draft.size:'13')+'px';
+    const colors=selectedColors();
+    byId('terminal-preview').style.background=colors?.background||'';byId('terminal-font-preview').style.color=colors?.foreground||'';
+    byId('terminal-palette-custom').hidden=state.draft.palette!=='custom';
+    byId('terminal-palette-label').textContent=tr('配色方案');
+    byId('terminal-palette-description').textContent=tr(state.draft.library?'独立配色，保存后生效；Catppuccin 已下载，可离线使用。':'独立于平台主题，保存后应用到交互终端。');
+    byId('terminal-preview-label').textContent=tr('字体与配色预览');
+    byId('terminal-ansi-label').textContent=tr('ANSI 色板（16 色）');
+    byId('terminal-palette-name').textContent=tr(paletteLabels[state.draft.palette]);
+    byId('terminal-palette-toggle').disabled=state.busy;byId('terminal-palette-download').disabled=state.busy;
+    byId('terminal-palette-download').textContent=tr(state.downloading?'正在下载…':state.draft.library?'重新下载':'下载 Catppuccin');
+    const swatches=byId('terminal-palette-swatches');swatches.replaceChildren();
+    if(colors)colorKeys.slice(4).forEach(key=>{const sample=document.createElement('span');sample.style.background=colors[key];sample.title=key;swatches.append(sample);});
+    const custom=JSON.parse(state.draft.colors);
+    colorKeys.forEach((key,index)=>{const input=byId('terminal-color-'+key);input.labels[0].textContent=tr(colorLabels[index]);if(document.activeElement!==input)input.value=custom[key];input.disabled=state.busy;input.setAttribute('aria-invalid',String(!/^#[0-9a-fA-F]{6}$/.test(custom[key])));});
+    renderMenus();
+  }
+  byId('terminal-font').addEventListener('click',()=>{if(state.busy)return;state.fontQuery='';state.fontOpen=true;state.shellOpen=false;renderMenus();});
+  byId('terminal-font').addEventListener('input',event=>{state.draft.font=event.target.value;state.fontQuery=event.target.value;state.message='';state.failed=false;state.fontOpen=true;render();});
+  byId('terminal-size').addEventListener('input',event=>{state.draft.size=event.target.value;state.message='';state.failed=false;render();});
+  byId('terminal-shell-toggle').onclick=()=>{state.shellOpen=!state.shellOpen;state.fontOpen=false;renderMenus();};
+  byId('terminal-palette-toggle').onclick=()=>{state.paletteOpen=!state.paletteOpen;state.fontOpen=false;state.shellOpen=false;renderMenus();};
+  byId('terminal-palette-download').onclick=async()=>{
+    if(state.busy)return;state.busy=true;state.downloading=true;render();await pause();state.draft.library=true;state.draft.palette='mocha';
+    state.busy=false;state.downloading=false;state.message='四种风格已模拟下载，保存后可离线使用。';render();
+  };
+  document.querySelectorAll('[data-terminal-reset]').forEach(button=>button.onclick=()=>{const key=button.dataset.terminalReset;state.draft[key]=mock.defaults[key];byId(key==='font'?'terminal-font':'terminal-size').value=state.draft[key];state.message='';state.failed=false;closeMenus();render();});
+  byId('terminal-discard').onclick=()=>{state.draft=copy(state.saved);byId('terminal-font').value=state.draft.font;byId('terminal-size').value=state.draft.size;byId('terminal-timeout').value=state.official.timeout;byId('terminal-output').value=state.official.output;state.message='';state.failed=false;closeMenus();render();};
+  byId('terminal-save').onclick=async()=>{
+    if(state.busy||!dirty()||!valid())return;closeMenus();state.busy=true;state.failed=false;state.message='';render();
+    const completed=[];
+    try{
+      if(officialDirty()){state.official=await api.saveOfficial(officialDraft());completed.push('命令配置');}
+      if(state.draft.font!==state.saved.font||state.draft.size!==state.saved.size){const accepted=await api.saveFont(state.draft.font,state.draft.size);Object.assign(state.saved,accepted);completed.push('字体设置');}
+      if(['palette','colors','library'].some(key=>state.draft[key]!==state.saved[key])){await pause();for(const key of ['palette','colors','library'])state.saved[key]=state.draft[key];completed.push('配色');}
+      if(state.draft.shell!==state.saved.shell){if(state.scenario==='no-session')throw new Error('请打开会话后保存 Shell。');state.saved.shell=await api.saveShell(state.draft.shell);completed.push('默认 Shell');}
+      state.message='设置已保存';
+    }catch(error){state.failed=true;state.message=(completed.length?'已保存'+completed.join('、')+'；':'')+error.message;}
+    finally{state.busy=false;render();}
+  };
+  for(const id of ['terminal-timeout','terminal-output'])byId(id).addEventListener('input',()=>{state.message='';state.failed=false;render();});
+  byId('terminal-theme').onchange=event=>document.documentElement.dataset.theme=event.target.value;
+  byId('terminal-language').onchange=()=>{closeMenus();render();};
+  byId('terminal-width').onchange=event=>byId('terminal-stage').classList.toggle('compact',event.target.value==='compact');
+  byId('terminal-scenario').onchange=event=>{state.scenario=event.target.value;state.message='';state.failed=false;closeMenus();render();};
+  document.addEventListener('click',event=>{if(!event.target.closest('.picker'))closeMenus();});
+  document.addEventListener('keydown',event=>{
+    if(event.isComposing)return;const picker=event.target.closest('.picker');if(!picker)return;const menu=picker.querySelector('[role=listbox]');
+    if(picker.id==='terminal-palette-picker'){
+      if(event.key==='Escape'){event.preventDefault();closeMenus();byId('terminal-palette-toggle').focus();}
+      else if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();state.paletteOpen=true;renderMenus();const rows=[...menu.querySelectorAll('button:not(:disabled)')];const current=rows.findIndex(row=>row.dataset.value===event.target.dataset.value);rows[(current+(event.key==='ArrowDown'?1:-1)+rows.length)%rows.length]?.focus();}
+      else if(event.key==='Tab')closeMenus();return;
+    }
+    if(event.key==='Escape'){event.preventDefault();closeMenus();picker.querySelector('input,button').focus();return;}
+    if(['ArrowDown','ArrowUp'].includes(event.key)){
+      event.preventDefault();if(picker.id==='terminal-font-picker'){if(!state.fontOpen)state.fontQuery='';state.fontOpen=true;}else state.shellOpen=true;renderMenus();
+      const buttons=[...menu.querySelectorAll('button')];if(menu.hidden||!buttons.length)return;const index=buttons.findIndex(button=>button.dataset.value===event.target.dataset.value);
+      const next=index<0?(event.key==='ArrowDown'?0:buttons.length-1):(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length;buttons[next].focus();
+    }else if(event.key==='Enter'&&event.target===byId('terminal-font')){event.preventDefault();closeMenus();}
+    else if(event.key==='Tab')closeMenus();
+  });
+  render();
+})();
+</script>
+</template>
 <script>
 // 这里只装载内嵌演示，不调用宿主接口；主原型仍是唯一构建基线。
 (()=>{
@@ -4499,7 +4776,7 @@ function integrationDetailRender(){
       modal.showModal();
     }
     select.value=id;
-    if(!cache.has(id))cache.set(id,JSON.parse(data.textContent).join('\n'));
+    if(!cache.has(id))cache.set(id,data.tagName==='TEMPLATE'?data.innerHTML:JSON.parse(data.textContent).join('\n'));
     // 保留已打开演示的内存状态和模拟后台任务，切换不重复执行脚本。
     active.hidden=true;
     if(!frames.has(id)){
@@ -5453,6 +5730,7 @@ function workspaceSettings(){
  <p id="stat-cards-note" class="settings-inline-note" role="status"></p>
  <label class="setting-row" for="stat-days"><div><strong>时间范围</strong><small>同时影响会话统计卡与项目「近期活跃」数量。</small></div><select class="settings-control" id="stat-days" aria-label="统计时间范围">${[7,14,30].map(days=>`<option value="${days}" ${homepage.statDays===days?'selected':''}>最近 ${days} 天</option>`).join('')}</select></label></div>`;
  const general=`<h3>通用配置</h3><p class="dialog-description">统一配置启动页面和工作台入口。</p>
+ <label class="setting-row"><div><strong>界面语言</strong><small>默认跟随 Harness；仅调整工作台界面，不翻译项目、会话或待办内容。原型展示配置入口，实际切换由正式插件提供。</small></div><select id="workbase-language" class="settings-control" aria-label="界面语言"><option value="follow" ${!homepage.language||homepage.language==='follow'?'selected':''}>跟随平台</option><option value="zh" ${homepage.language==='zh'?'selected':''}>简体中文</option><option value="en" ${homepage.language==='en'?'selected':''}>English</option></select></label>
  ${row('open-on-startup','启动打开首页','开启后，启动 DSH 桌面端进入工作台首页；保存后下次启动生效。',homepage.openOnStartup)}
  ${row('sidebar-visible','显示侧栏入口','在 DSH 侧边栏显示工作台入口。',nav.sidebarVisible)}
  <div class="setting-dependent" id="sidebar-options"><label class="setting-row" for="sidebar-name"><div><strong>侧栏入口名称</strong><small>自定义工作台入口名称，最多 30 字。</small></div><input class="settings-text-control" id="sidebar-name" aria-label="侧栏入口名称" maxlength="30" value="${esc(nav.sidebarName)}"></label><label class="setting-row" for="sidebar-position"><div><strong>侧栏菜单位置</strong><small>顺序从顶部数，倒序从底部数。</small></div><select id="sidebar-position" class="settings-control" aria-label="侧栏菜单位置">${[1,-1].flatMap(direction=>[1,2,3].map(index=>[direction*index,`${direction>0?'顺序':'倒序'}第 ${index} 个`])).map(([value,label])=>`<option value="${value}" ${nav.sidebarPosition===value?'selected':''}>${label}</option>`).join('')}</select></label></div>
@@ -5464,7 +5742,7 @@ function workspaceSettings(){
  ${field('默认项目根目录','root-path',root)}<p class="settings-inline-note">用于新建项目，不改变已有项目目录。目录选择使用原型示例，不读取真实文件。</p>
  ${row('agent-permission','允许 Agent 管理待办','开启后，Agent 可创建、查询、编辑、删除待办及修改完成状态；关闭后仅可查询。对所有已有项目和后续新增项目统一生效。',homepage.agentManageTodos)}</div>
  <div class="settings-subpanel" id="settings-project-panel-single" data-project-subpanel="single" role="tabpanel" aria-labelledby="settings-project-tab-single" hidden><div class="settings-empty">${icon('folder')}<strong>暂无项目专属配置</strong><p>后续项目专属设置将在这里显示。</p></div></div>`;
- const tools=`<h3>其他组件</h3><p class="dialog-description">简单实用的组件。</p>${row('plugin-update-visible','显示插件更新','在插件页刷新按钮左侧显示一键更新入口，检查并更新用户安装的插件。',homepage.pluginUpdateVisible)}<div class="setting-dependent" id="plugin-update-options">${row('plugin-auto-update','开启自动更新','每次打开应用时检查新版本，有更新就在后台安装；保存后下次启动生效。',homepage.pluginAutoUpdate)}</div>`;
+ const tools=`<h3>其他组件</h3><p class="dialog-description">简单实用的组件。</p>${row('plugin-update-visible','显示插件更新','在插件页刷新按钮左侧显示一键更新入口，检查并更新用户安装的插件。',homepage.pluginUpdateVisible)}<div class="setting-dependent" id="plugin-update-options">${row('plugin-auto-update','开启自动更新','每次打开应用时检查新版本，有更新就在后台安装；保存后下次启动生效。',homepage.pluginAutoUpdate)}</div>${row('terminal-settings-visible','终端扩展','在「插件 → 终端」显示字体、字号、配色与默认 Shell 配置；关闭后保留已保存的设置。',homepage.terminalSettingsVisible)}`;
  const backupTabs=[['backup','数据备份'],['restore','数据恢复'],['status','执行状态']];
  const backup=`<h3>备份恢复</h3><p class="dialog-description">管理数据备份、恢复与执行状态。</p>
  <div class="settings-subtabs" role="tablist" aria-label="备份恢复分类">${backupTabs.map(([key,label],i)=>`<button type="button" id="settings-backup-tab-${key}" data-backup-subtab="${key}" role="tab" aria-selected="${i===0}" tabindex="${i===0?0:-1}" aria-controls="settings-backup-panel-${key}">${label}</button>`).join('')}</div>
@@ -5522,9 +5800,10 @@ function saveWorkspaceSettings(){
  if(nextRoot&&!nextRoot.startsWith('/')){selectSettingsTab('project');selectProjectSettingsTab('global');document.getElementById('root-path').focus();return error('请填写默认根目录的绝对路径。')}
  const enteredName=value('sidebar-name').trim();if(checked('sidebar-visible')&&!enteredName){selectSettingsTab('general');document.getElementById('sidebar-name').focus();return error('请填写侧栏入口名称。')}
  const sidebarName=enteredName||homepage.navigation.sidebarName;
+ const language=value('workbase-language');
  const oldRoot=root,oldHomepage=homepage,oldTheme=workbaseTheme;
  root=nextRoot;workbaseTheme=document.querySelector('input[name="workbase-theme"]:checked').value;
- homepage={...homepage,...Object.fromEntries(['composer','recent','projects','stats'].map(key=>[key,checked('show-'+key)])),recentLayout:settingsDraft.recentLayout,statCards:Object.fromEntries(statsTabs.map(([key])=>[key,checked('show-stat-'+key)])),statDays:Number(value('stat-days')),openOnStartup:checked('open-on-startup'),agentManageTodos:checked('agent-permission'),pluginUpdateVisible:checked('plugin-update-visible'),pluginAutoUpdate:checked('plugin-auto-update'),navigation:{sidebarName,sidebarVisible:checked('sidebar-visible'),sidebarPosition:Number(value('sidebar-position')),headerButtonVisible:checked('header-button-visible')}};
+ homepage={...homepage,language,...Object.fromEntries(['composer','recent','projects','stats'].map(key=>[key,checked('show-'+key)])),recentLayout:settingsDraft.recentLayout,statCards:Object.fromEntries(statsTabs.map(([key])=>[key,checked('show-stat-'+key)])),statDays:Number(value('stat-days')),openOnStartup:checked('open-on-startup'),agentManageTodos:checked('agent-permission'),pluginUpdateVisible:checked('plugin-update-visible'),pluginAutoUpdate:checked('plugin-auto-update'),terminalSettingsVisible:checked('terminal-settings-visible'),navigation:{sidebarName,sidebarVisible:checked('sidebar-visible'),sidebarPosition:Number(value('sidebar-position')),headerButtonVisible:checked('header-button-visible')}};
  if(!save()){root=oldRoot;homepage=oldHomepage;workbaseTheme=oldTheme;return error('设置保存失败，原设置保持不变，请重试。')}
  settingsThemePreview=null;closeModal();render();toast('设置已保存');
 }

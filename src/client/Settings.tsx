@@ -56,6 +56,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   const [agentManageTodos, setAgentManageTodos] = useState(snapshot.preferences.agentManageTodos);
   const [pluginUpdateVisible, setPluginUpdateVisible] = useState(snapshot.preferences.pluginUpdateVisible);
   const [pluginAutoUpdate, setPluginAutoUpdate] = useState(snapshot.preferences.pluginAutoUpdate);
+  const [terminalSettingsVisible, setTerminalSettingsVisible] = useState(snapshot.preferences.terminalSettingsVisible ?? false);
   const [backup, setBackup] = useState(snapshot.preferences.backup);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const content = useRef<HTMLDivElement>(null);
@@ -78,7 +79,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     e.preventDefault();
     if (busy || picking || restoreBusy) return;
     if (nameInvalid) return;
-    void save({ op: 'settings', theme, permissions: {}, options: { language, home, root: root.trim(), openOnStartup, agentManageTodos, pluginAutoUpdate, backup: { ...backup, directory: backup.directory.trim() },
+    void save({ op: 'settings', theme, permissions: {}, options: { language, home, root: root.trim(), openOnStartup, agentManageTodos, pluginAutoUpdate, terminalSettingsVisible, backup: { ...backup, directory: backup.directory.trim() },
       ...(!pluginUpdateBusy ? { pluginUpdateVisible } : {}),
       navigation: { ...navigation, sidebarName: navigation.sidebarName.trim() || snapshot.preferences.navigation.sidebarName } } }).then(ok => { if (ok) onClose(); });
   }}>
@@ -161,6 +162,8 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
             <input type="checkbox" aria-label="显示插件更新" checked={pluginUpdateVisible} disabled={busy || pluginUpdateBusy} onChange={e => setPluginUpdateVisible(e.target.checked)}/></label>
           <div className="setting-dependent" hidden={!pluginUpdateVisible}><label className="wb-setting-row setting-row"><div><strong>开启自动更新</strong><small>每次打开应用时检查新版本，有更新就在后台安装；保存后下次启动生效。</small></div>
             <input type="checkbox" aria-label="开启自动更新" checked={pluginAutoUpdate} disabled={busy || !pluginUpdateVisible} onChange={e => setPluginAutoUpdate(e.target.checked)}/></label></div>
+          <label className="wb-setting-row setting-row"><div><strong>终端扩展</strong><small>在「插件 → 终端」显示字体、字号、配色与默认 Shell 配置；关闭后保留已保存的设置。</small></div>
+            <input type="checkbox" aria-label="终端扩展" checked={terminalSettingsVisible} disabled={busy} onChange={e => setTerminalSettingsVisible(e.target.checked)}/></label>
           {pluginUpdateBusy && <p className="settings-inline-note" role="status">插件正在检查或更新，完成后可调整入口显示。</p>}
         </section>
       </div>

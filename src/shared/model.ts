@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { Diagnosis } from './diagnostics.js';
 import { backupPreferencesSchema } from './backup.js';
+import { terminalPaletteSchema, defaultTerminalPalette } from './terminal-palette.js';
 import { prioritySchema, todoImageSchema, todoAttachmentSchema, MAX_TODO_IMAGES } from './todo.js';
 
 export const markSchema = z.object({ pinned: z.boolean(), favorite: z.boolean() }).strict();
@@ -69,6 +70,8 @@ export const preferencesSchema = z.object({
   agentManageTodos: z.boolean().default(true),
   pluginUpdateVisible: z.boolean().default(true),
   pluginAutoUpdate: z.boolean().default(false),
+  terminalSettingsVisible: z.boolean().default(false),
+  terminalPalette: terminalPaletteSchema.default(defaultTerminalPalette),
   backup: backupPreferencesSchema,
   navigation: navigationInput.default(defaultNavigation),
   detail: z.record(z.string(), z.object({
@@ -95,7 +98,7 @@ export const defaultDetail = () => ({ ratio: 65, group: 'pending' as const, sess
 export const initialState = (): State => ({
   revision: 0, bindings: [], todos: [], worktreeSessions: [], projectMarks: {}, sessionMarks: {},
   preferences: { theme: 'follow', view: 'grid', layout: 'list', selectedProject: null, projectFilter: 'active', detail: {},
-    language: 'follow', home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
+    language: 'follow', home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, terminalSettingsVisible: false, terminalPalette: defaultTerminalPalette(), backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
 });
 export interface HostWorkspace {
   workspaceId: string; path: string; title: string; available: boolean; sessionIds: readonly string[];
