@@ -17,7 +17,7 @@ import { TerminalSettings, officialShellFace, type TerminalPort, type TerminalTh
 import { installColoredTerminal, type TerminalSlots } from './ColoredTerminal.js';
 import { defaultTerminalPalette, type TerminalPalette, catppuccinSchema } from '../shared/terminal-palette.js';
 import type { SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives';
-import { PluginUpdateController, type PluginManagerPort, type UpdateProgress } from './plugin-update.js';
+import { PluginUpdateController, pluginUpdateSession, type PluginManagerPort, type UpdateProgress } from './plugin-update.js';
 import { ComposerActivity, ComposerMenu, ComposerModelState, ComposerProjectPicker } from './NativeComposer.js';
 import type { ComponentType } from 'react';
 import { createElement } from 'react';
@@ -65,6 +65,7 @@ export function apply(ctx: Context) {
   const rawCall = caller(connection.rpc);
   let navigation = defaultNavigation(), revision = -1, stopped = false;
   let pluginUpdateVisible = true;
+  const updateSession = pluginUpdateSession(typeof window === 'undefined' ? undefined : window);
   let updateController: PluginUpdateController | undefined, automaticChoice: boolean | undefined;
   const updateListeners = new Set<() => void>();
   const visibility = {
@@ -164,9 +165,10 @@ export function apply(ctx: Context) {
     });
   });
   const startAutomaticUpdate = () => {
-    if (stopped || !updateController || automaticChoice !== true) return;
+    if (stopped || !updateController || automaticChoice === undefined) return;
+    const enabled = automaticChoice;
     automaticChoice = false;
-    void updateController.autoUpdate();
+    void updateController.autoUpdate(enabled);
   };
   let mainReady = false, startupChoice: boolean | undefined, startupSignal: AbortSignal | undefined;
   let backupStartupSent = false, backupStartupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -201,7 +203,7 @@ export function apply(ctx: Context) {
     }
     setLanguage(snapshot.preferences.language ?? 'follow');
     if (automaticChoice === undefined) {
-      automaticChoice = snapshot.preferences.pluginAutoUpdate === true;
+      automaticChoice = updateSession.automaticChoice ??= snapshot.preferences.pluginAutoUpdate === true;
       startAutomaticUpdate();
     }
     startStartupBackup();
@@ -518,7 +520,7 @@ export function apply(ctx: Context) {
       listBundles: () => manager().listBundles(),
       listVersions: (name, options) => manager().listVersions(name, options),
       updateBundle: (name, version, options) => manager().updateBundle(name, version, options),
-    });
+    }, undefined, updateSession);
     updateController = controller;
     const stopBusy = controller.subscribe(() => { for (const listener of updateListeners) listener(); });
     for (const listener of updateListeners) listener();

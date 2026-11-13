@@ -177,6 +177,81 @@ test('启动自动更新等待配置与控制器，后台忙状态可订阅，�
   }
 });
 
+test('工作台入口热重载接续自动更新批次，不重复检查且保留最终结果', async () => {
+  const result = await build({
+    entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: entryExternal, loader: { '.css': 'text' },
+  });
+  const browserWindow = {};
+  let checks = 0, updates = 0, finish!: () => void;
+  const manager = {
+    async listBundles() {
+      checks++;
+      return { ok: true, value: [{ name: 'dsh-workbase', update: 'registry',
+        installed: true, availability: 'profile', official: false }] };
+    },
+    async listVersions() {
+      return { ok: true, value: { status: 'listed', installed: '1.0.0', registry: null,
+        versions: [{ version: '2.0.0', bundle: true }] } };
+    },
+    async updateBundle() {
+      updates++;
+      await new Promise<void>(resolve => { finish = resolve; });
+      return { ok: true, value: { from: '1.0.0', to: '2.0.0',
+        step: 'install', result: { application: 'applied' } } };
+    },
+  };
+  function mount() {
+    const module = { exports: {} as { apply(context: unknown): void } };
+    runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports,
+      require: hostRequire, window: browserWindow, crypto: { randomUUID: () => 'request' },
+      document: { documentElement: { getAttribute: () => 'darwin' } } });
+    const entries = new Map<string, any>();
+    const effects: (() => () => void)[] = [], cleanups: (() => void)[] = [];
+    module.exports.apply({
+      ...optionalServices,
+      connection: { rpc: { async call() { return { ok: true, value: {
+        revision: 1, preferences: { ...initialState().preferences, pluginAutoUpdate: true },
+      } }; } } },
+      effect(callback: () => () => void) { effects.push(callback); },
+      on() { return () => {}; },
+      layout: { panelInfo: { getSnapshot: () => ({ activePanelId: 'other' }) } }, uiWorkspace: {},
+      remote: { pluginManager: manager },
+      slots: {
+        inject(_name: string, register: () => () => void) { cleanups.push(register()); },
+        register(options: any, component: any) {
+          entries.set(options.name, { component });
+          return () => entries.delete(options.name);
+        },
+      },
+    });
+    cleanups.push(effects.at(-1)!());
+    return {
+      controller: entries.get('shell.overlay').component().props.controller,
+      api: entries.get('main').component().props.api as ClientPort,
+      dispose: () => cleanups.reverse().forEach(cleanup => cleanup()),
+    };
+  }
+  const old = mount();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(updates, 1);
+  old.controller.open();
+  old.dispose();
+  const next = mount();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(next.controller.getSnapshot().phase, 'updating');
+  assert.equal(next.controller.getSnapshot().open, true);
+  assert.equal(next.api.pluginUpdateBusy?.getSnapshot(), true);
+  assert.equal(checks, 1);
+  assert.equal(updates, 1);
+  finish();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.equal(next.controller.getSnapshot().phase, 'done');
+  assert.equal(next.controller.getSnapshot().items[0]?.status, 'updated');
+  assert.equal(next.api.pluginUpdateBusy?.getSnapshot(), false);
+  next.dispose();
+});
+
 test('更新入口声明远程子服务注入，检查可穿过宿主权限边界且卸载取消进度订阅', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',

@@ -31,6 +31,26 @@ export interface UpdateState {
   open: boolean;
   items: UpdateItem[]; error: string;
 }
+/** 只保存浏览器生命周期内的批次数据，不保存旧宿主代理或控制器实例。 */
+export interface PluginUpdateSession {
+  version: 1;
+  state: UpdateState;
+  listeners: Set<() => void>;
+  automaticStarted: boolean;
+  automaticChoice?: boolean;
+}
+const sessionKey = Symbol.for('dsh-workbase.plugin-update-session.v1');
+export function pluginUpdateSession(scope?: object): PluginUpdateSession {
+  const record = scope as { [sessionKey]?: PluginUpdateSession } | undefined;
+  const previous = record?.[sessionKey];
+  if (previous?.version === 1) return previous;
+  const session: PluginUpdateSession = {
+    version: 1, state: { phase: 'idle', open: false, items: [], error: '' },
+    listeners: new Set(), automaticStarted: false,
+  };
+  if (record) record[sessionKey] = session;
+  return session;
+}
 const failed = (change: Change) => ['failed', 'cancelled'].includes(change.application);
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const reason = (change: Change) => change.error?.diagnostic ?? change.error?.code ?? '宿主未能完成操作';
@@ -42,27 +62,31 @@ function registryUpdateAvailable(bundle: Bundle) {
 
 /** 组件卸载和页面切换不启动第二个批次；更新始终交给官方服务处理。 */
 export class PluginUpdateController {
-  private state: UpdateState = { phase: 'idle', open: false, items: [], error: '' };
   private listeners = new Set<() => void>();
   private disposed = false;
-  private automaticStarted = false;
-  constructor(private readonly host: PluginManagerPort, private readonly requestId: () => string = () => crypto.randomUUID()) {}
+  constructor(private readonly host: PluginManagerPort, private readonly requestId: () => string = () => crypto.randomUUID(),
+    private readonly session: PluginUpdateSession = pluginUpdateSession()) {}
+  private get state() { return this.session.state; }
   getSnapshot = () => this.state;
-  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  subscribe = (listener: () => void) => {
+    if (this.disposed) return () => {};
+    this.listeners.add(listener); this.session.listeners.add(listener);
+    return () => { this.listeners.delete(listener); this.session.listeners.delete(listener); };
+  };
   private publish(patch: Partial<UpdateState>) {
-    if (this.disposed) return;
-    this.state = { ...this.state, ...patch };
-    for (const listener of this.listeners) listener();
+    // 卸载后只允许在途官方请求收尾；新实例继续读取同一份纯数据状态。
+    this.session.state = { ...this.state, ...patch };
+    for (const listener of this.session.listeners) listener();
   }
   private item(name: string, patch: Partial<UpdateItem>) {
     this.publish({ items: this.state.items.map(item => item.name === name ? { ...item, ...patch } : item) });
   }
   get busy() { return this.state.phase === 'checking' || this.state.phase === 'updating'; }
   /** 每次客户端启动最多一次；不覆盖已经开始的手动检查或更新。 */
-  async autoUpdate() {
-    if (this.automaticStarted || this.disposed) return;
-    this.automaticStarted = true;
-    if (this.state.phase !== 'idle') return;
+  async autoUpdate(enabled = true) {
+    if (this.session.automaticStarted || this.disposed) return;
+    this.session.automaticStarted = true;
+    if (!enabled || this.state.phase !== 'idle') return;
     await this.check();
     await this.update();
   }
@@ -71,9 +95,14 @@ export class PluginUpdateController {
     this.publish({ open: true });
     if (this.state.phase === 'idle') void this.check();
   }
-  close() { this.publish({ open: false }); }
-  dispose() { this.disposed = true; this.listeners.clear(); }
+  close() { if (!this.disposed) this.publish({ open: false }); }
+  dispose() {
+    this.disposed = true;
+    for (const listener of this.listeners) this.session.listeners.delete(listener);
+    this.listeners.clear();
+  }
   progress(progress: UpdateProgress) {
+    if (this.disposed) return;
     const item = this.state.items.find(item => item.status === 'updating' && item.requestId === progress.requestId);
     if (item && stepOrder.includes(progress.step) && !item.steps.includes(progress.step))
       this.item(item.name, { steps: [...item.steps, progress.step] });
@@ -110,6 +139,13 @@ export class PluginUpdateController {
       }
       this.publish({ phase: this.state.items.some(item => item.status === 'available') ? 'confirm' : 'done' });
     } catch (error) { this.publish({ phase: 'done', error: message(error) }); }
+    finally {
+      if (this.disposed && this.state.phase === 'checking') this.publish({
+        phase: 'done', error: '工作台已重新加载，未开始的检查已停止。请重新检查。',
+        items: this.state.items.map(item => ['waiting', 'checking'].includes(item.status)
+          ? { ...item, status: 'unknown', detail: '检查结果未确认，请重新检查。' } : item),
+      });
+    }
   }
   async update() {
     if (this.state.phase !== 'confirm' || this.disposed) return;
@@ -118,7 +154,7 @@ export class PluginUpdateController {
     targets.sort((a, b) => Number(a.name === 'dsh-workbase') - Number(b.name === 'dsh-workbase'));
     this.publish({ phase: 'updating' });
     for (const target of targets) {
-      if (this.disposed) return;
+      if (this.disposed) break;
       const requestId = this.requestId();
       this.item(target.name, { status: 'updating', detail: '正在更新', requestId, steps: [] });
       try {
@@ -146,6 +182,9 @@ export class PluginUpdateController {
         break;
       }
     }
-    this.publish({ phase: 'done' });
+    this.publish({ phase: 'done',
+      ...(this.disposed && this.state.items.some(item => item.status === 'available') && !this.state.error
+        ? { error: '工作台已重新加载，未开始的更新已停止。请重新检查后继续。' } : {}),
+    });
   }
 }

@@ -18,6 +18,106 @@ const listed = (installed = '1.0.0') => ({
     { version: '2.0.0', bundle: true },
   ],
 });
+const updateSession = () => ({
+  version: 1 as const,
+  state: { phase: 'idle' as const, open: false, items: [], error: '' },
+  listeners: new Set<() => void>(),
+  automaticStarted: false,
+  automaticChoice: undefined as boolean | undefined,
+});
+
+test('自动批次跨工作台热重载保留进度、完成结果和启动去重', async () => {
+  const session = updateSession();
+  const calls: string[] = [];
+  let checks = 0, finish!: () => void;
+  const manager = host({
+    listBundles: async () => { checks++; return ok(['dsh-workbase', 'one'].map(name => userBundle(name))); },
+    updateBundle: async name => {
+      calls.push(name);
+      if (name === 'dsh-workbase') await new Promise<void>(resolve => { finish = resolve; });
+      return ok({ from: '1.0.0', to: '2.0.0', step: 'install', result: { application: 'applied' } });
+    },
+  });
+  const old = new PluginUpdateController(manager, () => 'request', session);
+  const pending = old.autoUpdate();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  old.dispose();
+  const next = new PluginUpdateController(manager, () => 'next-request', session);
+  assert.equal(next.getSnapshot().phase, 'updating');
+  assert.equal(next.getSnapshot().items.find(item => item.name === 'one')?.status, 'updated');
+  let notifications = 0;
+  const unsubscribe = next.subscribe(() => { notifications++; });
+  // 重复清理旧实例不能移除新实例的订阅。
+  old.dispose();
+  await next.autoUpdate();
+  await next.check();
+  await next.update();
+  assert.equal(checks, 1);
+  finish();
+  await pending;
+  assert.equal(next.getSnapshot().phase, 'done');
+  assert.ok(next.getSnapshot().items.every(item => item.status === 'updated'));
+  assert.deepEqual(calls, ['one', 'dsh-workbase']);
+  assert.ok(notifications > 0);
+  unsubscribe(); next.dispose();
+});
+
+test('热重载时官方响应丢失保留未确认结果，不重新安装或继续后续目标', async () => {
+  const session = updateSession();
+  let calls = 0, reject!: (error: Error) => void;
+  const manager = host({
+    listBundles: async () => ok(['one', 'two'].map(name => userBundle(name))),
+    updateBundle: async () => { calls++; return new Promise((_resolve, fail) => { reject = fail; }); },
+  });
+  const old = new PluginUpdateController(manager, () => 'request', session);
+  const pending = old.autoUpdate();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  old.dispose();
+  const next = new PluginUpdateController(manager, () => 'next-request', session);
+  assert.equal(next.getSnapshot().phase, 'updating');
+  await next.autoUpdate();
+  reject(new Error('连接中断'));
+  await pending;
+  assert.equal(next.getSnapshot().phase, 'done');
+  assert.equal(next.getSnapshot().items[0]?.status, 'unknown');
+  assert.equal(next.getSnapshot().items[1]?.status, 'available');
+  assert.equal(calls, 1);
+});
+
+test('启动禁用选择跨热重载保持，真正新客户端可以再次自动更新', async () => {
+  const session = updateSession();
+  let checks = 0;
+  const manager = host({ listBundles: async () => { checks++; return ok([]); } });
+  const old = new PluginUpdateController(manager, () => 'request', session);
+  await old.autoUpdate(false);
+  old.dispose();
+  await new PluginUpdateController(manager, () => 'next-request', session).autoUpdate(true);
+  assert.equal(checks, 0);
+  await new PluginUpdateController(manager, () => 'fresh-request', updateSession()).autoUpdate(true);
+  assert.equal(checks, 1);
+});
+
+test('检查中热重载会收尾，不遗留永久忙状态或自动开始安装', async () => {
+  const session = updateSession();
+  let finish!: () => void, updates = 0;
+  const manager = host({
+    listBundles: async () => {
+      await new Promise<void>(resolve => { finish = resolve; });
+      return ok([userBundle('one')]);
+    },
+    updateBundle: async () => { updates++; throw new Error('不应安装'); },
+  });
+  const old = new PluginUpdateController(manager, () => 'request', session);
+  const pending = old.autoUpdate();
+  old.dispose();
+  const next = new PluginUpdateController(manager, () => 'next-request', session);
+  finish();
+  await pending;
+  assert.equal(next.getSnapshot().phase, 'done');
+  assert.match(next.getSnapshot().error, /重新加载/);
+  assert.equal(updates, 0);
+});
+
 test('新版宿主仅返回update时仍检查registry插件，Git不误走registry更新', async () => {
   const checked: string[] = [];
   const controller = new PluginUpdateController(host({
