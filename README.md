@@ -43,7 +43,8 @@ CNB 侧的分支与标签由 `.cnb.yml` 的定时任务拉取后强推对齐，�
 
 | 项目 | 要求 |
 | --- | --- |
-| DeepSeek Harness | 当前适配 `0.2.2-rc.1` |
+| DeepSeek Harness | 当前适配 `0.2.2-rc.3` |
+| 兼容性检查 | 最近检查 `0.2.2-rc.3`（2026-11-13），检查范围与结果见[兼容维护说明](docs/HOST-COMPATIBILITY.md) |
 | Cordis | `~4.1.0` |
 | Node.js | 本地开发使用 22 或以上版本 |
 | 运行环境 | Web 与桌面 `desktop` profile；已有 macOS、Windows 安装记录，当前修改的验收范围见[开发日志](.agents/notes/dev-log.md) |
