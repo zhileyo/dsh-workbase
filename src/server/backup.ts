@@ -176,7 +176,8 @@ export class BackupManager implements BackupPort {
       this.value.phase = 'verifying'; this.value.message = '正在解密回读并校验摘要'; await this.persist();
       await verifyArchive(encrypted, temp, key, manifest, signal);
       signal.throwIfAborted();
-      const archiveHandle = await open(encrypted, 'r');
+      // Windows 的 FlushFileBuffers 要求句柄带写权限，只读打开会得到 EPERM；这里只需刷盘，用读写句柄。
+      const archiveHandle = await open(encrypted, 'r+');
       try { await archiveHandle.sync(); } finally { await archiveHandle.close(); }
       const output = path.join(destination, archiveFilename('backup', this.value.startedAt!, this.value.id!));
       await publishArchive(encrypted, output);

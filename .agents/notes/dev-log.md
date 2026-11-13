@@ -488,6 +488,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-13 · 修复 Windows 备份失败与锁文件内部源
+
+**背景**：推送前按门禁跑 `npm test`，253 项里 16 项失败。逐项定位后是两类问题：一是 Windows 上每次备份都会失败（`src/server/backup.ts:180` 用只读句柄刷盘），二是 `package-lock.json` 有 17 个包的 `resolved` 写成了内部源，CI 冷缓存 `npm ci` 会直接 `ENOTFOUND`。
+
+**决策**：备份归档的刷盘改成读写句柄 `r+`——`FlushFileBuffers` 要求句柄带写权限，只读句柄在 Windows 返回 `EPERM`，改后 Linux 行为不变，语义仍是「发布前刷盘」。锁文件只把 `resolved` 的主机换回 `registry.npmjs.org`，integrity 不动，因此不重新解析版本，也不改依赖。剩下 5 项失败属本机环境限制（创建符号链接需要 `SeCreateSymbolicLinkPrivilege`、PATH 里没有 `sqlite3`），不为它们改产品代码或测试。
+
+**证据**：修复前 16 红，其中 10 项是 `restore.test.ts` 的 `ZodError: archive undefined`——根因不是恢复本身，而是备份没产出归档：直接跑 `BackupManager` 得到 `phase: failed`、`message: EPERM: operation not permitted, fsync`。`node -e` 对只读 fd 调 `fsyncSync` 可复现同一 EPERM，改 `r+` 后同一探针返回 `phase: completed` 并落盘 `dsh-20261113-220546-b9dd8031.tar.age`。修复后 `npm test` 253 项中 248 过、5 红，残留原因只有 `EPERM ... symlink`（4 项）与 `spawn sqlite3 ENOENT`（1 项）。空 `--cache`、公共源、原锁文件跑 `npm ci` 复现 `ENOTFOUND bnpm.internal`（命中 70 处引用）；换主机后的锁文件在同样条件下加装 434 包、退出 0。`npm run typecheck` 通过；`npm run build` 两次均为 1228584 字符、`lib/client.js` SHA-256 均 `8BCA72095EFFA729C6068139EA54338777A225A7B43BC3850BC4867D70ED8723`。
+
+**遗留**：`npm test` 在本机无法全绿，备份／恢复相关 5 项只能在 Linux（CI）验证；Windows 真实 profile 里的备份仍未实际走一遍。1.0.0 的门禁与发版结果要在推送后核对。
+
 ### 2026-11-13 · 核验桌面rc.3实际接口与安装差异
 
 **背景**：用户要求检查刚更新的桌面端兼容性；此前插件更新字段曾因维护脚本与模拟接口漏项未被发现，因此本次不能仅以方法存在或脚本退出码判断兼容。
