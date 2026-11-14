@@ -1,6 +1,6 @@
 {
   "name": "dsh-workbase",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": false,
   "description": "DeepSeek Harness 项目、会话与待办工作台",
   "license": "MIT",
