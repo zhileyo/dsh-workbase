@@ -490,6 +490,16 @@ npm 白名单仅含服务端入口、客户端产物、patch、README 与自动�
 
 ## 日志
 
+### 2026-11-14 · package.json 补 repository／homepage／bugs／keywords，为插件市场收录做准备
+
+**背景**：准备把插件投到 `awesome-dsh-plugin/awesome-dsh-plugin` 目录。该目录的 npm 映射不自带字段，只从 registry 读取已发布包的 `repository` 与条目 `url` 做比对；发布出去的 1.0.3 没有这个字段，市场就关联不到仓库，条目也就没有下载量数字。
+
+**决策**：只补元数据，不动运行代码与白名单。`repository` 指向 `git+https://github.com/zhileyo/dsh-workbase.git`，`homepage` 用 `#readme` 锚点，`bugs` 指向 issues，`keywords` 取 `dsh`／`dsh-plugin`／`deepseek-harness`／`workbase`／`todo`／`session`。没有加 `author`：许可证写的是 AlwaysFyo，但仓库没有可核对的作者邮箱，不猜。
+
+**证据**：`package.json:6-21`（keywords、homepage、bugs、repository），其余字段未改；`node -e` 读回 `git+https://github.com/zhileyo/dsh-workbase.git`、`#readme`、6 个关键词；`npm run typecheck` 通过。本轮 `npm test` 在当前会话的沙箱里全红，原因是 `spawn EPERM`——`tsx` 的 esbuild 服务进程与 `node --test` 的子进程都无法启动（本地实测 `--test-isolation=none` 同样失败），与本次改动无关，测试交由 CI 门禁执行。
+
+**遗留**：字段要等 `main` 发布出新版本才进 registry，在此之前市场仍拿不到映射；收录条目本身不提 PR 到本仓库，属于外部目录的投稿。
+
 ### 2026-11-14 · 新增两条待实现需求：项目规则与全局规则、创建项目时初始化目录
 
 **背景**：用户要求把两项能力记入「待实现功能」：项目规则／全局规则配置，以及创建项目时可选初始化项目目录。README 的清单与工作台待办是对外的承诺与执行侧，缺一不可。

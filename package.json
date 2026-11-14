@@ -3,6 +3,22 @@
   "version": "1.0.3",
   "private": false,
   "description": "DeepSeek Harness 项目、会话与待办工作台",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "workbase",
+    "todo",
+    "session"
+  ],
+  "homepage": "https://github.com/zhileyo/dsh-workbase#readme",
+  "bugs": {
+    "url": "https://github.com/zhileyo/dsh-workbase/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhileyo/dsh-workbase.git"
+  },
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
