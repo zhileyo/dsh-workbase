@@ -127,7 +127,7 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
       </div>
     </div></div>
     {p.archived && <div className="wb-feedback banner readonly" role="status"><Icon name="alert"/><span className="banner-body">项目已归档：业务只读，恢复后可继续编辑。会话保持归档时的状态，不能单独归档、重命名或新建。</span></div>}
-    {!p.available && <p className="wb-warning">目录不可用：{p.path}。历史会话和待办仍可访问；请恢复原目录后使用顶部刷新重新检查。当前宿主尚不支持修改绑定目录。</p>}
+    {!p.available && <div className="wb-feedback banner" role="status"><Icon name="alert"/><span className="banner-body">目录不可用：{p.path}。历史会话和待办仍可访问；请恢复原目录后使用顶部刷新重新检查。当前宿主尚不支持修改绑定目录。</span></div>}
     <div className="wb-mobile-tabs detail-panel-tabs"><Tabs label="项目内容" value={tab} options={[{ value: 'sessions', label: <>会话 <small>{p.sessions.length}</small></> }, { value: 'todos', label: <>待办 <small>{p.todos.filter(t => !t.done).length}</small></> }]} onChange={tab => { setTab(tab); saved.tab = tab; }}/></div>
     <div className="wb-detail-panels detail-content" data-layout={snapshot.preferences.layout} data-tab={tab} ref={panels} style={{ gridTemplateColumns: `minmax(280px,${ratio}fr) 24px minmax(240px,${100-ratio}fr)` }}>
       <section className="wb-panel wb-session-panel sessions" data-layout={snapshot.preferences.layout} aria-label="会话">
@@ -143,10 +143,12 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
                 <span className="entity-marks"><IconButton name="pin" className="wb-pin entity-mark-button" label={mark.pinned ? '取消置顶会话' : '置顶会话'} active={mark.pinned} disabled={busy} onClick={() => void mutate({ op: 'mark', projectId: p.projectId, sessionId: s.sessionId, field: 'pinned', value: !mark.pinned })}/></span>
               </div><div className="session-meta">{s.running && <span className="status running"><i className="status-dot"/>运行中</span>}{s.archived && <span>已归档</span>}<span>{dateText(s.updatedAt)}</span></div></div>
               <Menu label={`会话更多操作：${s.title}`} disabled={busy} items={p.archived ? [
+                { label: '复制 SessionID', action: () => void run(() => navigator.clipboard.writeText(s.sessionId), '会话 ID 已复制') },
                 { label: '会话预览', action: () => showSession(s) },
               ] : [
                 { label: '重命名', action: () => renameSession(s) },
                 { label: mark.favorite ? '取消收藏' : '收藏会话', action: () => void mutate({ op: 'mark', projectId: p.projectId, sessionId: s.sessionId, field: 'favorite', value: !mark.favorite }) },
+                { label: '复制 SessionID', action: () => void run(() => navigator.clipboard.writeText(s.sessionId), '会话 ID 已复制') },
                 { label: '会话预览', action: () => showSession(s) },
                 { label: s.archived ? '恢复会话' : '归档会话', action: () => { if (s.archived) void run(() => api.archiveSession(s.sessionId, false), '会话已恢复'); else if (!s.running) archive(s); } },
                 { label: '永久删除会话', action: () => { if (s.running) notify('请先停止运行中的会话，再永久删除'); else deleteSession?.(s); }, danger: true },

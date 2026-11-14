@@ -154,3 +154,21 @@ test('仅官方专属JSONL目录可清理，拒绝外部路径和未知后端', 
   assert.equal(sessionStorageDirectory({ ...store, name: 'custom' }, header,
     { kind: 'jsonl', path: '/sessions/--project--/..~002Fforeign/session.v4.jsonl' }), undefined);
 });
+
+test('驱逐已加载的空闲会话需要显式evict，活动会话即使evict也拒绝', async () => {
+  const f = await fixture();
+  try {
+    f.live.set('fork', { id: 'fork', header: f.headers.get('fork') });
+    assert.equal(await f.maintenance.deleteSession('fork', { coldOnly: true }), false);
+    assert.equal(f.live.has('fork'), true);
+    await access(f.locations.get('fork')!);
+    f.busy.add('fork');
+    assert.equal(await f.maintenance.deleteSession('fork', { coldOnly: true, evict: true }), false);
+    assert.equal(f.live.has('fork'), true);
+    f.busy.delete('fork');
+    assert.equal(await f.maintenance.deleteSession('fork', { coldOnly: true, evict: true }), true);
+    assert.equal(f.live.has('fork'), false);
+    await assert.rejects(access(path.dirname(f.locations.get('fork')!)));
+    assert.deepEqual(f.removed, ['fork']);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});

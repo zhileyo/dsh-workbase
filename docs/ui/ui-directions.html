@@ -374,8 +374,9 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .composer-option-copy{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
 .composer-option-copy small{font-size:11px;color:var(--muted);margin-top:2px}
 .composer-option svg{width:15px;height:15px}
-.overlay.settings-overlay{padding:50px 5vw 0;align-items:flex-end;background:#0d152359;backdrop-filter:none;animation:settings-mask-in .2s ease-out both}
-.app .workspace-settings.dialog{--wb-drawer-max-width:1120px;width:100%;max-width:var(--wb-drawer-max-width);height:calc(100dvh - 50px);max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px 16px 0 0;border-bottom:0;animation:settings-slide-up .2s cubic-bezier(.22,1,.36,1) both}
+/* 底部抽屉对齐多维表格（Lark Base）抽屉：两侧各 50px、最宽 1580px、顶部预留 50px、底边贴齐，只保留顶部 16px 圆角。 */
+.overlay.settings-overlay{padding:50px 50px 0;align-items:flex-end;background:#0d152359;backdrop-filter:none;animation:settings-mask-in .2s ease-out both}
+.app .workspace-settings.dialog{--wb-drawer-max-width:1580px;width:100%;max-width:var(--wb-drawer-max-width);height:calc(100dvh - 50px);max-height:none;padding:0;overflow:hidden;display:flex;flex-direction:column;border-radius:16px 16px 0 0;border-bottom:0;animation:settings-slide-up .2s cubic-bezier(.22,1,.36,1) both}
 @keyframes settings-slide-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes settings-mask-in{from{background:transparent}to{background:#0d152359}}
 .workspace-settings .dialog-head{height:72px;min-height:72px;margin:0;padding:0 24px;border-bottom:1px solid var(--line)}
@@ -1004,6 +1005,11 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .app-header .global-search input{height:36px;min-height:36px;padding-top:0;padding-bottom:0;line-height:20px}
 .app .app-header .global-search kbd{top:50%;transform:translateY(-50%)}
 .app .app-header .header-actions>button{height:36px;min-height:36px;min-width:36px;padding-top:0;padding-bottom:0}
+/* 搜索框按整个顶栏居中：绝对定位脱离 flex 剩余空间，左右两组（品牌 154+32 与状态区加按钮约 227）宽度不等也不再把中心带偏。
+   带宽按两侧占位推算：>1100 无「最近活动」时左右各占 200/227，有活动时右侧再占 130+13，故活动出现时单独收窄带宽，任何宽度下都不与右侧状态文字重叠。 */
+@media(min-width:751px){.app .app-header .global-search{position:absolute;inset-inline-start:50%;top:50%;transform:translate(-50%,-50%);width:clamp(240px,calc(100% - 560px),720px);max-width:none;margin:0;flex:none}}
+@media(min-width:751px) and (max-width:1100px){.app .app-header .global-search{width:clamp(240px,calc(100% - 540px),560px)}}
+@media(min-width:1101px){.app .app-header:has(.header-activity) .global-search{width:clamp(240px,calc(100% - 780px),720px)}}
 .app .workbase-return{height:32px;padding:0 8px;gap:6px;font-size:13px}
 .app .directory-picker{display:flex;position:relative;width:100%}
 .app .directory-picker input{width:100%;min-width:0;padding-right:42px;cursor:text}

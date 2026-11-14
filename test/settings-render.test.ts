@@ -70,9 +70,10 @@ test('备份恢复子分类分别展示操作与状态，隐藏表单保留挂�
   }
 });
 
-test('关闭统计隐藏统计子菜单，项目详情入口默认选择项目配置', () => {
+test('关闭统计隐藏统计子菜单，设置默认进入通用配置', () => {
   const html = render(false, 'p');
-  assert.match(html, /id="wb-settings-tab-project"[^>]*aria-selected="true"/);
+  assert.match(html, /id="wb-settings-tab-general"[^>]*aria-selected="true"/);
+  assert.match(html, /id="wb-settings-tab-project"[^>]*aria-selected="false"/);
   assert.match(html, /id="wb-settings-appearance-tab-stats"[^>]*hidden=""/);
   assert.match(html, /aria-label="最近会话样式"[^>]*aria-haspopup/);
   assert.ok(html.includes('settings-text-control'));

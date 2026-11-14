@@ -180,6 +180,7 @@ npm 官方源|Official npm registry
 优先级|Priority
 会话|Sessions
 会话 {p0}|Session {p0}
+会话 ID 已复制|Session ID copied
 会话事件|Session events
 会话全文|Session full text
 会话全文搜索失败|Session full-text search failed
@@ -315,6 +316,7 @@ npm 官方源|Official npm registry
 备份覆盖明细（|Backup coverage (
 备份进行中…|Backup in progress…
 复制|Copy
+复制 SessionID|Copy session ID
 复制{p0}的完整路径|Copy full path of {p0}
 复制失败，请在项目详情中手动复制完整路径|Copy failed. Copy the full path manually from project details.
 复制路径|Copy path

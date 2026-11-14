@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+空会话诊断与提示样式修复（2026-11-14）：空会话判定改用宿主 `sessionController.list()` 的 `blank`／`running`，旧 `sessions` 服务只作旧宿主回退；删除新增 `evict`，允许驱逐已加载但无活动的会话，运行中仍拒绝。会话「更多」菜单新增「复制 SessionID」（活跃与归档两个分支），项目目录不可用提示改用横幅外壳（告警黄，与原型「项目目录异常」一致）。`npm run typecheck` 通过，`npm test` 258 项 253 过 5 红（全部为既有 Windows `EPERM: operation not permitted, symlink` 基线）；构建两次一致，`dist/index.js` `83763291BB3E92CD92DF15C46B4BB85E0AC8669BC59526681C204C0761552D9E`、`lib/client.js` `4AA3D6C98135FE3E1FA7E00EC7C94744D9EBDAEC299595886A94F0E589777118`（1231357 字符）。经插件重载（`include:dsh-workbase` 关再开）由用户在面板删除 2 条真实空会话成功；浏览器视觉与主题切换未逐像素验收。
+
 宿主rc.3兼容核验（2026-11-13）：实际桌面0.2.2-rc.3／构建`6b729fedde0c8fd03af7afdf5a711aa64fe87c3b`，Node24.21.0／pnpm11.28.5未变。`npm run host:check`退出1：21模块，2项阻断均为dist／lib安装产物与当前构建不同，26项待复核含21项旧基线缺失的声明指纹，不能当作新版破坏。17模块产物指纹与rc.2基线相同；插件管理器及远程封装与今天此前核验副本SHA-256一致，新版update字段、参数、结果、进度与回滚仍匹配。人工补核终端单保存／显示／Shell、语音、正文搜索隔离组、Forge及侧栏新增入口，未发现rc.3新增阻断性接线问题。最新五项审查修复尚未安装，模型菜单top与官方bottom锚点并存风险仍在。详细证据为`docs/ui/verification/host/assessment.md`；未追加测试、构建、安装重启或运行时验收，不自动接受基线。
 
 五项审查修复（2026-11-13）：终端配色切换采用保留的显示适配，跟随／停用实际渲染原官方组件；两种显示共享公开挂载适配，closed／failed且宿主仍保留的终端通过官方connect补取完整screen，避免只重放最后增量帧。默认Shell在官方保存后只读核对`dsh.terminal.shell`，失败保留草稿并显示明确提示；发现接口的默认首项不能作保存成功证据。缓存诊断新增独立sessionTitle，仅固定标签翻译；恢复阻断原因逐项翻译并补齐八类已知原因，路径保留原文。PRD与当前实现表统一“官方内置模式按工作台语言、自定义模式原文”。`npm run build`退出0、客户端1228584字符；1.0.0包528476字节、白名单6项。退出旧桌面宿主被自动审批拒绝，本轮未安装或重启；未追加测试、类型检查或实际界面验收。
@@ -487,6 +489,62 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 npm 白名单仅含服务端入口、客户端产物、patch、README 与自动包含的 package.json；源码、测试、设计与验收证据不进入包。`publish:check` 为演练，`publish:beta` 执行实际 beta 发布。0.3.0 已发布到 npm（`latest`），后续版本由 GitHub Actions 发版。
 
 ## 日志
+
+### 2026-11-14 · 空会话诊断改用宿主会话控制器，删除允许驱逐已加载会话
+
+**背景**：用户报告「默认工作区有空会话，为什么没有诊断出来」。本机实测两个 `blank:true` 的会话（`session-66e86c8b…` 在默认工作区、`session-8c2db91e…` 在本仓库工作区）都停在 `emptyIssue` 的第一个守卫上被跳过。
+
+**决策**：
+1）「是否在用」的判据从旧 `sessions` 服务换成宿主 `ctx.sessionController.list()` 的 `running`。旧服务是「已加载会话的内存缓存」——探针记录它的 `list()` 只有两个打开工作区的 4 个会话，拿 `get() !== undefined` 当「正在使用」必然误跳；`blank` 也直接取宿主投影，不再自己按 `cachedSnapshot` + `lastPromptAt` 推算。旧宿主没有 `sessionController` 时仍走原来的三段判定（`sessions.get` + 活动 + 投影 + `asOfSeq === eventCount - 1`），行为不变。
+2）候选身份带上宿主 `updatedAt`（`identity` = `[日志身份, updatedAt]`），删除前用它复查：会话在检测之后又被写入就不再匹配，避免把新内容当空会话删掉。
+3）删除阶段新增 `evict` 选项。`deleteCore` 本来就有 `flush → detachEntered → p.flush → 复查 s.get` 的驱逐路径，只是被 `inactive(coldOnly)` 的冷守卫挡住；`coldOnly + evict` 时跳过该守卫，但 `activity.length === 0` 仍是硬条件，运行中的会话即使传 `evict` 也拒绝。只有 `kind === 'empty'` 传 `evict`，孤儿会话仍是纯冷删除。
+4）驱逐后宿主可能不再把该会话列进 `sessionController`，复查降级为「日志 header 身份未变」——首次严格比对已经确认过一次，这一步只防竞态。
+
+**证据**：`src/server/diagnostics.ts:44-92`（`blankIndex` 与 `emptyIssue`）、`src/server/session-maintenance.ts:126-140`（`inactive`）与 `:170-200`（`deleteCore` 两处传 `!!options.evict`）；临时落盘探针写 `%TEMP%\wb-empty-trace.jsonl`，实测两个空会话 `verdict:"skip-header"`、`liveBefore:true`，`sessionController.list()` 8 项里两个 `blank:true, running:false`，当前会话 `running:true`；`liveEntryFor()` 对全部已加载会话（含从未打开的）都返回 entry（keys `id,session,carrier,emitCtx,announcement,appending,detachRequested,detach`），无法据此区分是否被打开过，所以只看 `running` + 活动。测试：`test/diagnostics.test.ts` 新增 2 条、`test/session-maintenance.test.ts` 新增 1 条；`npx tsc --noEmit` 通过，`npm test` 258 项 253 过 5 红（全部是既有 `EPERM: operation not permitted, symlink` 基线）。`node build.mjs` 连跑两次一致：`dist/index.js` `83763291BB3E92CD92DF15C46B4BB85E0AC8669BC59526681C204C0761552D9E`、`lib/client.js` `5D41F8721A3B17161526B1081F6750D33285A9AF35CC4845FBE9241650186B8E`（1231366 字符）。探针在确认后删除并重新构建，重载插件（`include:dsh-workbase` 关再开）后用户在面板上删掉了那 2 条空会话。
+
+**遗留**：本版宿主的 `persistence.list()` 不给 `eventCount`，水位校验（`asOfSeq === eventCount - 1`）实际只在回退路径上起作用；`dsh_workbase` 存储里没有诊断报告缓存，面板每次打开都重新检测；浏览器侧没有自动化视觉回归。
+
+### 2026-11-14 · 会话菜单加「复制 SessionID」，目录不可用改用横幅提示
+
+**背景**：用户要求会话列表的「更多」菜单加复制 SessionID；随后指出项目目录不可用时的提示「只有文字没有样式」，希望参考项目归档那条提示。
+
+**决策**：
+1）复制 ID 复用「复制路径」已有的通道——`run(() => navigator.clipboard.writeText(...), '会话 ID 已复制')`，活跃与归档两种菜单都挂；文案按用户原话写「复制 SessionID」，译文补进 `src/client/i18n-en.ts`。
+2）目录不可用不再用 `wb-warning`。它只是表单错误的红字样式（`src/client/styles.css:89` 只有颜色与字号），所以看起来「只有文字」；改成与归档提示同一套横幅外壳 `wb-feedback banner` + `<Icon name="alert"/>` + `banner-body`，文案不变。配色按用户选择用告警黄（`.banner` 非 readonly，`background:var(--warn)`、`color:var(--warntext)`，也就是原型里「项目目录异常」那条），没有新造红色变体：设计稿里 `--danger-text` 只用于文字和危险菜单项。两条横幅的配色来源不同——`banner.readonly` 的底色 `--soft` 来自当前主题的 `selected-bg`（`src/client/theme.ts:32`），文字先是 `--accent`（`src/client/theme.ts:30`）再被 `src/client/prototype.css:893` 的 `.banner.readonly{color:var(--selected-text)}` 覆盖成主题的选中态文字色，所以归档提示整体跟随主题；非 readonly 的 `--warn` 是每套主题固定的暖米色（`src/client/theme.ts:34`），`--warntext` 则是各主题的 `warning` 色。用户确认目录不可用保持告警黄。
+
+**证据**：`src/client/Detail.tsx:130`（横幅）、`:145-153`（两个菜单分支）；`test/detail-render.test.ts` 新增「会话更多操作提供复制 SessionID，归档会话同样提供」——菜单项只在展开后渲染，静态标记看不到，故核对源码两处分支；`npx tsc --noEmit` 通过，`detail-render` 8/8，`node build.mjs` 两次一致 `lib/client.js` `4AA3D6C98135FE3E1FA7E00EC7C94744D9EBDAEC299595886A94F0E589777118`（1231357 字符）。
+
+**遗留 1（目录不可用那条仍未统一）**：`src/client/Composer.tsx:202` 的「所选项目目录不可用」仍是行内红字（属于输入区提示，不占横幅位）；浏览器视觉未逐像素核对。
+
+**遗留 2（提示样式没有统一）**：扫过全部 `src/client/*.tsx`，没有完全无样式的裸文本（元素都有 `className` 或在已样式化容器内），但下列「状态／结果」类仍是 `wb-warning` 红字，与现在的横幅口径不一致——`src/client/Workbase.tsx:179`（所有对话框共用错误行）、`RestoreSettings.tsx:146/147/157`、`BackupSettings.tsx:79/93`、`Search.tsx:120`、`TodoDetail.tsx:113`、`Composer.tsx:202/204`、`Workbase.tsx:215`。按用户目前口径（选「跳过吧」）本轮一处未改。字段校验类（`DirectoryInput.tsx:39`、`Settings.tsx:128`、`TodoDetail.tsx:112`、`TerminalSettings.tsx:211/234/285`）应继续保持红字，不要并入横幅；宿主插槽内的 `NativeComposer.tsx:473` 与 `ColoredTerminal.tsx:155` 需按插槽视觉单独判断。
+
+### 2026-11-14 · README 待实现清单与工作台待办对齐
+
+**背景**：用户要求 README「待实现功能」补上「项目迁移」与「迁移记录」，并要求这份清单与工作台待办双向对齐，已完成的条目不再列出。此前 README 只列了 3 项（统计卡片、主题选项整合、代码协作），工作台待办里只有当轮发现的 5 条缺陷，两处互不相通。
+
+**决策**：
+1）README 清单只承载「未实现」这一种状态，并在标题下写明对齐规则：已完成条目从这里移除，新需求先记入待办再补到这里。不把「已完成」「进行中」写进 README，避免两处各记一份状态、必然漂移。
+2）「项目迁移」「迁移记录」不重新设计语义，直接沿用 `docs/PRD.md` §8 已定义的口径（`docs/PRD.md:249-259`）：迁移分「更新目录」与「迁入已有项目」两条路径，预览后确认、原子提交、失败完整回滚；迁移记录按批次保存来源／目标／原新目录／实体关联／设置快照与 72 小时撤销期限，到期只读，没有真实迁移成功前不生成已完成记录。前置条件写进待办：宿主当前没有安全的绑定目录更新接口，实现前须按 `docs/HOST-COMPATIBILITY.md` 复核，缺失就保持未实现，界面不得模拟成功。
+3）同步结果：README 5 项 ↔ 工作台 5 条未完成待办（`a28b9106` 项目迁移、`c991a927` 迁移记录、`2ac1a903` 统计卡片、`9582eccf` 主题选项整合、`78e40316` 代码协作）。抽屉宽度那条（`9b81a9e1`）已实现并关闭——用户在「是否改成连续收缩」一问上选了保持现状，故不出现在 README 清单里。
+
+**证据**：`README.md:27-35`（清单 + 对齐规则）；工作台待办 5 条均 `done:false`、`creator:agent`，备注写入了验收口径与依赖；`docs/PRD.md:249-259` 为迁移与撤销的既有需求文本。本轮只改文档与待办，没有代码改动，故未重跑 typecheck／test／build。
+
+**遗留**：README 清单与待办之间仍靠人工保持一致，没有自动化校验；约定冲突时以工作台待办为执行侧真源、README 为对外承诺，改 README 前先核对待办状态。迁移两项依赖宿主接口，能否落地取决于后续 `host:check` 的探测结果。
+
+### 2026-11-13 · 设置默认通用配置、搜索框按顶栏居中与入口前短分隔线
+
+**背景**：三条用户待办——设置页默认进入的页签不对、header 搜索框看着没居中、新会话页「工作台」入口左侧的竖线从顶到底拉满且两侧间距不对称。
+
+**决策**：
+1）设置默认固定 `general`。旧逻辑用持久化的 `preferences.selectedProject` 猜上下文，但设置只有 `src/client/Workbase.tsx:144` 一个入口，没有项目参数，结果在项目页开设置会跳到项目配置。
+2）搜索框居中坚持不改 DOM。原先它靠 `flex:1 1 140px` 吃剩余空间再 `margin:0 auto`，剩余空间左右不等（品牌侧约 200，右侧状态区加按钮约 227），于是中心左偏。放弃「grid 三列 + 把已同步并进 header-actions」，因为那要同时改原型 `header()` 与 `Workbase.tsx` 结构，且两侧 `1fr` 在窄宽度下不会自动收窄搜索框。改为绝对定位居中，带宽按两侧实测占位预留；「最近活动」出现时它再多占约 143px，所以用 `:has(.header-activity)` 单独收窄带宽，保证任何宽度都不压到右侧文字。
+3）分隔线不再用整条 header 高度的 `border-inline-start`，换成 16px 伪元素竖线（与顶栏 `header-separator` 规格一致），竖线两侧各 8px：`padding-inline-start:8px` 给左、`gap:8px` 给右，因此「工作台图标到竖线」与「左侧内容到竖线」等距。
+
+**证据**：`docs/ui/ui-directions.html:1007-1010`（三条带宽规则）→ 生成物 `src/client/prototype.css:1005-1007`，宽度型 `@media` 残留 0、`@container workbase` 71 处、`:scope.c` 39 处；连续两次 `node build.mjs` 后 `lib/client.js` SHA-256 都是 `FA86D6CF…F703C172`（1230511 字节）。`npm run typecheck` 通过；`node --import tsx --test test/client-entry.test.ts test/settings-render.test.ts test/prototype-css.test.ts` 21 项全过；`npm test` 254 项：249 过、5 红，红项全部是本机 `EPERM: operation not permitted, symlink`（备份/恢复/维护用例的符号链接权限限制，与既有记录一致）。`test/client-entry.test.ts:309-311` 改为断言新规则形状（`grid-area:1/2` + `border-inline-start:0`、`gap:8px` 与 `padding-inline-start:8px`、`::before` 的 `width:1px;height:16px`）。
+
+**实测边界（安装与生效）**：`npm pack` 出的 `dsh-workbase-1.0.1.tgz` 用 `plugin_manager install_bundle`（target 直接给 tarball 绝对路径）装进 desktop profile，`profiles/desktop/package.json` 的依赖变成 `"dsh-workbase": "file:D:/Projects/dsh-workbase/dsh-workbase-1.0.1.tgz"`，安装结果 `application: applied`，装进去的 `lib/client.js` 与本地构建 SHA-256 相同。分层结论：服务端层（存储域、RPC、工具注册）安装完成即重载生效；客户端层（注入浏览器的 `lib/client.js`）需要刷新页面才换，**不需要重启宿主**——用户刷新后确认三处改动全部生效。因此「插件页更新后没热更新」的观感来自两件事：插件页按 registry 版本比对，而 `dsh-workbase` 一直是 `1.0.1`（无版本可更新），且本地 tarball 来源在批量更新里通常被跳过。
+
+**遗留**：浏览器视觉回归没有自动化证据——本机 `node_modules` 没有 playwright，`verify-ui.mjs` 仍硬编码 `/tmp` 与 macOS Chrome 路径，本次只有用户刷新后的口头确认（设置默认页、搜索框居中、竖线两侧等距）。带宽常数由中文文案实测占位推算（`780` 给「最近活动」留 44px 余量），英文界面下品牌与按钮更宽，后续若换语言出现挤压，调这三个常数而不是改定位方式。另外：本地 tarball 来源无法在插件页自助更新，改代码后必须重新 `build` + `pack` + 安装。
 
 ### 2026-11-13 · 未知偏好键不再阻断插件启用
 

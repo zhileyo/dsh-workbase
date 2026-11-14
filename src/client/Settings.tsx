@@ -40,7 +40,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   onRestored?(): void;
   describedBy?: string;
 }) {
-  const [tab, setTab] = useState<typeof categories[number][0]>(snapshot.preferences.selectedProject ? 'project' : 'appearance');
+  const [tab, setTab] = useState<typeof categories[number][0]>('general');
   const [appearanceTab, setAppearanceTab] = useState<'theme' | 'layout' | 'stats'>('layout');
   const [projectTab, setProjectTab] = useState<'global' | 'single'>('global');
   const [backupTab, setBackupTab] = useState<'backup' | 'restore' | 'status'>('backup');

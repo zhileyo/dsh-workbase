@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Detail, type DetailProps } from '../src/client/Detail.js';
@@ -106,6 +107,14 @@ test('待办标题打开统一详情与行尾直接删除，不显示冗余详�
   assert.match(html, /class="[^"]*todo-delete[^"]*"/);
   assert.match(html, /aria-label="删除待办：简单待办"/);
   assert.doesNotMatch(html, /todo-details|待办更多操作|查看待办完整标题/);
+});
+
+test('会话更多操作提供复制 SessionID，归档会话同样提供', async () => {
+  // 菜单项只在展开后渲染，静态标记里看不到；这里核对源码两处分支都挂了同一动作。
+  const source = await readFile(new URL('../src/client/Detail.tsx', import.meta.url), 'utf8');
+  assert.equal([...source.matchAll(/label: '复制 SessionID'/g)].length, 2);
+  assert.equal([...source.matchAll(/navigator\.clipboard\.writeText\(s\.sessionId\)/g)].length, 2);
+  assert.match(source, /'会话 ID 已复制'/);
 });
 
 test('待办工具区共用一个输入框，搜索按钮固定，移除独立筛选行', t => {

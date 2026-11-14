@@ -306,7 +306,9 @@ test('工作台导航为带说明的纯图标，网格同时处理无会话与�
   assert.doesNotMatch(html, /<span>|Workbase/);
   const css = await readFile(new URL('../src/client/styles.css', import.meta.url), 'utf8');
   assert.match(css, /header\[data-window-drag\]:has\([^}]*\{grid-template-columns:minmax\(0,1fr\) auto/);
-  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{grid-area:1\/2/);
+  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{[^}]*grid-area:1\/2[^}]*border-inline-start:0\}/);
+  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{[^}]*gap:8px[^}]*padding-inline-start:8px/);
+  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)::before\{[^}]*width:1px;height:16px/);
   assert.match(css, /\[data-slot="conversation.session.header"\]>div:first-child\{grid-column:1;grid-row:1\}/);
 });
 

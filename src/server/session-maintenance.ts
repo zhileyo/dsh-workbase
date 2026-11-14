@@ -52,7 +52,12 @@ interface Projections {
     checkpoint: unknown; snapshot: unknown;
   };
 }
-export interface DeleteOptions { coldOnly?: boolean; validate?(): Promise<boolean> }
+export interface DeleteOptions {
+  coldOnly?: boolean;
+  /** 允许删除「已加载但空闲」的会话：先 flush 再驱逐，仍拒绝有活动的会话。 */
+  evict?: boolean;
+  validate?(): Promise<boolean>;
+}
 export const sessionIdentity = (h: Header) => JSON.stringify([h.version, h.createdAt, h.cwd ?? null, h.isSeeded]);
 const encode = (text: string) => text.replace(/[^A-Za-z0-9._-]/g,
   ch => `~${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
@@ -127,12 +132,14 @@ export function createSessionMaintenance(ctx: Context) {
     const row = typeof p.stat === 'function' ? await p.stat(id) : (await p.list()).find(row => row.header.id === id);
     return row && structuredClone(row);
   };
-  const inactive = async (id: string, coldOnly: boolean) => {
+  // `s.get()` 只说明会话已加载进内存（当前打开的工作区全都在里面），不代表正在使用；
+  // `evict` 走 deleteCore 的 flush→detachEntered 驱逐路径，活动的会话仍由水位判断拒绝。
+  const inactive = async (id: string, coldOnly: boolean, evict = false) => {
     const s = get<Sessions>('sessions');
     if (!s || typeof ctx.waterfall !== 'function') throw unsupported();
-    if (coldOnly && s.get(id) !== undefined) return false;
+    if (coldOnly && !evict && s.get(id) !== undefined) return false;
     const activity = await ctx.waterfall('workspace/session-activity', { sessionId: id as never }, () => Promise.resolve([]));
-    return activity.length === 0 && (!coldOnly || s.get(id) === undefined);
+    return activity.length === 0 && (!coldOnly || evict || s.get(id) === undefined);
   };
   const sameRow = (a: Row, b: Row) => sessionIdentity(a.header) === sessionIdentity(b.header)
     && a.revision === b.revision && a.header.origin === b.header.origin && a.header.parentSession === b.header.parentSession;
@@ -172,7 +179,7 @@ export function createSessionMaintenance(ctx: Context) {
     collect(byId.get(id)!);
     const targets = new Map<string, string>();
     for (const row of ordered) {
-      if (!await inactive(row.header.id, !!options.coldOnly)) {
+      if (!await inactive(row.header.id, !!options.coldOnly, !!options.evict)) {
         if (options.coldOnly) return false;
         throw new WorkbaseError('running', '会话或子 Agent 正在使用，请先停止再永久删除');
       }
@@ -186,7 +193,7 @@ export function createSessionMaintenance(ctx: Context) {
     for (const row of ordered) {
       const sessionId = row.header.id, live = s.get(sessionId);
       if (live && sessionIdentity(live.header) !== sessionIdentity(row.header)) return false;
-      if (!await inactive(sessionId, !!options.coldOnly)) {
+      if (!await inactive(sessionId, !!options.coldOnly, !!options.evict)) {
         if (options.coldOnly) return false;
         throw new WorkbaseError('running', '会话状态已变化，已停止删除');
       }

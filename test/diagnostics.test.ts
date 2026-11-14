@@ -243,11 +243,11 @@ test('修复只使用内部维护接口，缺少底层能力时不调用外部�
   assert.deepEqual(result.succeeded, ['workspace']);
   const deleted: unknown[] = [];
   f.maintenance.deleteWithinQueue = async (id, options) => {
-    deleted.push([id, options.coldOnly]); return id === 'orphan';
+    deleted.push([id, options.coldOnly, options.evict]); return id === 'orphan';
   };
   assert.deepEqual(await f.host.repairDiagnostics!('orphan', report.issues.filter(i => i.kind === 'orphan').map(i => ({ sessionId: i.sessionId, identity: i.identity }))),
     { succeeded: ['orphan'], skipped: ['seeded'], failures: [] });
-  assert.deepEqual(deleted[0], ['orphan', true]);
+  assert.deepEqual(deleted[0], ['orphan', true, false]);
   assert.deepEqual(f.writes, []);
 });
 
@@ -306,4 +306,38 @@ test('内部维护失败保留错误，修复请求数量与字段严格校验',
     assert.equal(response.ok, false);
     assert.match(JSON.stringify(response), /invalid/);
   }
+});
+
+test('空会话以宿主会话控制器的blank与running为准，内存缓存里有对象不算在用', async () => {
+  const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: true, running: false, updatedAt: 11 },
+    { sessionId: 'live', blank: true, running: false, updatedAt: 12 },
+    { sessionId: 'busy', blank: true, running: true, updatedAt: 13 },
+    { sessionId: 'valid', blank: false, running: false, updatedAt: 14 },
+  ] }) };
+  const report = await f.host.diagnose!(new AbortController().signal);
+  // live 在 sessions 内存缓存里有对象，但宿主说它空且未运行，仍应作为候选。
+  assert.deepEqual(report.issues.filter(i => i.kind === 'empty').map(i => i.sessionId), ['workspace', 'live']);
+  assert.equal(report.checks.find(c => c.kind === 'empty')?.status, 'ok');
+  assert.deepEqual(f.reads, []);
+});
+
+test('空会话候选身份带上宿主更新时间，修复时声明驱逐已加载会话', async () => {
+  const f = fixture();
+  let updatedAt = 11;
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: true, running: false, updatedAt },
+  ] }) };
+  const options: DeleteOptions[] = [];
+  f.maintenance.deleteWithinQueue = async (_id: string, value: DeleteOptions) => { options.push(value); return true; };
+  const report = await f.host.diagnose!(new AbortController().signal);
+  const item = report.issues.find(i => i.kind === 'empty')!;
+  assert.deepEqual(JSON.parse(item.identity!), ['[4,42,"/project",false]', 11]);
+  updatedAt = 12;
+  assert.deepEqual((await f.host.repairDiagnostics!('empty', [{ sessionId: 'workspace', identity: item.identity! }])).skipped, ['workspace']);
+  const fresh = (await f.host.diagnose!(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+  assert.deepEqual((await f.host.repairDiagnostics!('empty', [{ sessionId: 'workspace', identity: fresh.identity! }])).succeeded, ['workspace']);
+  assert.equal(options.at(-1)?.evict, true);
+  assert.equal(options.at(-1)?.coldOnly, true);
 });

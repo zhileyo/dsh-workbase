@@ -196,16 +196,20 @@
 /* 会话页使用公开导航插槽，系统控件预留量由宿主发布。 */
 /* 常驻 root 插槽也覆盖无 Session 的新建页；只调整布局，不占用宿主侧栏 corner。 */
 header[data-window-drag]:has(>[data-conversation-header-leading] .wb-return){grid-template-columns:minmax(0,1fr) auto;padding-inline-end:12px}
-[data-conversation-header-leading]:has(.wb-return){grid-area:1/2;padding-inline-start:8px;padding-inline-end:0;border-inline-start:1px solid var(--dsw-alias-border-l3,#e1e4e8)}
+/* 入口前的分隔线用 16px 短竖线（同顶栏 header-separator 规格），不再用整条 header 高度的边框；
+   竖线两侧各 8px，工作台图标与竖线的间距和左侧内容与竖线的间距一致。 */
+[data-conversation-header-leading]:has(.wb-return){display:flex;align-items:center;gap:8px;grid-area:1/2;padding-inline-start:8px;padding-inline-end:0;border-inline-start:0}
+[data-conversation-header-leading]:has(.wb-return)::before{content:'';flex:none;width:1px;height:16px;background:var(--dsw-alias-border-l3,#e1e4e8)}
 [data-conversation-header-leading]:has(.wb-return)+*,[data-conversation-header-leading]:has(.wb-return)+[data-slot="conversation.session.header"]>div:first-child{grid-column:1;grid-row:1}
 header:has(>[data-conversation-header-leading] .wb-return) [data-conversation-header-corner]{margin-inline-end:0}
 .wb-return{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:var(--dsw-radius-sm,6px);background:transparent;color:var(--dsw-alias-label-secondary,#68717d);cursor:pointer;-webkit-app-region:no-drag}
 .wb-return:hover{background:var(--dsw-alias-interactive-bg-hover,#eff1f4);color:var(--dsw-alias-label-primary,#202832)}
 .wb-return:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary,#8260b4);outline-offset:2px}
 .wb .wb-overlay-drawer{align-items:flex-end;padding:50px 0 0;backdrop-filter:none;animation:wb-settings-mask-in .2s ease-out both}
-.wb .wb-drawer{width:90%;max-width:min(90%,var(--wb-drawer-max-width,1120px));height:100%;max-height:100%;inset:auto;margin:0;padding:0;overflow:hidden;border-radius:16px 16px 0 0;border-bottom:0}
+/* 底部抽屉宽度对齐多维表格：面板左右各留 50px，最宽 1580px（原型 --wb-drawer-max-width），窄面板不再叠加百分比缩进。 */
+.wb .wb-drawer{width:min(1580px,calc(100% - 100px));max-width:none;height:100%;max-height:100%;inset:auto;margin:0;padding:0;overflow:hidden;border-radius:16px 16px 0 0;border-bottom:0}
 .wb .wb-drawer[open]{display:flex;flex-direction:column}
-.wb dialog.wb-drawer.workspace-settings{width:90%;max-width:min(90%,var(--wb-drawer-max-width,1120px));height:100%;max-height:100%}
+.wb dialog.wb-drawer.workspace-settings{width:min(1580px,calc(100% - 100px));max-width:none;height:100%;max-height:100%}
 .wb .wb-settings{display:flex;flex-direction:column;flex:1;min-height:0}
 .wb .wb-drawer .dialog-head{height:72px;min-height:72px;flex:none;margin:0;padding:0 24px;border-bottom:1px solid var(--line)}
 .wb .wb-drawer .dialog-head h2{font-size:var(--type-dialog,20px)}
