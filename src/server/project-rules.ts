@@ -63,7 +63,11 @@ export async function saveRuleFiles(home: string, previous: ProjectRules, value:
     const oldBlock = block(before, plan.projectId), newBlock = block(next, plan.projectId);
     if (!oldBlock && !newBlock) continue;
     if (!path.isAbsolute(plan.path)) throw new WorkbaseError('invalid-root', '规则目录必须使用绝对路径');
-    const directory = await realpath(plan.path);
+    // 目录缺失时报裸 realpath ENOENT 对用户不可读（典型场景：迁移撤销前的源目录），转成既有友好错误。
+    const directory = await realpath(plan.path).catch(error => {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      throw new WorkbaseError('directory-unavailable', '项目目录不可用，无法保存规则');
+    });
     const directoryId = await lstat(plan.path);
     if (!directoryId.isDirectory() || !(await lstat(directory)).isDirectory())
       throw new WorkbaseError('rules-conflict', '规则目录不能使用符号链接或已变化的路径');

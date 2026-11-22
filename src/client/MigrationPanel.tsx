@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClientPort } from './api.js';
 import type { Project } from '../shared/model.js';
-import type { MigrationPreview, MigrationRecordView, MigrationCounts } from '../shared/migration.js';
+import type { MigrationPreview, MigrationRecord, MigrationRecordView, MigrationCounts } from '../shared/migration.js';
 import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, migrationRecordSchema } from '../shared/migration.js';
-import { IconButton, Modal, ModalFlow, Picker, preventImeSubmit } from './ui.js';
+import { IconButton, Modal, ModalFlow, Picker, preventImeSubmit, type Notify } from './ui.js';
 import { errorText, languageTag, t } from './i18n.js';
 
 export function MigrationCountsView({ counts }: { counts: MigrationCounts }) {
@@ -44,8 +44,36 @@ export function MigrationPreviewView({ preview, identities = true }: { preview: 
   </div>;
 }
 
-export function MigrationPanel({ api, project, projects, revision = 0, records = false, onClose, onMigrated }: {
-  api: ClientPort; project: Project; projects: Project[]; revision?: number; records?: boolean; onClose(): void;
+export function MigrationSourceStateView({ state }: { state: NonNullable<MigrationRecord['sourceState']> }) {
+  return <>
+    <p className="dialog-description">{t('迁移前源项目状态')}</p>
+    <MigrationCountsView counts={state.counts}/>
+    <p className="dialog-description">{[state.available ? t('目录可用') : t('目录不可用'),
+      state.archived ? t('项目已归档') : null].filter(Boolean).join(' · ')}</p>
+  </>;
+}
+export function MigrationRecordEntitiesView({ record }: { record: MigrationRecord }) {
+  const sessions = record.entities.filter(item => item.kind === 'session');
+  const todos = record.entities.filter(item => item.kind === 'todo');
+  const status = (item: MigrationRecord['entities'][number]) => {
+    if (item.kind === 'todo') return item.done === undefined ? '—' : item.done ? t('已完成') : t('待处理');
+    if (item.running) return t('运行中');
+    return item.archived === undefined ? '—' : item.archived ? t('已归档') : t('活跃');
+  };
+  const section = (label: string, items: MigrationRecord['entities']) => !items.length ? null :
+    <>
+      <p className="dialog-description">{label}</p>
+      <div className="wb-migration-comparison"><table aria-label={label}>
+        <thead><tr><th scope="col">{t('内容')}</th><th scope="col">{t('状态')}</th></tr></thead>
+        <tbody>{items.map(item => <tr key={item.id}><th scope="row">{item.title ?? item.id}</th>
+          <td>{status(item)}</td></tr>)}</tbody>
+      </table></div>
+    </>;
+  return <>{section(t('迁移的会话'), sessions)}{section(t('迁移的待办'), todos)}</>;
+}
+
+export function MigrationPanel({ api, project, projects, revision = 0, records = false, notify, onClose, onMigrated }: {
+  api: ClientPort; project: Project; projects: Project[]; revision?: number; records?: boolean; notify?: Notify; onClose(): void;
   onMigrated?(targetProjectId: string, reverted?: boolean): Promise<void>;
 }) {
   const [targetId, setTargetId] = useState('');
@@ -115,7 +143,8 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       await onMigrated?.(targetId);
       onClose();
     } catch (error) {
-      setError(completed ? '迁移已完成，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '迁移失败，请重试');
+      const message = completed ? '迁移已完成，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '迁移失败，请重试';
+      if (notify) notify(errorText(message), 'info'); else setError(message);
     } finally { setBusy(false); pending.current = false; }
   };
   const undo = async () => {
@@ -132,7 +161,8 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       await onMigrated?.(selected.source.projectId!, true);
       onClose();
     } catch (error) {
-      setError(completed ? '迁移已撤销，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '撤销失败，请重试');
+      const message = completed ? '迁移已撤销，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '撤销失败，请重试';
+      if (notify) notify(errorText(message), 'info'); else setError(message);
     } finally { setBusy(false); pending.current = false; }
   };
   const main = <Modal drawer title={records ? '迁移记录' : '项目迁移'} busy={busy} onClose={onClose}>
@@ -184,6 +214,8 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       <p className="dialog-description">{t('撤销截止：{time}', { time: new Date(selected.undoUntil).toLocaleString(languageTag()) })}</p>
       <p className="dialog-description">{selected.status === 'reverted' ? '已撤销' : selected.expired ? '已到期，仅可查看'
         : selected.canUndo ? '本批迁入内容及后续编辑回到源项目；目标原有和新增内容保留，已删除内容不恢复。' : errorText(MIGRATION_UNAVAILABLE)}</p>
+      {selected.sourceState && <MigrationSourceStateView state={selected.sourceState}/>}
+      <MigrationRecordEntitiesView record={selected}/>
       {error && <p className="wb-warning" role="alert">{errorText(error)}</p>}
       </div><footer className="dialog-footer"><button type="button" disabled={busy} onClick={() => { setSelected(null); setFinished(false); setError(''); setReload(value => value + 1); }}>返回记录</button>
         <button type="button" disabled={busy || finished || !selected.canUndo || selected.status !== 'completed'} onClick={() => void undo()}>撤销迁移</button></footer>

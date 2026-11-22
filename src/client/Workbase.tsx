@@ -256,7 +256,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
           rename={project => setDialog({ kind: 'rename', project })} removeProject={project => setDialog({ kind: 'remove-project', project })} notify={notify} openOverview={setOverview} diagnosis={diagnosis}
           migration={(project, records) => setMigration({ project, records })}/>)}
     {migration && snapshot && <MigrationPanel api={api} project={snapshot.projects.find(p => p.projectId === migration.project.projectId) ?? migration.project}
-      projects={snapshot.projects} revision={snapshot.revision} records={migration.records} onClose={() => setMigration(null)}
+      projects={snapshot.projects} revision={snapshot.revision} records={migration.records} notify={notify} onClose={() => setMigration(null)}
       onMigrated={async (targetProjectId, reverted) => { await load(); navigate(targetProjectId); notify(reverted ? '项目迁移已撤销' : '项目迁移已完成', 'success'); }}/>}
     {snapshot && overview && <WorkbaseOverview kind={overview} api={api} snapshot={snapshot} busy={busy} diagnosis={diagnosis}
       onReport={report => setFreshDiagnosis({ snapshot, report })} refresh={load} navigate={navigate}

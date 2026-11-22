@@ -55,6 +55,17 @@ test('规则区块保留手写正文，多项目保存，禁用清理并保留�
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test('目录缺失时预检转成可读错误且不创建目录', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wb-rules-'));
+  try {
+    const missing = path.join(root, 'missing');
+    const rules = defaultProjectRules(); rules.global = { enabled: true, content: '全局' };
+    await assert.rejects(saveRuleFiles(missing, defaultProjectRules(), rules, []),
+      { code: 'directory-unavailable', message: /项目目录不可用，无法保存规则/ });
+    await assert.rejects(readFile(path.join(root, 'AGENTS.md')), { code: 'ENOENT' });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test('所有目标预检，外部区块改动与符号链接阻断；回滚不覆盖外部写入', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wb-rules-'));
   try {

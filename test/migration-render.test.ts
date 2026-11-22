@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MigrationPreviewView } from '../src/client/MigrationPanel.js';
-import { MIGRATION_UNAVAILABLE, type MigrationPreview } from '../src/shared/migration.js';
+import { MigrationPreviewView, MigrationRecordEntitiesView, MigrationSourceStateView } from '../src/client/MigrationPanel.js';
+import { MIGRATION_UNAVAILABLE, migrationRecordSchema, type MigrationPreview, type MigrationRecord } from '../src/shared/migration.js';
 
 test('迁移预览显示源与目标身份、全部统计、设置规则及宿主阻断原因', () => {
   const endpoint = { projectId: 'p1', workspaceId: 'w1', title: '<script>用户标题</script>', path: '/example/project',
@@ -43,4 +43,32 @@ test('单页迁移预览使用四行数量对照，能力提示与真正错误�
   delete preview.resultCounts;
   html = renderToStaticMarkup(createElement(MigrationPreviewView, { preview, identities: false }));
   assert.equal((html.match(/>—<\/td>/g) ?? []).length, 4, '旧预览缺少去重结果时不把相加数量冒充结果');
+});
+
+test('迁移记录详情留存迁移前源项目状态与逐个实体状态，旧记录不编造状态', () => {
+  const base = { id: 'r1', kind: 'merge',
+    source: { projectId: 'p1', workspaceId: 'w1', title: '源', path: '/example/source' },
+    target: { projectId: 'p2', workspaceId: 'w2', title: '目标', path: '/example/target' },
+    status: 'completed', completedAt: 0, undoUntil: 1000, revertedAt: null };
+  const record: MigrationRecord = migrationRecordSchema.parse({ ...base,
+    entities: [
+      { kind: 'session', id: 's1', sourceProjectId: 'p1', targetProjectId: 'p2', title: '会话一', archived: false, running: true },
+      { kind: 'session', id: 's2', sourceProjectId: 'p1', targetProjectId: 'p2', title: '会话二', archived: true, running: false },
+      { kind: 'todo', id: 't1', sourceProjectId: 'p1', targetProjectId: 'p2', title: '待办一', done: false },
+    ],
+    sourceState: { available: false, archived: false, agentCanChangeStatus: true,
+      counts: { active: 1, archived: 1, pending: 1, done: 0 } } });
+  let html = renderToStaticMarkup(createElement(MigrationSourceStateView, { state: record.sourceState! }));
+  for (const text of ['迁移前源项目状态', '目录不可用', '活跃会话', '归档会话', '待处理待办', '已完成待办'])
+    assert.ok(html.includes(text), text);
+  html = renderToStaticMarkup(createElement(MigrationRecordEntitiesView, { record }));
+  for (const text of ['迁移的会话', '迁移的待办', '会话一', '会话二', '待办一', '运行中', '已归档', '待处理', '状态'])
+    assert.ok(html.includes(text), text);
+  assert.equal(html.includes('已完成</td>'), false);
+  // 旧记录没有标题与状态快照：显示ID并以占位符呈现，不把缺失当作活跃/待处理。
+  const legacy: MigrationRecord = migrationRecordSchema.parse({ ...base,
+    entities: [{ kind: 'session', id: 's9', sourceProjectId: 'p1', targetProjectId: 'p2' }] });
+  html = renderToStaticMarkup(createElement(MigrationRecordEntitiesView, { record: legacy }));
+  assert.ok(html.includes('s9'));
+  assert.match(html, /<td>—<\/td>/);
 });

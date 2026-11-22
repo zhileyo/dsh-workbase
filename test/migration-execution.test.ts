@@ -77,6 +77,12 @@ test('真实迁移一次提交，重启后归属、权限、待办和72小时撤
   const writes = f.writes(), record = await f.service.confirmMigration(p.token);
   assert.equal(record.status, 'completed'); assert.equal(f.writes(), writes + 1);
   assert.equal(record.undoUntil - record.completedAt, MIGRATION_UNDO_MS);
+  assert.deepEqual(record.entities.find(e => e.id === 's1'),
+    { kind: 'session', id: 's1', sourceProjectId: 'p1', targetProjectId: 'p2', title: '同标题', archived: false, running: false });
+  assert.deepEqual(record.entities.find(e => e.id === todo.id),
+    { kind: 'todo', id: todo.id, sourceProjectId: 'p1', targetProjectId: 'p2', title: '源待办', done: false });
+  assert.deepEqual(record.sourceState, { available: true, archived: false, agentCanChangeStatus: true,
+    counts: { active: 1, archived: 1, pending: 1, done: 0 } });
   assert.equal(f.state().preferences.selectedProject, 'p2');
   assert.deepEqual(f.state().preferences.detail.p2, settings);
   assert.equal(f.state().todos.find(t => t.id === todo.id)!.projectId, 'p2');
@@ -128,8 +134,9 @@ test('缺失源目录仍可迁移，撤销要求目录恢复且不创建目录',
   await rm(f.source, { recursive: true }); f.workspaces[0]!.available = false;
   const p = await preview(f.service); assert.equal(p.executable, true);
   const r = await f.service.confirmMigration(p.token);
+  assert.equal(r.sourceState!.available, false, '异常项目迁移前状态留存进记录');
   assert.equal(f.state().todos[0]!.projectId, 'p2');
-  await assert.rejects(f.service.undoMigration(r.id), { code: 'ENOENT' });
+  await assert.rejects(f.service.undoMigration(r.id), { code: 'directory-unavailable', message: /源项目目录已不存在/ });
   assert.equal(f.state().todos[0]!.projectId, 'p2');
   await assert.rejects(readFile(f.source), { code: 'ENOENT' });
   await mkdir(f.source);
