@@ -1,17 +1,17 @@
 // 真实隔离宿主的样式集成检查；仅临时调整该实例偏好，finally 恢复，不调用模型。
-import { chromium } from '/tmp/dsh-ui-visual-checks/node_modules/playwright/index.mjs';
+import { visualBrowser, browserOptions, prepareEvidence } from './visual-env.mjs';
+const { chromium } = await visualBrowser();
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { screenshotWebp } from './evidence-image.mjs';
 import assert from 'node:assert/strict';
 
-const dir = new URL('./ui/verification/', import.meta.url);
-const dirPath = fileURLToPath(dir);
-const login = (await readFile('/tmp/dsh-workbase-host-022rc1/host.log','utf8')).match(/http:\/\/127\.0\.0\.1:8791\/\?token=[A-Za-z0-9._~%-]+/)?.[0];
+const dirPath = await prepareEvidence();
+assert.ok(process.env.DSH_UI_HOST_LOG, '请用 DSH_UI_HOST_LOG 指定隔离宿主的日志；不能连接正式 profile');
+const login = (await readFile(process.env.DSH_UI_HOST_LOG,'utf8')).match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9._~%-]+/)?.[0];
 assert.ok(login,'隔离实例未启动');
-const references = JSON.parse(await readFile(new URL('details.json',dir),'utf8')).details;
-const browser = await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const references = JSON.parse(await readFile(join(dirPath, 'details.json'),'utf8')).details;
+const browser = await chromium.launch(browserOptions);
 const page = await browser.newPage({viewport:{width:1440,height:900}});
 const results = [], errors = [], differences = [];
 page.on('pageerror',e=>errors.push(e.message));
@@ -75,7 +75,7 @@ try {
   },originalDark);
   await browser.close();
 }
-await writeFile(new URL('host-details.json',dir),JSON.stringify({results,differences,errors,preferencesRestored:!!original,modelInvocations:0},null,2));
+await writeFile(join(dirPath, 'host-details.json'),JSON.stringify({results,differences,errors,preferencesRestored:!!original,modelInvocations:0},null,2));
 console.log(JSON.stringify({appearances:results.length,differences,errors,preferencesRestored:!!original,modelInvocations:0}));
 assert.deepEqual(differences,[],'真实宿主统计卡样式与设计稿不同');
 assert.deepEqual(errors,[]);

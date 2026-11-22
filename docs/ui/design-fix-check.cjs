@@ -19,7 +19,7 @@ const writes=[
  ['归档会话','archive-session','s2','p1'],['恢复会话','archive-session','s5','p1'],['删除会话','delete-session','s2','p1'],
  ['创建会话','submit-session',null,null,t=>{t.context.document.getElementById('new-session-title').value='新对话'}],
  ['Agent 创建待办','agent-add'],
- ['添加项目','submit-project',null,null,t=>{t.context.document.getElementById('add-path').value='/Users/new-example';t.context.document.getElementById('add-name').value='新项目'}]
+ ['添加项目','submit-project',null,null,t=>{t.context.document.getElementById('add-path').value='/Projects/new-example';t.context.document.getElementById('add-name').value='新项目'}]
 ];
 for(const [name,action,id,owner,prepare] of writes)check(name+'保存失败回滚且不误报成功',()=>{
  const t=failingStorage();prepare?.(t);

@@ -1,19 +1,19 @@
 // 隔离宿主实际界面验收；不输出认证信息、不创建会话、不调用模型。
-import { chromium } from '/tmp/dsh-ui-visual-checks/node_modules/playwright/index.mjs';
+import { visualBrowser, browserOptions, prepareEvidence } from './visual-env.mjs';
+const { chromium } = await visualBrowser();
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { screenshotWebp } from './evidence-image.mjs';
 import assert from 'node:assert/strict';
 
-const login = (await readFile('/tmp/dsh-workbase-host-022rc1/host.log', 'utf8')).match(/http:\/\/127\.0\.0\.1:8791\/\?token=[A-Za-z0-9._~%-]+/)?.[0];
+assert.ok(process.env.DSH_UI_HOST_LOG, '请用 DSH_UI_HOST_LOG 指定隔离宿主的日志；不能连接正式 profile');
+const login = (await readFile(process.env.DSH_UI_HOST_LOG, 'utf8')).match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9._~%-]+/)?.[0];
 assert.ok(login);
-const browser = await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
+const browser = await chromium.launch(browserOptions);
 const page = await browser.newPage({viewport:{width:1440,height:900}});
 const errors = [];
 page.on('pageerror', e=>errors.push(e.message));
-const dir = new URL('./ui/verification/',import.meta.url);
-const dirPath = fileURLToPath(dir);
+const dirPath = await prepareEvidence();
 try {
   await page.goto(login);
   await page.getByRole('button',{name:'稍后配置',exact:true}).waitFor({state:'visible',timeout:5000}).catch(()=>{});
@@ -49,6 +49,6 @@ try {
   await screenshotWebp(page.locator('.wb'),join(dirPath,'host-750.webp'),{animations:'disabled'});
   assert.deepEqual(errors,[]);
   const result = {realHost:true,viewport:[1440,900],narrow:[750,900],themeCancel:true,searchEscape:true,settingsEscape:true,drawer:bounds,pageErrors:errors,modelInvocations:0};
-  await writeFile(new URL('host-checks.json',dir),JSON.stringify(result,null,2));
+  await writeFile(join(dirPath, 'host-checks.json'),JSON.stringify(result,null,2));
   console.log(JSON.stringify(result));
 } finally {await browser.close();}

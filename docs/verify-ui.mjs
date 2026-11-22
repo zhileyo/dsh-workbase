@@ -1,18 +1,22 @@
-import { chromium } from '/tmp/dsh-ui-visual-checks/node_modules/playwright/index.mjs';
+import { visualBrowser, browserOptions, prepareEvidence } from './visual-env.mjs';
+const { chromium } = await visualBrowser();
 import { build } from 'esbuild';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import { screenshotWebp } from './evidence-image.mjs';
 
-const dir = new URL('./ui/verification/', import.meta.url);
-const dirPath = fileURLToPath(dir);
+const dirPath = await prepareEvidence();
+const dir = pathToFileURL(`${dirPath}/`);
+const buildDir = await mkdtemp(join(tmpdir(), 'dsh-ui-fixture-'));
 await mkdir(dir, { recursive: true });
-await build({ entryPoints: ['docs/visual-fixture.tsx'], bundle: true, outfile: '/tmp/dsh-ui-visual-checks/fixture.js', jsx: 'automatic', loader: { '.css': 'css' } });
-const bundle = await readFile('/tmp/dsh-ui-visual-checks/fixture.js');
-const css = await readFile('/tmp/dsh-ui-visual-checks/fixture.css');
+await build({ entryPoints: ['docs/visual-fixture.tsx'], bundle: true, outfile: join(buildDir, 'fixture.js'), jsx: 'automatic', loader: { '.css': 'css' } });
+const bundle = await readFile(join(buildDir, 'fixture.js'));
+const css = await readFile(join(buildDir, 'fixture.css'));
 let data;
 const server = createServer((req, res) => {
   if (req.url === '/fixture.js') { res.setHeader('Content-Type', 'application/javascript'); res.end(bundle); }
@@ -20,7 +24,7 @@ const server = createServer((req, res) => {
   else res.end(`<!doctype html><meta charset="UTF-8"><style>html,body,#root{margin:0;height:100%;width:100%}</style><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script>window.visualData=${JSON.stringify(data)};</script><script src="/fixture.js"></script>`);
 });
 await new Promise(resolve => server.listen(8793, '127.0.0.1', resolve));
-const browser = await chromium.launch({ headless: true, executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+const browser = await chromium.launch(browserOptions);
 const errors = [], results = [], interactions = [], details = [];
 const proto = await browser.newPage(), real = await browser.newPage();
 real.on('pageerror', e => errors.push(e.message));

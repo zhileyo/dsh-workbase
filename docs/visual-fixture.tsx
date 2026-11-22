@@ -34,6 +34,11 @@ let snapshot: Snapshot = {
 const api = {
   async call(command: any) {
     if (command.op === 'snapshot') return structuredClone(snapshot);
+    if (command.op === 'extensions' && command.method === 'summary')
+      return { count: 0, detail: '暂无条目', errors: 0 };
+    if (command.op === 'backup-status') return { phase: 'idle', message: '尚未执行备份', coverage: [] };
+    if (command.op === 'restore-status') return { phase: 'idle', message: '尚未执行恢复' };
+    if (command.op === 'restore-catalog') return [];
     if (command.op === 'launch-catalog') return {
       presets: [{ id: 'standard', name: '标准模式', isDefault: true }, { id: 'ptc', name: 'PTC 模式', isDefault: false }],
       models: [{ provider: 'deepseek', id: 'deepseek-v4-flash', name: 'deepseek-v4-flash', providerName: 'DeepSeek' }],

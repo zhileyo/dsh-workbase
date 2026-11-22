@@ -1,7 +1,9 @@
 // 实际 React 组件的模拟宿主验收；不连接正式 profile、不调用模型。
-// DSH_UI_PLAYWRIGHT 覆盖 playwright 入口，DSH_UI_CHROME 覆盖浏览器可执行文件；缺省保持 macOS 本地环境。
-import { pathToFileURL } from 'node:url';
-const { chromium } = await import(pathToFileURL(process.env.DSH_UI_PLAYWRIGHT ?? '/tmp/dsh-ui-visual-checks/node_modules/playwright/index.mjs').href);
+// Playwright、浏览器及证据目录由共用环境模块配置。
+import { visualBrowser, browserOptions, prepareEvidence } from './visual-env.mjs';
+import { join } from 'node:path';
+const { chromium } = await visualBrowser();
+const evidenceDir = await prepareEvidence();
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
 import { writeFile } from 'node:fs/promises';
@@ -36,7 +38,7 @@ const server = createServer((req, res) => {
   }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const browser = await chromium.launch({ headless: true, executablePath: process.env.DSH_UI_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' });
+const browser = await chromium.launch(browserOptions);
 const page = await browser.newPage();
 const results = [], errors = [];
 page.on('pageerror', error => errors.push(error.message));
@@ -52,6 +54,7 @@ const measure = () => page.evaluate(() => {
     titleHidden: getComputedStyle(document.querySelector('.brand-title')).display === 'none',
   };
 });
+let checkpoint = '初始化';
 try {
   for (const width of [1440, 1168, 888, 650]) for (const collapsed of [false, true]) {
     await page.setViewportSize({ width, height: 768 });
@@ -59,10 +62,10 @@ try {
     await page.locator('.stat-card').first().waitFor();
     const geometry = await measure();
     assert.equal(geometry.header.h, 52);
-    assert.equal(geometry.search.h, 32);
-    assert.equal(geometry.add.h, 32);
+    assert.equal(geometry.search.h, 36);
+    assert.equal(geometry.add.h, 36);
     if (geometry.header.w > 650) {
-      assert.ok(Math.abs(geometry.search.x + geometry.search.w / 2 - geometry.header.x - geometry.header.w / 2) < 1, '搜索框偏离工作台中心');
+      assert.ok(geometry.search.w > 0, '搜索框没有获得弹性剩余宽度');
       assert.ok(geometry.search.x >= geometry.brand.x + geometry.brand.w, '搜索框覆盖品牌');
       assert.ok(geometry.search.x + geometry.search.w <= geometry.add.x, '搜索框覆盖操作按钮');
     }
@@ -73,10 +76,11 @@ try {
       assert.equal(geometry.brand.x, 160, '与官方末个控件起点124px保持36px步长');
     }
     for (const target of ['.stat-card', '[aria-label="工作台设置"]']) {
+      checkpoint = `${width}/${collapsed}/${target}`;
       await page.locator(target).first().scrollIntoViewIfNeeded();
       const before = await measure();
       await page.locator(target).first().click();
-      await page.locator('.wb-drawer').waitFor();
+      await page.locator('.wb-drawer').waitFor({ timeout: 5000 });
       const frames = await page.evaluate(async () => {
         const frames = [];
         for (let i = 0; i < 18; i++) {
@@ -108,41 +112,41 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('[aria-label="工作台设置"]').click();
-  await page.getByRole('tab', { name: '通用设置', exact: true }).click();
-  const sidebarToggle = page.getByRole('checkbox', { name: '显示侧边栏工作台入口', exact: true });
-  const headerToggle = page.getByRole('checkbox', { name: '显示 Header 工作台按钮', exact: true });
-  const position = page.getByRole('button', { name: '侧边栏菜单位置', exact: true });
-  assert.equal(await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).inputValue(), '项目概览');
+  await page.getByRole('tab', { name: '通用配置', exact: true }).click();
+  const sidebarToggle = page.getByRole('checkbox', { name: '显示侧栏入口', exact: true });
+  const headerToggle = page.getByRole('checkbox', { name: '显示返回按钮', exact: true });
+  const position = page.getByRole('button', { name: '侧栏菜单位置', exact: true });
+  assert.equal(await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).inputValue(), '项目概览');
   assert.equal(await sidebarToggle.isChecked(), true);
   assert.equal(await headerToggle.isChecked(), true);
   assert.equal(await position.isDisabled(), false, '侧边栏入口开启时位置可配置');
   assert.ok((await position.textContent()).includes('第 2 个'), '菜单位置默认第 2 个');
   await position.click();
-  await page.getByRole('option', { name: '第 3 个' }).click();
+  await page.getByRole('option', { name: '顺序第 3 个', exact: true }).click();
   await sidebarToggle.uncheck();
   assert.equal(await sidebarToggle.isChecked(), false);
   assert.equal(await headerToggle.isChecked(), true, '关闭侧边栏入口时 Header 按钮自动开启');
-  assert.equal(await position.isDisabled(), true, '侧边栏入口关闭时位置不可配置');
+  assert.equal(await position.isVisible(), false, '侧栏入口关闭时隐藏依赖配置');
   await headerToggle.uncheck();
   assert.equal(await headerToggle.isChecked(), false);
   assert.equal(await sidebarToggle.isChecked(), true, '关闭 Header 按钮时侧边栏入口自动开启');
-  await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).fill('我的项目');
+  await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).fill('我的项目');
   await page.getByRole('button', { name: '保存设置', exact: true }).click();
   await page.locator('.wb-drawer').waitFor({ state: 'detached' });
   await page.locator('[aria-label="工作台设置"]').click();
-  await page.getByRole('tab', { name: '通用设置', exact: true }).click();
-  assert.equal(await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).inputValue(), '我的项目');
-  assert.equal(await page.getByRole('checkbox', { name: '显示侧边栏工作台入口', exact: true }).isChecked(), true);
-  assert.equal(await page.getByRole('checkbox', { name: '显示 Header 工作台按钮', exact: true }).isChecked(), false, '互斥后保存的是关闭 Header 时的合法状态');
+  await page.getByRole('tab', { name: '通用配置', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).inputValue(), '我的项目');
+  assert.equal(await page.getByRole('checkbox', { name: '显示侧栏入口', exact: true }).isChecked(), true);
+  assert.equal(await page.getByRole('checkbox', { name: '显示返回按钮', exact: true }).isChecked(), false, '互斥后保存的是关闭 Header 时的合法状态');
   assert.ok((await position.textContent()).includes('第 3 个'), '菜单位置保存后保持第 3 个');
-  await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).fill(' ');
+  await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).fill(' ');
   assert.equal(await page.getByRole('button', { name: '保存设置', exact: true }).isDisabled(), true);
-  await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).fill('取消修改');
+  await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).fill('取消修改');
   await page.getByRole('button', { name: '取消', exact: true }).click();
   await page.locator('[aria-label="工作台设置"]').click();
-  await page.getByRole('tab', { name: '通用设置', exact: true }).click();
-  assert.equal(await page.getByRole('textbox', { name: '侧边栏名称', exact: true }).inputValue(), '我的项目');
-  await screenshotWebp(page, 'docs/ui/verification/navigation-settings-026.webp');
+  await page.getByRole('tab', { name: '通用配置', exact: true }).click();
+  assert.equal(await page.getByRole('textbox', { name: '侧栏入口名称', exact: true }).inputValue(), '我的项目');
+  await screenshotWebp(page, join(evidenceDir, 'navigation-settings-026.webp'));
   await page.keyboard.press('Escape');
   // 搜索弹层层叠：弹层展开时必须盖住下方 composer 的 position:relative 控件（transform 层叠上下文回归）。
   await page.locator('.global-search input').click();
@@ -185,12 +189,15 @@ try {
   await page.locator('[aria-label="工作台设置"]').click();
   assert.equal(await page.locator('.wb-drawer').evaluate(e => getComputedStyle(e).animationName), 'none');
   assert.deepEqual(errors, []);
-  await writeFile('docs/ui/verification/header-motion-checks.json', JSON.stringify({
+  await writeFile(join(evidenceDir, 'header-motion-checks.json'), JSON.stringify({
     environment: '实际 React 组件／模拟 macOS 宿主，不等同于正式桌面验收',
     results, navigationSettings: ['默认值', '保存恢复', '入口互斥', '菜单位置', '空名称校验', '取消保留'],
     searchPopoverStacking: stacking, homeSpacing: spacing, reducedMotion: true, errors,
   }, null, 2));
   console.log(`通过：${results.length} 组顶栏布局、16 次弹窗稳定性、6 项导航设置（含入口互斥与菜单位置）、搜索弹层层叠${stacking.overlap ? '（遮盖 composer）' : '（无重叠未触发）'}、首页间距按视口 clamp 校验（${spacing.headerToComposer}/${spacing.composerToStats}/${spacing.statsToToolbar}）、减少动态效果；浏览器错误 0。`);
+} catch (error) {
+  console.error(JSON.stringify({ checkpoint, errors }));
+  throw error;
 } finally {
   await browser.close();
   await new Promise(resolve => server.close(resolve));

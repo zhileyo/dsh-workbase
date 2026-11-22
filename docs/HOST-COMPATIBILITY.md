@@ -4,6 +4,10 @@
 
 ## 一条命令检查
 
+项目迁移（2026-11-22）：本机rc.5的`workspace.attachSession`及成员列表按原始`header.cwd`的真实路径归属，`apiWorkspace`的插入接口只负责排序；`workingDirectory.set`不更新原始会话头、项目归属或现有进程。工作台通过官方存储域global单次提交独立会话归属、待办与批次回执，提供72小时撤销。回执落盘后调用官方`workspaceRegistry.delete`移除源登记；该接口只删工作区记录及显示顺序，保留目录、会话日志和已初始化标记，重启不按历史会话重建源登记。启动及同步补齐旧completed批次，只处理回执的原workspaceId与路径；后来同目录的新登记不自动删除。跨域步骤不宣称原子：移除失败保留完成回执，仅补齐登记操作，未知结果读回核验。撤销先核验实体、运行状态及设置，再通过`workspaceRegistry.create`复用或恢复源登记，更新工作台绑定与批次中的新ID；保存失败仅清理本次确定新建的登记，存储状态未知时不补偿删除。
+
+源目录缺失与宿主身份失效分开处理：有效登记且明确ENOENT时仍可迁入已有项目；撤销恢复登记要求原目录已存在，目录缺失时不自动创建。权限拒绝、未知状态、身份不匹配及运行会话保持阻断。官方登记移除与恢复能力缺失时阻止新迁移；不按版本号或接口名称猜测契约，不直接改写宿主工作区域或会话头。
+
 ```sh
 npm run host:check
 ```
@@ -29,7 +33,7 @@ node check-host.mjs --accept-baseline
 
 ## 每次更新的步骤
 
-1. 记录实际安装的版本、构建提交和运行时版本，用应用包元数据确认，不依赖页面或文件名。当前已调查版本为 `0.2.2-rc.3`，构建提交 `6b729fedde0c8fd03af7afdf5a711aa64fe87c3b`；已接受基线仍为 `0.2.2-rc.2`／`a6b1b85f44891ee1484bed6a9fc08acaae777d90`。
+1. 记录实际安装的版本、构建提交和运行时版本，用应用包元数据确认，不依赖页面或文件名。当前已调查版本为 `0.2.2-rc.5`，构建提交 `3f85d888b1297107937d9bd5b853f7e733e179a4`（2026-11-19）。此前曾接受 `0.2.2-rc.2`／`a6b1b85f44891ee1484bed6a9fc08acaae777d90`；当前工作区副本没有 `baseline.json`，不能使用此前基线作本机指纹对照。
 2. 对照上一份已接受基线、项目 SDK 与实际宿主包中的源码。方法存在仅是第一层检查，还要看参数、返回值、事件、持久化时机、错误代码和销毁行为。
 3. 阅读该版本官方 Release 与升级指南。GitHub 信息通过 `gh` 获取，固定到实际版本标签。发行说明有时汇总多个开发版本，不把每一项都视为上次安装之后新增；实际源码差异优先。
 4. 检查客户端插槽、原生输入、模型／项目菜单和宿主主题。新版 CSS 锚点、portal、滚动或视口变化不能只靠 TypeScript 判断。
@@ -39,6 +43,8 @@ node check-host.mjs --accept-baseline
 8. 在 `.agents/notes/dev-log.md` 更新当前实现、决策和实际证据范围，并将 README「环境要求」中的「兼容性检查」更新为本次检查的宿主版本与日期；确认适配后同步「当前适配」版本。源码评估完成后再接受基线，不因脚本运行成功自动接受。
 
 ## 宿主优先与安全降级
+
+语音输出当前使用官方Session事件源的`assistant/live-chunk`及`settle-assistant`，只朗读新正文；`replace/prepend`建立静音基线，重连不重发已读内容。宿主更新时须复核attempt身份、seq排序、text-delta／block-end／finish和空settlement语义。音频由Connection精确owner Fetch流路由返回，文字走owner助手RPC；检查响应流断连是否取消Request信号，不能将流路由改成无鉴权HTTP端点。当前宿主无公开TTS输出服务，服务端以Node22原生WebSocket调用DeepSeek官方TTS；其协议与凭据仍由工作台适配。浏览器PCM播放和实际音频须独立验收。
 
 **官方公开能力优先，工作台自实现兜底。** 这里的“宿主”包括官方宿主 API 和官方插件提供的已加载服务。Forge（`@deepseek-ai/dsh-experimental-forge-bundle`）是宿主自带的官方可选套件，不属于第三方插件。用户已明确工作树例外：恢复自实现前方案，只通过官方 `forgePanel.requestWorktree`，Forge 启用时显示分支与工作树、禁用时隐藏，不提供自建工作树降级。其余能力仍按下述通用原则维护。`dsh-archive-manager` 等第三方插件不得成为必需依赖。新增能力在使用时探测，不按版本号猜测，不在启动时缓存永远不变的判断。
 
@@ -64,11 +70,14 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 
 ## 当前能力对照
 
+语音输出（2026-11-22）：rc.5宿主及内置插件暂无公开TTS输出服务，但DeepSeek已提供[官方HTTP TTS API](https://api-docs.deepseek.com/zh-cn/guides/tts)。工作台新配置默认由宿主服务端请求`/v1/tools/tts`，采用`text/voice_id/format/filter_markdown`及Bearer认证，输出WAV；不套用OpenAI的`input/model/voice/speed`协议。配置与密钥仍走官方credentials事务，会话触发仍走官方事件源。既存兼容服务不自动改写；官方请求失败不切第三方。
+
 | 能力 | 官方接点／当前实现 | 更新时核对 |
 | --- | --- | --- |
 | 项目登记、会话创建／改名／归档 | `workspaceRegistry`、`sessionController` | 参数、事件、归属与权限 |
 | 正文搜索 | 官方`dsh-experimental-session-search`的`optional-session-search`隔离组；通过Cordis公开Entry/Fiber合同读取索引服务的`searchSessions`，不调用主索引 | 套件行标识、子节点归属、ACTIVE状态及服务provision、启停／重载、会话ID过滤和分页 |
 | 原生输入、引用、模型与附件 | `conversation`、`sessions`、官方 slots | 草稿所有权、上传失败锁定、菜单定位和 SessionProvider |
+| 项目详情右栏 | 只复用已有会话，无可用会话时隐藏按钮与分隔符；不调用`connectWorkspace`或会话创建接口。读取官方`sessions.list.ids/byId/projectionsBySession`、workspace成员及`archivedSessionIds`，按最近活动筛选未归档、非子代理且header.cwd与有效目录匹配的会话。未知目录通过官方`refreshProjections`只读检查，不持有或迁移；迁移必需、失败或仍未知时不可用。点击后才`sessions.retain`，本次插件生命周期内优先上次成功目标，否则最近候选，`SessionProvider`提供工具作用域。新增、删除、归档与目录变化实时重算；失效目标撤下，其他候选等待点击。保留官方Root注册、子插槽授权与共享Store，只可逆适配公开component及mounted读接口，退出恢复原源；全部写动作交官方Controller，后台Tab资源沿官方生命周期保留 | 优先检查新增项目目标注册能力并替换兼容桥。核对官方候选列表、归档集合及只读投影状态字段，Root的views/mountView、可写component、唯一children及授权、corner/seat同一Store及语言空间、mounted可写读方法。能力或目录未知时不显示可操作入口，不创建替代会话，不调用内部openTabIn。列表成员、项目归属、header.cwd、workingDirectory必须同时成立；目标失效立即收起，迟到引用释放。覆盖有正文会话复用、上次／最近选择、无候选、投影检查合并、动态新增与失效、等待取消、后台Tab及卸载；本机回归不代表真实宿主界面已验收 |
 | 语音输入 | 官方`conversation.input.activity`中`voice-input`语言命名空间的组件；镜像注入与子插槽，适配`InputActions.captureInsertion/insertText` | `locked/onActiveChange`、草稿revision、剪贴板与原子节点坐标、热挂载／卸载及取消；录音与转写阶段是组件内部状态，不按展开状态推断 |
 | 工作目录切换 | `workingDirectory.get/set` | 原始目录回退、`working-directory/access` 与刷盘 |
 | 工作树创建 | 官方 `forgePanel.requestWorktree(sessionId, from)`；启用时显示、禁用时隐藏，不自建降级 | 套件异步挂载与卸载、请求登记、首消息阻塞、失败重试和归档清理 |
@@ -76,12 +85,16 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 | 列表缓存重建 | 当前没有已确认的公开重建 API；官方 `sessionProjections.restore` 与 `sessionProjectionCache.put` 组合 | checkpoint 与 snapshot 契约、持久化回读、水位 |
 | 终端显示与默认Shell | 公开侧栏显示插槽、官方`TerminalView.mount/connect`和`webTerminals.selectShell`；跟随／停用渲染原官方组件，已结束终端重新挂载时补取完整快照；Shell保存后只读核对官方浏览器偏好键`dsh.terminal.shell` | `attach`首帧完整screen与已结束终端保留、挂载／卸载、不可用反馈、官方偏好键及读写失败语义；官方`selectShell`返回void、`launchShells`可兜底首项，二者都不能单独证明持久化成功 |
 | 备份与事务恢复 | 工作台自实现归档；替换业务状态仍经官方存储 | 新增官方快照／事务接口是否满足校验、加密回滚和并发保护 |
+| 技能安装、编辑与恢复 | 官方FileSystem仍无目录提交API。受限同宿主映射通过已加载的官方`sandbox.confine(argv, policy)`约束目录变更；每次限定父目录，缺失目录逐级临时授权现有父目录，完整约束才执行，数据经stdin传递。既有事务保留摘要、独占日志、反向回滚及初始化恢复，状态通过官方`fs.writeText`提交；写后抛错读回完整新旧状态确认，未知结果保留文件和日志 | `processPathFromHostPath`必须映射同宿主路径；`confine`的argv及full enforcement、workspaceRoot必须存在、Node／Electron子进程、目录移动和二进制保留、状态写后检查抛错和读取失败。拒绝、只读、partial、不可映射和回滚失败无无约束降级；不把单文件moveFile当成目录事务 |
 | 插件在线更新 | 官方 `remote.pluginManager`；同一窗口保存批次数据及首次启动选择，热重载后复用；在途请求沿用官方Promise结果，不增加远程恢复接口 | `listBundles/listVersions/updateBundle`、`BundleInfo`返回字段、类型契约指纹和进度事件；新版`update=registry`优先，旧版`updatable=true`兼容，Git不走registry批量更新；自身热重载时卸载／安装顺序、请求返回与结果未知边界 |
 
 未来扫描发现 `deleteSession`、`rebuildCache`、`backup` 等同名方法，只列为线索：它可能是内部方法、只删登记、不删物理数据，或缺少工作台要求的事务保护。人工确认后在能力表与适配源码中登记，不对猜测的接口自动接线。
 
 ## 当前版本需要注意
 
+- `rc.5` 本机检查（2026-11-19）为 0 阻断、1 待复核，退出 2；21 个扫描模块无缺少方法，插件更新的 `BundleInfo.update` 契约匹配，4 项安装文件与工作区构建逐字节哈希一致。唯一待复核是本副本没有已接受基线；模型菜单风险另列在验证边界，不能用“零阻断”解释为完全兼容。
+- 官方 `rc.3 → rc.5` 完整差异有 447 个文件，比较 API 的 JSON 文件列表只给前 300 项，因此另用完整 diff 核对。会话／工作区 API、存储与投影、客户端插槽／输入／模型菜单、Forge、正文搜索套件、语音与终端相关源码未见变更；主要行为调整为模型异常响应、LiveShare 和网页搜索提供方路由。工作台没有直接调用网页搜索服务，其正文搜索是独立的会话索引。
+- 实际应用包构建提交与公开 `dsh-v0.2.2-rc.5` 标签提交不同，公开仓库比较该构建提交返回 404。因此官方标签差异只作发行版本层面的证据，不能宣称实际应用包与标签源码完全相同；实际包已单独扫描并读取模型菜单源码。没有重建或自动接受基线，也没有执行真实界面、删除或恢复验收。
 - `rc.3` 新增实验性 DeepSeek 会话导入、`sidebar.session.action` 与 `workspace.picker` Factory，原工作台侧栏与目录流程接点保留。新增 Factory 可作为后续复用候选，不能直接替代工作台自己的项目归属与草稿交接逻辑。
 - 2026-11-13 的 rc.3 检查没有发现新增阻断性接线问题，但检查仍退出 1：最新工作台构建的 `dist/index.js`／`lib/client.js` 尚未安装。旧基线缺少声明指纹，21 个声明待复核不等于新版破坏；插件管理器与此前实际副本哈希一致，终端、语音、侧栏等本次人工补核。详细证据见 `docs/ui/verification/host/assessment.md`（被忽略的本机证据），未覆盖真实运行验收。
 - `rc.2` 删除了 Agent 的 `isOwnedBy` 与 `roots`，工作台没有调用它们。
@@ -95,6 +108,6 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 
 `check-host.mjs` 与 `host:check` 保留为维护入口，生成 Markdown／JSON 报告和显式接受的对照基线。按用户后续决定，工作树恢复 Forge 原流程，自建模块及其 RPC 已移除，显隐跟随套件启停；删除和诊断的独立实现不受本次回退影响。
 
-rc.2 宿主源码曾评估并接受基线；rc.3 本次完成静态复核，因安装产物不一致及补核边界保留旧基线，没有自动接受。实际验证及安装状态以开发日志最新记录为准；模型菜单待适配仍记录在报告的验证边界中，接受基线不代表该问题已修复。
+rc.2 宿主源码曾评估并接受基线；rc.3 静态复核时安装产物不一致，没有自动接受。rc.5 本次静态检查安装一致，但当前副本缺少基线、实际构建提交无法通过公开仓库完整对照，仍未接受新基线。实际验证及安装状态以开发日志最新记录为准；模型菜单待适配仍记录在报告的验证边界中，接受基线不代表该问题已修复。
 
-官方参考：[本次 Release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.3)、[rc.2 → rc.3 源码变化](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.2...dsh-v0.2.2-rc.3)、[升级指南目录](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.3/docs/upgrade-guide)、[工作树服务](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.3/packages/experimental/worktree/README.zh.md)。
+官方参考：[本次 Release](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.2-rc.5)、[rc.3 → rc.5 源码变化](https://github.com/deepseek-ai/deepseek-harness/compare/dsh-v0.2.2-rc.3...dsh-v0.2.2-rc.5)、[升级指南目录](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.2.2-rc.5/docs/upgrade-guide)、[工作树服务](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.5/packages/experimental/worktree/README.zh.md)。
