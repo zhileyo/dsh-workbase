@@ -621,7 +621,7 @@ textarea::placeholder{color:var(--muted);opacity:1}
 .app .workspace-settings .setting-row>.settings-text-control{flex:0 0 180px;width:180px;max-width:100%;height:auto;min-height:40px;font-size:13px}
 .app .wb-archive-input{display:flex;position:relative;align-items:center;width:100%;min-width:0}
 .app .wb-migration{min-width:0}
-.app .wb-migration-content{max-width:860px;margin:0 auto}
+.app .wb-migration-content{min-width:0}
 .app .wb-migration-projects{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
 .app .wb-migration-target{min-width:0}
 .app .wb-migration-target>.field{display:block;margin:0 0 8px;font-size:12px;color:var(--muted)}
@@ -1486,10 +1486,11 @@ body:has(.app[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 .app .todo-detail-section+.todo-detail-section{padding-top:0}
 .app .todo-compact-fields{display:flex;align-items:flex-end;gap:16px}
 .app .todo-detail-form .todo-title-field{display:flex;flex:1;min-width:0;flex-direction:column;gap:6px;margin:0}
-.app .todo-title-field>span,.app .todo-priority-field>span{font-size:12px;color:var(--muted)}
+.app .todo-title-field>span,.app .todo-priority-field>span{display:block;font-size:12px;line-height:16px;color:var(--muted)}
 .app .todo-title-field input{height:40px;font-size:16px;font-weight:500}
 .app .todo-priority-field{display:flex;flex:none;flex-direction:column;gap:6px;width:160px}
-.app :is(.theme-select-todo-priority,.theme-select-edit-priority) .theme-select-trigger{height:40px;width:100%;font-size:13px}
+.app .todo-priority-field .theme-select{display:flex;width:100%;min-width:0}
+.app :is(.theme-select-todo-priority,.theme-select-edit-priority) .theme-select-trigger{height:40px;min-height:40px;width:100%;padding:0 12px;align-items:center;font-size:13px}
 .app .theme-select-todo-priority .theme-select-value,.app .composer-options-todo-priority .composer-option-copy>span{display:flex;align-items:center;gap:8px}
 .app .todo-priority-dot{display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:var(--muted)}
 .app .todo-priority-dot.high{background:var(--danger)}
@@ -6350,7 +6351,7 @@ function statsHTML(){
 function statsPanel(key,data){
  if(['skills','mcp','rss'].includes(key))return integrationPanel(key);
  if(key==='diagnostic')return `<div class="stats-page-header"><h3 class="stats-page-heading">项目诊断</h3>${button(`${icon('refresh')}${scene==='loading'?'检查中…':'重新检查'}`,'refresh','diagnostic-refresh primary',scene==='loading'?'disabled':'')}</div><p class="dialog-description stats-page-description">检查目录、普通冷会话列表缓存、孤儿子代理及空会话；检查不读取正文。</p>${scene==='error'||scene==='sync'?'<p class="diagnostic-message">部分检查失败，请重新检查。</p>':''}${statsDiagnosticContent(data,data.diagnostic.length?data.diagnostic.map(p=>button(`<span class="stats-item-copy"><strong>${esc(p.name)} · 目录不可用</strong><small>${esc(p.path)}</small></span>${icon('chevron')}`,'stats-target','stats-item',`data-project-id="${p.id}" data-diagnostic-kind="directory" data-target-type="project"`)).join(''):'')}`;
- const labels={running:['运行中',''],recent:['近期会话',`最近 ${homepage.statDays} 天更新的未归档会话。`],pending:['项目待办','']};
+ const labels={running:['运行中','当前正在运行的会话。'],recent:['近期会话',`最近 ${homepage.statDays} 天更新的未归档会话。`],pending:['项目待办','尚未完成的待办，含手动创建与 Agent 创建。']};
  const [title,description]=labels[key],entries=data[key];
  const notice=scene==='error'||scene==='sync'?'<p class="stats-notice" role="status">读取未完成，以下为上次成功结果，可能不是最新。</p>':'';
  const body=scene==='loading'?'<p class="stats-empty" role="status">正在读取数据，请稍候…</p>':entries.length?`<div class="stats-items">${entries.map(({p,s,t})=>button(`<span class="stats-item-copy"><strong>${esc((s||t).title)}</strong><small>${esc((s||t).time||'时间未知')}</small></span>${icon('chevron')}`,'stats-target','stats-item',`data-project-id="${p.id}" data-id="${(s||t).id}" data-target-type="${t?'todo':'session'}" title="${esc((s||t).title)}"`)).join('')}</div>`:`<p class="stats-empty">${key==='running'?'当前没有运行中会话。':key==='recent'?`最近 ${homepage.statDays} 天没有更新的会话。`:'当前没有未完成待办。'}</p>`;
@@ -6359,8 +6360,7 @@ function statsPanel(key,data){
 }
 function statsGroupedContent(key,data,body){
  const groups=new Map();for(const entry of data[key]){const p=entry.p;const group=groups.get(p.id)||{p,count:0};group.count++;groups.set(p.id,group)}
- const resultHeading=key==='running'?'<h3 class="stats-page-heading">运行中会话</h3>':key==='pending'?'<h3 class="stats-page-heading">待办列表</h3>':'';
- return `<div class="stats-project-browser" data-stats-groups="${key}"><aside class="stats-project-groups" aria-label="统计项目分组"><label class="stats-group-search">${icon('search')}<input type="search" aria-label="搜索统计项目" placeholder="搜索项目"></label><nav class="stats-group-items" aria-label="选择统计项目"><button type="button" class="stats-group-entry" data-project-group="" aria-pressed="true">${icon('grid')}<span class="stats-group-copy"><strong>全部项目</strong></span><span class="stats-group-count">${data[key].length}</span></button>${[...groups.values()].map(({p,count})=>`<button type="button" class="stats-group-entry" data-project-group="${p.id}" data-project-name="${esc(p.name)}" data-project-path="${esc(p.path)}" aria-pressed="false" title="${esc(p.path)}">${icon('folder')}<span class="stats-group-copy"><strong>${esc(p.name)}</strong></span><span class="stats-group-count">${count}</span></button>`).join('')}<p class="stats-group-empty" ${groups.size?'hidden':''}>暂无相关项目</p></nav></aside><div class="stats-group-content">${resultHeading}<div class="stats-group-results" role="region" aria-label="统计分组内容" tabindex="0"><div class="stats-group-records">${body}</div><p class="stats-empty stats-group-filter-empty" role="status" hidden>没有匹配项目的记录</p></div></div></div>`;
+ return `<div class="stats-project-browser" data-stats-groups="${key}"><aside class="stats-project-groups" aria-label="统计项目分组"><label class="stats-group-search">${icon('search')}<input type="search" aria-label="搜索统计项目" placeholder="搜索项目"></label><nav class="stats-group-items" aria-label="选择统计项目"><button type="button" class="stats-group-entry" data-project-group="" aria-pressed="true">${icon('grid')}<span class="stats-group-copy"><strong>全部项目</strong></span><span class="stats-group-count">${data[key].length}</span></button>${[...groups.values()].map(({p,count})=>`<button type="button" class="stats-group-entry" data-project-group="${p.id}" data-project-name="${esc(p.name)}" data-project-path="${esc(p.path)}" aria-pressed="false" title="${esc(p.path)}">${icon('folder')}<span class="stats-group-copy"><strong>${esc(p.name)}</strong></span><span class="stats-group-count">${count}</span></button>`).join('')}<p class="stats-group-empty" ${groups.size?'hidden':''}>暂无相关项目</p></nav></aside><div class="stats-group-content"><div class="stats-group-results" role="region" aria-label="统计分组内容" tabindex="0"><div class="stats-group-records">${body}</div><p class="stats-empty stats-group-filter-empty" role="status" hidden>没有匹配项目的记录</p></div></div></div>`;
 }
 function statsDiagnosticContent(data,body){
  const types=[['directory','目录异常'],['cache','列表缓存'],['orphan','孤儿子代理'],['empty','空会话']];
@@ -7089,7 +7089,7 @@ function workspaceSettings(){
  const speechSaved=homepage.speech||{enabled:false,provider:'deepseek',endpoint:'https://api.deepseek.com/v1/tools/tts',model:'tts-1',voice:'stella',speed:1,filterMarkdown:true};
  const speechOfficial=(speechSaved.provider||'compatible')==='deepseek';
  const speech=`${row('speech-enabled','自动播报回复','默认关闭；会话顶部喇叭切换自动播报，回复下方喇叭可手动重播。',speechSaved.enabled)}
- <label class="setting-row"><div><strong>播报服务</strong></div><select id="speech-provider" aria-label="播报服务" onchange="changeSpeechProvider(this.value)"><option value="deepseek" ${speechOfficial?'selected':''}>DeepSeek 官方 TTS</option><option value="compatible" ${speechOfficial?'':'selected'}>OpenAI 兼容 TTS</option></select></label>
+ <label class="setting-row"><div><strong>播报服务</strong></div><select id="speech-provider" aria-label="播报服务" onchange="changeSpeechProvider(this.value)"><option value="deepseek" ${speechOfficial?'selected':''}>DeepSeek TTS</option><option value="compatible" ${speechOfficial?'':'selected'}>OpenAI TTS</option></select></label>
  <div id="speech-official-fields" ${speechOfficial?'':'hidden'}><label class="setting-row"><div><strong>音色</strong></div><select id="speech-official-voice" aria-label="音色"><option value="stella" ${speechSaved.voice==='tide'?'':'selected'}>stella</option><option value="tide" ${speechSaved.voice==='tide'?'selected':''}>tide</option></select></label>
  ${row('speech-filter-markdown','过滤 Markdown','过滤标记、链接和代码块，保留可朗读正文。',speechSaved.filterMarkdown!==false)}
  </div>

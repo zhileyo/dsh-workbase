@@ -63,8 +63,12 @@ export const english: Record<string, string> = Object.fromEntries(`
 目标现有|Existing target
 迁移后|After migration
 源项目目录已不存在；保留的会话与待办仍参与预览。|The source directory no longer exists. Retained sessions and to-dos remain in the preview.
+源项目目录已不存在，请恢复原目录后再撤销迁移|The source directory no longer exists. Restore it before undoing the migration.
 撤销迁移|Undo migration
 迁移记录 · 详情|Migration history · Details
+迁移前源项目状态|Source project before migration
+迁移的会话|Migrated sessions
+迁移的待办|Migrated to-dos
 活跃会话|Active sessions
 迁入已有项目|Merge into an existing project
 更新原项目目录|Update project directory
@@ -136,7 +140,7 @@ export const english: Record<string, string> = Object.fromEntries(`
 关闭自动播报|Disable automatic speech
 自动播报回复|Read replies aloud
 播报服务|Speech service
-OpenAI 兼容 TTS|OpenAI-compatible TTS
+OpenAI TTS|OpenAI TTS
 服务地址（完整 HTTPS 接口）|Service URL (complete HTTPS endpoint)
 语音模型|Speech model
 音色|Voice
@@ -174,7 +178,7 @@ OpenAI 兼容 TTS|OpenAI-compatible TTS
 宿主未确认项目移除|The host did not confirm project removal.
 已保存密钥；留空保留|Key saved; leave blank to keep it
 未配置密钥；无认证服务可留空|No key configured; leave blank for unauthenticated services
-DeepSeek 官方 TTS|DeepSeek TTS
+DeepSeek TTS|DeepSeek TTS
 过滤 Markdown|Filter Markdown
 过滤标记、链接和代码块，保留可朗读正文。|Filter markup, links and code blocks, keeping readable text.
 填写 DeepSeek API Key|Enter your DeepSeek API Key
@@ -1627,6 +1631,8 @@ npm 官方源|Official npm registry
 最近 7 天|Last 7 days
 最近 {p0} 天|Last {p0} days
 最近 {p0} 天更新的未归档会话。|Unarchived sessions updated in the last {p0} days.
+当前正在运行的会话。|Sessions that are currently running.
+尚未完成的待办，含手动创建与 Agent 创建。|Open tasks, whether created manually or by an agent.
 最近会话|Recent sessions
 最近会话样式|Recent session style
 最近同步 {p0} · 点击刷新|Last synced {p0} · Click to refresh

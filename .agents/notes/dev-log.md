@@ -6,19 +6,19 @@
 
 ### 版本、构建与安装
 
-当前源码与本地包为 `1.0.4`。最新源码构建是2026-11-22的严重问题整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销。**`npm run check`741项中735通过、6跳过、0失败；两次构建两端摘要一致，7文件安装包与构建逐字节相同且扫描0命中。本轮只修源码和生成本地包，未安装、重启正式宿主或提交发布；正式宿主最后记录仍是此前迁移版，尚未包含本轮整改。**
+当前源码与本地包为 `1.0.4`。最新源码构建是2026-11-22的整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销，并加入市场／RSS 地址策略、待办详情两列对齐、失效会话恢复、诊断清理绑定核验与冷会话删除放行，以及诊断判据修正（缓存缺失不再报异常、空会话按官方冷读折叠复核）、快捷会话失效身份自动换新与延迟创建（首次输入才建空会话），并补迁移记录源状态快照与实体清单视图、语音播报服务标签改名。**本机 `npm run typecheck`、`npm run build` 通过，`npm test` 755项中730通过、7跳过，18项失败全部为环境限制（符号链接权限、Git初始化、子进程ENOENT，另有backup／market两条在HEAD基线同样失败的断言）；两次构建两端摘要一致；7文件安装包扫描0命中，已装到 profile `desktop`，宿主重启后生效。**
 
 | 项目 | 最近一次已记录状态 |
 | --- | --- |
-| 本机构建 | `npm run check`735通过／6跳过／0失败，完整日志`/tmp/dsh-fix-final-check.log`；双构建两端摘要一致，`/tmp/dsh-fix-final-hash-{1,2}.txt`。5项为既有实际外部宿主测试，1项因本机文件系统不区分大小写跳过，独立归档大小写冲突故障测试已执行。 |
-| 客户端 | 1759183字节，SHA-256 `3518486880fed5027864cc7b5fc6ee62f74e01c678745bce171d006a5c8f734c`；无新增运行时依赖，新增显示文案补英文词典。此前本行记为1759184字节与`be0f5c3b…`，与磁盘产物不符，已按实际文件重新测量更正。 |
-| 服务端 | 2711945字节，SHA-256 `05e9f034047fb718375d09fa6975d680555093b621d24f75264f79c6c9a6431e`；较此前已安装迁移版增加120210字节，包含凭据隔离、事务保护、持久创建及删除回执。 |
-| 最新安装包 | 仓库根`dsh-workbase-1.0.4-7fff3360.tgz`，1008130字节，SHA-256 `7fff3360a5d38c3b81eff8886b6eceaa428a6f9cef4ceee1a60a6fc80fd16ffc`；文件名后8位即包摘要前8位，用于绕开profile pnpm `hoisted`的同版本同路径缓存。7文件白名单，解包后与工作区`LICENSE`／`README.md`／`THIRD_PARTY_NOTICES.md`／`cordis.patch.yml`／`package.json`／`dist/index.js`／`lib/client.js`逐字节一致，包内扫描0命中，无内部系统名、无本机绝对路径，仅保留3个第三方许可作者邮箱。此前记录的`out/dsh-workbase-1.0.4-05e0bcde.tgz`（1007962字节）随`out/`目录取消失，不再代表当前包。 |
+| 本机构建 | 本轮 `npm run typecheck` 通过、`npm test` 755 项中 730 通过／18 失败／7 跳过、`npm run build` 通过且双构建幂等；18 项失败全部是环境限制（`EPERM: symlink`、Git 初始化、`spawn sqlite3/node.exe ENOENT`，另有 backup／market 两条断言在 HEAD 基线 worktree 复跑同样失败），与本轮改动无关。依赖已就位，本轮未重跑 `npm ci`。 |
+| 客户端 | 1767215字节，SHA-256 `5302746136d1548d1fb426b18904430dd93cb5921b00092854f45ec53769f2b6`；本轮快捷会话改延迟创建：首页输入卡在首次输入/粘贴/附件/添加上下文前不建空会话（`memory.composer.nativeArmed` 持久化激活状态，激活草稿经 `prepareNativeComposer` 的 `activationDraft` 以替换语义写入，附件暂存到绑定后上传，发送成功回未激活），上一轮的失效身份换新恢复保留；另补迁移记录源状态与实体清单视图、概览三页签共用页头、待办详情两列对齐与语音播报服务标签改名。 |
+| 服务端 | 2715640字节，SHA-256 `5375ac0973140885dbc1c0142e0fdeb84330b3ef04bcdb1cd0df87bf1b8be548`；本轮把缓存检查改为纯接口健康检查（不再产「列表缓存异常」修复项），空会话检查在宿主冷列表因缓存缺失显示非空时按官方 `coldSnapshot` 折叠完整日志复核并回写缓存行；迁移记录增加源项目状态快照与实体清单，project-rules 目录不可用返回可读错误，代理 fake-ip 段 198.18.0.0/15 放行。 |
+| 最新安装包 | 仓库根`dsh-workbase-1.0.4-2238b2cd.tgz`，1009431字节，SHA-256 `2238b2cd5a7aaeda4d2342fdb510081047cb0f1a075785f81b49c5683de896c0`；文件名后8位即包摘要前8位，用于绕开profile pnpm `hoisted`的同版本同路径缓存。7文件白名单（LICENSE、README.md、THIRD_PARTY_NOTICES.md、cordis.patch.yml、dist/index.js、lib/client.js、package.json），两端产物为该包构建时的摘要，此后的迁移记录、语音标签等改动未再打包（当前源码构建摘要见客户端／服务端行）。此前几轮的`0cfafbf8`（1009187字节）、`de585100`（1008930字节）、`6b1a3218`（1008992字节）、`93eece16`（1008834字节）、`3165f3f0`（1008306字节）、`6b7d4146`（1008321字节）与`7fff3360`（1008130字节）已从仓库根删除，只留本轮这一个。 |
 | 原型与生成物 | 本轮未改样式或生成规则，完整测试包含原型不变量，双构建幂等。组件模拟验证交接、取消、乱序、归档及保存故障；未重跑浏览器视觉或真实宿主双窗口。 |
-| 最近安装尝试 | 本轮重新打包并以摘要名安装到profile `desktop`，命令与核对见同日`本地包改用内容摘要名并安装`条目；此前迁移版安装证据见历史日志。 |
-| 当前宿主 | profile `desktop`的`dsh-workbase`依赖已从registry `1.0.4`改为`file:D:/Projects/dsh-workbase/dsh-workbase-1.0.4-7fff3360.tgz`，安装后7文件与包逐字节一致；宿主进程`DeepSeekRuntime.exe`（pid 46264，监听`127.0.0.1:32946`）仍运行安装前的代码，重启后生效。registry的1.0.4是较早提交构建（devDeps `0.2.2-rc.1`、无`THIRD_PARTY_NOTICES.md`），与本地产物内容不同，不能按版本号判断是否已装新代码。 |
+| 最近安装尝试 | 本轮以`file:D:\Projects\dsh-workbase\dsh-workbase-1.0.4-2238b2cd.tgz`重装到profile `desktop`（resolved 110／reused 4／downloaded 0／added 1，Done in 729ms，退出码1来自本机`osuply-loadtime.cmd`包装器、pnpm已成功），`dsh plugin list` 仍报 `dsh-workbase@1.0.4`，安装目录 `dist/index.js`（`6625f40a…fc0f`）与 `lib/client.js`（`8748f4c6…d292`）摘要与本机构建一致；宿主重启后才加载新代码。 |
+| 当前宿主 | profile `desktop`的`dsh-workbase`依赖现为`file:D:\Projects\dsh-workbase\dsh-workbase-1.0.4-2238b2cd.tgz`；宿主进程未重启时仍运行安装前代码。registry的1.0.4是较早提交构建（devDeps `0.2.2-rc.1`、无`THIRD_PARTY_NOTICES.md`），与本地产物内容不同，不能按版本号判断是否已装新代码。 |
 | 安装恢复证据 | 日志`/tmp/dsh-migration-native-install.log`，安装前备份`/tmp/dsh-icon-install.g7w0of/before-install.tgz`；权限600保存原插件与profile manifest。此前备份和失败日志保留。 |
-| 宿主与发布 | DSH SDK与包兼容声明为`0.2.2-rc.5`，Cordis `~4.1.0`、Node22+。此前host:check为0阻断／1缺基线待复核、退出2，本轮未重跑或接受基线。仓库Git元数据完整（分支`main`、HEAD `dfe8b08`），工作区198项未提交变更（80改／118新增）；本轮未提交、推送或发布。 |
+| 宿主与发布 | DSH SDK与包兼容声明为`0.2.2-rc.5`，Cordis `~4.1.0`、Node22+。此前host:check为0阻断／1缺基线待复核、退出2，本轮未重跑或接受基线。仓库Git元数据完整（分支`main`，此前HEAD `50b6cb4`）；本轮37个文件的改动已按主题拆为7个提交（fake-ip放行、诊断判据、概览页头、快捷会话、待办对齐、迁移记录、语音标签与状态刷新），未推送或发布。 |
 
 以上是功能修改和安装尝试的既有证据。后续维护不得把旧包、旧安装或历史测试数继续追加为“当前状态”；构建标识和安装标识分别更新，过程细节只保留在下半日志。
 
@@ -45,7 +45,7 @@
 | 项目详情右栏 | `entry.tsx`、`ProjectSidebarController/ProjectSidebarHeader`；有可用会话才显示入口，只复用上次成功目标或最近候选，点击后才持有引用及展开。失效目标撤下，其他候选等待再次点击；服务契约不匹配不注册入口。 |
 | 待办与Agent | CRUD、快速／完整创建、添加与搜索共用输入、优先级筛选排序、描述Markdown、文件／旧图片兼容、会话草稿交接及5秒删除撤销。Agent工具保留当前会话／项目身份、归档及全局管理权限限制；RSS工具只读且不扩大待办授权。 |
 | 搜索与诊断 | 搜索项目名称／目录、会话标题、待办标题／描述；正文仅接官方实验套件。诊断目录、列表缓存、孤儿子代理和空会话，进入面板自动重查；确认后分批修复／删除，记录成功、跳过及失败。 |
-| 首页与概览 | 默认运行中／待办／近期会话／技能／订阅五卡，诊断及连接器保留在完整七项排序中，最多显示六卡；拖拽及Alt＋方向键排序。概览顺序为运行中／近期会话／待办／诊断／技能／订阅／连接器。运行中与待办右侧列表分别显示“运行中会话”与“待办列表”；RSS标题下补充共用用途说明。 |
+| 首页与概览 | 默认运行中／待办／近期会话／技能／订阅五卡，诊断及连接器保留在完整七项排序中，最多显示六卡；拖拽及Alt＋方向键排序。概览顺序为运行中／近期会话／待办／诊断／技能／订阅／连接器。运行中、近期会话与待办共用「标题＋用途说明＋分隔线」页头，右侧列表不再重复标题；RSS标题下补充共用用途说明。 |
 | 概览与弹窗生命周期 | `WorkbaseOverview`持有共享外层；技能／连接器／RSS及规则二级页以`ModalFlow`替换内容，保留列表、滚动、焦点与busy状态。面板操作统一根节点Toast，持久化成功但刷新失败明确区分。 |
 | 扩展配置入口 | 七分类顺序为通用／外观／项目／私人／扩展／其他组件／备份；技能／连接器／订阅默认值统一保存。管理页设置图标直达对应子页，Settings持有扩展子页状态，跨一级分类保留草稿；概览外层保留管理内容并恢复滚动与焦点。历史停用目录仅在快照legacyStagedCount大于0时显示于技能来源。 |
 | 技能 | `server/skills*`及`SkillsPanel`；来源发现、名称校验、创建／编辑、Markdown／JSON／目录／公开GitHub多文件导入、市场详情及分页安装、作用域策略、官方registry生效检查。受限同宿主安装由`skills-sandbox`通过官方confine执行目录事务，保留二进制、回滚与恢复；状态写后异常读回确认。关闭来源隐藏其技能，项目分组只显示实际`.agents/skills`记录。 |
@@ -162,6 +162,36 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · 迁移记录补源项目状态快照与实体清单视图
+
+**背景**：迁移记录此前只有数量对照与确认／撤销动作，回看批次时看不出源项目当时有哪些会话与待办、各自什么状态；源项目确认迁移后登记可能被移除，记录是唯一留存却缺源侧上下文。确认与撤销失败只在面板内联提示。本轮按约定先补日志条目再提交。
+
+**决策**：`src/shared/migration.ts` 的 `migrationRecordSchema` 为每条实体增加可选快照字段 title／archived／running／done，并新增 `migrationCountsSchema`（active/archived/pending/done）与可选 `sourceState`（available/archived/agentCanChangeStatus/counts）；旧记录缺省字段保持只读兼容。`src/client/MigrationPanel.tsx` 新增源状态视图与实体清单视图，在记录详情展示迁移时点的源项目可用状态、数量对照与逐条实体标题及标记；确认与撤销改走根节点 Toast（`Workbase.tsx` 传 notify）。`src/server/project-rules.ts` 对 realpath ENOENT 返回 `directory-unavailable`（「项目目录不可用，无法保存规则」），替代裸错误。原型 `.wb-migration-content` 由 max-width:860px 改 min-width:0 放宽详情列宽。
+
+**证据**：`node node_modules/typescript/bin/tsc --noEmit` 通过；`npm test` 755 项中 730 通过／18 失败／7 跳过，18 项失败全部为环境限制（`EPERM: symlink`、Git 初始化、`spawn sqlite3/node.exe ENOENT`），其中 backup 与 market 两条断言在 HEAD 基线 worktree 复跑同样失败，与本轮无关；`test/migration-execution.test.ts`／`test/migration-render.test.ts`／`test/project-rules.test.ts` 通过并覆盖快照与目录不可用文案；`node build.mjs` 连续两次幂等：`lib/client.js` 1767215 字节 SHA-256 `5302746136d1548d1fb426b18904430dd93cb5921b00092854f45ec53769f2b6`、`dist/index.js` 2715640 字节 SHA-256 `5375ac0973140885dbc1c0142e0fdeb84330b3ef04bcdb1cd0df87bf1b8be548`；`node secret-scan.mjs` 0 命中。
+
+**遗留**：构建产物未重装到 profile `desktop`，宿主重启前界面仍跑旧代码；快照记录的是迁移时点状态，不随源项目后续变化更新。
+
+### 2026-11-22 · 空会话延迟到首次输入才创建，浏览首页不再产生空会话
+
+**背景**：用户追问两点——进入首页是否就创建空会话；快捷输入框选定项目就立即创建空会话是否不合理，应发送时再建。确认现状：`ComposerMenu` 挂载 effect（`src/client/NativeComposer.tsx` 398 行起）立即调 `prepareNativeComposer` 按 `[workspaceId, preset]` 键建／复用空会话并绑定官方输入壳（斜杠菜单、@引用、附件上传、草稿交接、模型选择都挂在会话上）。完全「发送时才创建」需要放弃官方输入壳退回自制输入框，代价大；与用户确认后取折中：首次输入／粘贴／附件／添加上下文时才激活创建。
+
+**决策**：在 `src/client/Composer.tsx` 引入「未激活」态：持久化 `memory.composer.nativeArmed`（`src/client/api.ts`），未激活时不渲染 `ComposerMenu`、不建会话；输入 onChange／paste／拖入文件／点「+」触发 `armNative` 置位激活，`pendingActivation` ref 携带本次本地文字经新透传参数 `activationDraft`（`ComposerMenuProps`，`src/client/api.ts`）传给 `prepareNativeComposer` 第 9 参，`!from` 分支改为 `requestDraftInitialization(binding, { prompt: activationDraft, whenDraftExists: 'replace' })`（附件保留，`whenDraftExists` 语义见 `dsh-client-ui-conversation` `contract/input.ts:244-252`）；拖入的文件在激活前暂存于 `stash` ref，`onReady` 后 flush。常规挂载（详情页右栏等）不传 `activationDraft`，保持原 `sameDraft`/`nativeDraft`/`keep` 语义。`src/client/launch.ts` `submitNativeMessage` 发送成功清 `nativeSessionId` 时同时 `nativeArmed: false`，回到未激活态。
+
+**证据**：`npm run typecheck` 通过；`npm test` 752 项中 727 通过／18 失败／7 跳过（18 项仍全部为符号链接／Git 环境限制），`test/native-composer.test.ts` 新增「延迟创建首次激活时以输入框文字替换宿主草稿；常规挂载仍保留官方草稿」（断言 seeds 为 `{prompt:'本地输入', whenDraftExists:'replace'}`／`{prompt:'本地输入', whenDraftExists:'keep'}`），`test/composer-files.test.ts` 新增「未激活时输入与拖入只置位 armed 并暂存文件，不触碰会话桥」，三个相关测试文件 41/41 通过；双构建幂等 exit 0，`lib/client.js` 1764886 字节 SHA-256 `8748f4c672243a9562c18734a95746dbd944551beb0561ec1ce1fde70654d292`，`dist/index.js` 2713370 字节 SHA-256 `6625f40a…fc0f` 不变。需求句已写入 `docs/PRD.md` 147 行，「当前状态」已同步。
+
+**遗留**：构建产物未重装到 profile `desktop`，宿主重启前仍跑旧代码；真实宿主交互未验证（预期行为：激活瞬间模型区短暂空白、发送按钮在模型就绪前禁用）；升级用户记忆若残留旧 `nativeSessionId`，首次激活会复用该会话并以输入框文字替换其旧稿。
+
+### 2026-11-22 · 快捷会话失效身份自动换新，不再报「不属于当前项目」
+
+**背景**：用户截图报首页快捷会话出现「原生会话不属于当前项目」与「重试」按钮。取证确认根因链：诊断「删除空会话」（`src/server/diagnostics.ts` 经 `session-maintenance` 走 `maintenance.deleteWithinQueue(sessionId,{coldOnly:true,evict:...})`）会删掉首页预创建并存入页面记忆（`memory.composer.nativeSessionId`／`nativeHandoffs`，key=`JSON.stringify([workspaceId,preset])`）的空原生会话；再进首页时 `prepareNativeComposer` 复用旧 id，服务端 `checkNativeSession`（`src/server/service.ts:1231-1248`）因 `workspace.sessionIds` 不含该 id 抛 `WorkbaseError('forbidden','原生会话不属于当前项目')`（service.ts:1242）；客户端 `staleSessionError` 正则只匹配 unknown session／会话不存在／会话已被删除／no such session，不含这条消息，换新会话兜底不触发，「重试」仍用同一失效 id，永远失败。
+
+**决策**：只动客户端恢复路径，不动服务端鉴权（会话必须属于当前项目的鉴权语义本身正确）。两处：①`src/client/NativeComposer.tsx` 的 `staleSessionError` 正则扩为 `/unknown session|会话不存在|会话已被删除|no such session|不属于当前项目/i`；②`prepareNativeComposer` 创建块加 try/catch——`access.create`／`ctx.sessions.create` 抛错且 `previous` 非空且命中 `staleSessionError` 时，清掉 `pending[key]`、`saved.creationRequests[requestKey]` 与 `nativeSessionId`/`nativeWorkspaceId` 并 `memory.save()`，随后不带 previous 重建（access 路径用新的 `crypto.randomUUID()` requestId）；未知错误仍保留原身份，维持「未知网络错误不换身份重建」的既有语义。
+
+**证据**：`npm run typecheck` 通过；`npm test` 750 项中 725 通过／18 失败／7 跳过，18 项失败全部为 `EPERM: symlink` 或 Git 初始化类环境限制（改动前同样失败，与本次无关），新增测试「记忆里的会话被清理（如诊断删除空会话）后换新会话恢复，不再报不属于当前项目」通过（断言 `access.create` 的 previous 调用序列 `['a','']`、memory 状态恢复、`creationRequests` 清空，在 `test/native-composer.test.ts`）；`npm run build` exit 0，`lib/client.js` 1764085 字节 SHA-256 `2f9c43f1e8a4f3babdabea7c4ad871c6272bd70d26911b5cc1d8989e9f663444`，`dist/index.js` 2713370 字节 SHA-256 `6625f40a7c5f3c0ef7b36d73fc47fce60e00dc7191bc30ccafb09f03664afc0f`（与上一轮一致，服务端无改动）。
+
+**遗留**：构建产物未重新打包安装到 profile `desktop`，宿主重启前界面仍跑旧代码；需按既有流程 `npm pack`、改摘要名重装后重启验证快捷会话恢复路径。git 工作区 24 个文件未提交（本轮新增改动为 `src/client/NativeComposer.tsx` 与 `test/native-composer.test.ts`）。
+
 ### 2026-11-22 · 诊断判据修正：缓存缺失不再是异常，空会话按官方冷读折叠复核
 
 **背景**：用户复测仍报「删除后还是会显示重建缓存，无法删除」，9 个会话在诊断里反复出现「列表缓存异常」，重建与删除都消不掉。取证（官方 `dsh-session-projection-cache` 0.2.2-rc.5 源码 + 本机 `~/.dsh` 磁盘核查）确认根因链：①工作台把「无缓存行」当异常，而官方缓存是可丢失、可重建的派生加速数据，缺失走正常冷读——这成了永久修不掉的假异常；②宿主冷列表（`api-session-controller` 的 `summarizeCold`）在缓存缺失时保守返回 `blank=false`，工作台空会话检查因此跳过这些会话，它们又不属于任何工作区、侧栏不可见，唯一入口只剩「重建缓存」，形成死循环。9 个会话日志全部无 `turn/start`、无 `user/message`（只有 permission/preset、sandbox/mode、approval/policy、command/run×123、command/done×123、session/end-seed），按官方投影语义全部是空会话。
@@ -171,6 +201,16 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 **证据**：`src/server/diagnostics.ts` 缓存检查不再要求 sessions/waterfall；`test/diagnostics.test.ts` 32/32 通过——夹具 `coldSnapshot` 改为语义 mock（按 events 算 blank/lastPromptAt 并回写 snapshots）、`persistence.open` 改为功能性；重写「诊断只读头部与缓存」（cache 期望改 []）、「修复只使用内部维护接口」（删缓存重建段）、「服务快照合并」（补 controller 断言 empty issue 归属）、「修复RPC仅所有者」（改 empty kind）；新增 3 例：折叠复核+回写+身份一致+二次不读日志、turn/start 后不判空+缓存证明非空不读日志、折叠候选可删除。`npm run typecheck` 通过；`npm test` 749 项中 724 通过／18 失败（全部 `EPERM: symlink`，与本轮无关）／7 跳过；`test/diagnostic-panel.test.ts` 说明文案断言同步更新后 42/42。两次构建摘要一致：`dist/index.js` 2713370 字节 SHA-256 `6625f40a…fc0f`，`lib/client.js` 1763793 字节 SHA-256 `30389be7…ed8b`；`node secret-scan.mjs` 0 命中；包 `dsh-workbase-1.0.4-0cfafbf8.tgz`（1009187 字节）已装 profile `desktop`（added 1，Done in 713ms）。
 
 **遗留**：宿主未重启，界面仍跑旧代码；重启后 9 个会话应显示为「空会话」而非「列表缓存异常」，可直接单删或一键删除，预期首次检测会为无缓存行的会话做一次性日志折叠（含一个 13MB 解码日志，秒级）。若删除仍有失败项，需按 failure 明细继续排查（本机无法旁路 GUI 的 401 认证做在线验证）。24 个文件未提交。
+
+### 2026-11-22 · 概览运行中与待办补用途说明并去掉列表重复标题
+
+**背景**：用户截图指出统计卡的运行中、待办弹窗内容缺少近期会话那样的标题与说明，要求与近期会话一致。上一轮（同日「补齐概览列表标题与订阅说明」）按用户要求给两页右侧列表补了「运行中会话／待办列表」小标题，本次方向相反：页头补齐后该小标题与页标题重复。
+
+**决策**：三页签共用同一页头——`stats-page-heading` 标题加 `stats-page-description` 一行说明（运行中「当前正在运行的会话。」、近期会话沿用「最近 N 天更新的未归档会话。」、待办「尚未完成的待办，含手动创建与 Agent 创建。」），说明下沿用原型既有的 `padding-bottom:16px` 与 `1px` 分隔线，不新增字号、间距或新样式规则；删除 `Home.tsx` 传给 `StatsProjectPanel` 的 `resultHeader`，右侧列表不再重复标题。`StatsProjectPanel` 的 `resultHeader` 属性保留——诊断分类模式（`DiagnosticsPanel.tsx:204`）仍在使用。视觉真源 `docs/ui/ui-directions.html` 的 statsPanel `labels` 同步补两句说明并删除 `resultHeading` 拼装，避免真源与实现漂移；`docs/UI-DESIGN.md:7` 与本文「首页与概览」行改为新规则；英文词典补两条译文。
+
+**证据**：`node node_modules/typescript/bin/tsc --noEmit` 通过；`node --import tsx --test "test/*.test.ts"` 746项中721通过／18失败／7跳过，18项失败全部为环境限制（11项 `EPERM: operation not permitted, symlink`、Git 缺失的初始化用例、`spawn node.exe ENOENT`），改动前同样失败，与本次无关；新增用例「概览运行中、近期会话与待办共用标题加说明页头，右侧列表不重复标题」在 `test/ui-interaction.test.ts` 覆盖三页标题文本、说明文本、单一 `stats-page-heading` 以及「运行中会话／待办列表」不再出现。`node build.mjs` 连续两次输出客户端 1762884 字符，`lib/client.js` SHA-256 均为 `8F1AD50BC0E4DD6CB3A140741160233F8B47E3E457FC0383A9D053304E668432`；`node secret-scan.mjs` 无发现。构建产物中的英文译文已确认进入 `lib/client.js`（`Sessions that are currently running`、`Open tasks, whether created manually or by an agent`）。本沙箱下 `npm run check` 不可用：npm.ps1 与 Node 测试 runner 依赖管道 stdio，需要完整访问权限才能执行。
+
+**遗留**：未在真实宿主或 Playwright 中截图复核三页页头的实际间距与分隔线，视觉验收仍需在实际抽屉宽度下确认；原型待办页页头带「添加待办」按钮，正式组件没有该按钮，属既有差异，本次未改。另记一条踩坑：`docs/ui/ui-directions.html` 的 `.gitattributes` 是 `* -text`、仓库内存 LF，用 Python `write_text` 改该文件会按平台默认把全文转成 CRLF，产生「整文件重写」假 diff（本次曾出现 14891 行、`lib/client.js` 涨到 1766374 字符）；改写必须显式保留 `\n`。
 
 ### 2026-11-22 · 重建缓存先驱逐再重建、缓存判据改看行本身、覆盖块必须带!important
 

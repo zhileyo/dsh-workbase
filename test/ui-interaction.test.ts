@@ -141,6 +141,33 @@ test('迁移记录直接撤销，核验批次回执后刷新源项目，未知�
   }
 });
 
+test('迁移撤销与确认失败改走 Toast 提示，未提供 notify 时保留内联告警', async () => {
+  const { project } = fixture();
+  const endpoint = { projectId: project.projectId, workspaceId: project.workspaceId, title: project.title, path: project.path };
+  const record = { id: 'batch', kind: 'merge', status: 'completed', source: endpoint,
+    target: { ...endpoint, projectId: 'target' }, completedAt: 1, undoUntil: Date.now() + 1000,
+    revertedAt: null, entities: [], canUndo: true, expired: false };
+  const notices: { message: string; tone: string }[] = [];
+  const api = { call(command: any) {
+    if (command.op === 'migration-records') return Promise.resolve([record]);
+    if (command.op === 'migration-undo') return Promise.reject(new Error('源项目目录已不存在，请恢复原目录后再撤销迁移'));
+    return Promise.resolve(null);
+  } };
+  const h = await harness('src/client/MigrationPanel.tsx', 'MigrationPanel', {
+    api, project, projects: [project], records: true, onClose() {},
+    notify(message: string, tone: string) { notices.push({ message, tone }); },
+    async onMigrated() {},
+  }, { effects: true });
+  h.render(); h.commitLayout(); await flush();
+  h.render().find(n => n.type === 'button' && n.props.className === 'stats-item')!.props.onClick();
+  const button = () => h.render().find(n => n.type === 'button' && n.props.children === '撤销迁移')!;
+  button().props.onClick(); await flush();
+  assert.deepEqual(notices, [{ message: '源项目目录已不存在，请恢复原目录后再撤销迁移', tone: 'info' }]);
+  assert.equal(h.render().some(n => n.props.role === 'alert'), false, '提供 notify 后失败不写回内联告警');
+  assert.equal(button().props.disabled, true);
+  h.unmount();
+});
+
 test('RSS摘要请求跟随统计天数变化，清除旧数字并丢弃迟到结果', async () => {
   const requests: { input: any; signal: AbortSignal; resolve(value: any): void }[] = [];
   const api = { call(command: any, signal: AbortSignal) {
@@ -1696,6 +1723,30 @@ test('待办概览详情挂起外层，返回保留列表，诊断跳转关闭�
   h.render().find(n => n.props?.openProject)!.props.openProject('p');
   assert.deepEqual(opened, ['p']);
   assert.equal(closed, 1);
+});
+
+test('概览运行中、近期会话与待办共用标题加说明页头，右侧列表不重复标题', async () => {
+  const { snapshot } = fixture();
+  const diagnosis = { checkedAt: 0, checks: [], issues: [], repair: { cache: false, orphan: false } };
+  const h = await harness('src/client/Home.tsx', 'StatsOverview', {
+    stat: 'running', snapshot, api: {}, busy: false, refresh: async () => {}, navigate() {},
+    diagnosis, onReport() {}, onClose() {},
+  });
+  const heading = () => h.render().find(n => n.props?.className === 'stats-page-heading')!;
+  const description = () => h.render().find(n => String(n.props?.className ?? '').includes('stats-page-description'))!;
+  const expected = {
+    running: ['运行中', /^当前正在运行的会话。$/],
+    recent: ['近期会话', /^最近 \d+ 天更新的未归档会话。$/],
+    pending: ['项目待办', /^尚未完成的待办，含手动创建与 Agent 创建。$/],
+  } as const;
+  for (const [stat, [title, text]] of Object.entries(expected)) {
+    h.props.stat = stat; h.render();
+    assert.equal(heading().props.children, title, stat);
+    assert.match(description().props.children, text, stat);
+    assert.equal(h.render().filter(n => n.props?.className === 'stats-page-heading').length, 1, stat);
+    for (const label of ['运行中会话', '待办列表'])
+      assert.equal(h.render().some(n => n.props?.children === label), false, `${stat}: ${label}`);
+  }
 });
 
 test('管理快照跨卸载复用，同模块不同连接及同连接不同模块保持隔离', async () => {

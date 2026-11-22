@@ -269,13 +269,13 @@ export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, di
     <Modal title="工作台概览" drawer className="stats-drawer" suspended={!!statTodo} onClose={onClose} embedded={embedded} onModalState={onModalState}><div ref={root} className="settings-layout">{navigation}
       <div className="settings-content"><section className="settings-panel">{stat !== 'diagnostic' && <>
         <h3 className="stats-page-heading">{stat === 'running' ? '运行中' : stat === 'recent' ? '近期会话' : '项目待办'}</h3>
-        {stat === 'recent' && <p className="dialog-description stats-page-description">{`最近 ${home.statDays} 天更新的未归档会话。`}</p>}
+        <p className="dialog-description stats-page-description">{stat === 'running' ? '当前正在运行的会话。'
+          : stat === 'recent' ? `最近 ${home.statDays} 天更新的未归档会话。` : '尚未完成的待办，含手动创建与 Agent 创建。'}</p>
         </>}
         {stat === 'diagnostic' ? <DiagnosticsPanel report={diagnosis} api={api} busy={busy}
           onReport={onReport}
           openProject={id => { navigate(id); onClose(); }}/> : <StatsProjectPanel key={stat}
           empty="暂无符合条件的记录"
-          resultHeader={stat === 'recent' ? undefined : () => <h3 className="stats-page-heading">{stat === 'running' ? '运行中会话' : '待办列表'}</h3>}
           entries={(stat === 'running' ? running : stat === 'recent' ? active : []).map(s => ({
             id: s.sessionId, title: s.title, detail: dateText(s.updatedAt), project: s.project,
             open: () => api.openSession(s.sessionId),
