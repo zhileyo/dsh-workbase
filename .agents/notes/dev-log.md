@@ -162,6 +162,16 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · 发布 job 缺 setup-uv 导致 npm test 失败，与门禁 job 对齐
+
+**背景**：lockfile 修复推送后门禁 job 通过，发布 job（semantic-release 的 npm prepare 触发 `npm test && npm run typecheck && npm run build`）在 `test/build-compliance.test.ts` 的 WebP 编码器测试失败。该测试（4c5ea32 新增）探测 `cwebp→magick→python(uv+Pillow)`，发布 job 只装了 node，没有 `astral-sh/setup-uv`；1.0.4 时代该测试不存在，故此前未暴露。
+
+**决策**：发布 job 补 `astral-sh/setup-uv@v6`，与门禁 job 环境对齐；不放宽测试断言——门禁 job 同一套测试已验证 uv 存在时可通过。
+
+**证据**：gh run 45026758185 门禁 job 全绿、发布 job `not ok 29 - 截图模块生成真正的 WebP`；release.yml 门禁 job 第 36 行有 setup-uv、发布 job 原先没有。
+
+**遗留**：无。
+
 ### 2026-11-22 · lockfile 镜像直链导致 CI npm ci 失败，改写回官方源
 
 **背景**：拆分提交推送后 GitHub Actions 门禁失败：npm 11.6+ 默认禁止 fetch remote 类型包，`package-lock.json` 里 linkedom 及其传递依赖共 21 条 `resolved` 指向 `registry.npmmirror.com` 直链（4c5ea32 引入 linkedom 时在镜像源环境下生成），CI 报 `EALLOWREMOTE: Refusing to fetch "uhyphen@https://registry.npmmirror.com/…"`。

@@ -60,6 +60,9 @@ jobs:
       - name: 升级 npm（可信发布要求 11.5.1 以上）
         run: npm install --global npm@latest
 
+      # 与 check job 一致：npm test 里的 WebP 编码器测试依赖 uv 跑 Pillow 回退
+      - uses: astral-sh/setup-uv@v6
+
       - run: npm ci
       - run: npm run build
 
