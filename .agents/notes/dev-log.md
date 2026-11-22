@@ -6,7 +6,7 @@
 
 ### 版本、构建与安装
 
-当前源码与本地包为 `1.0.4`。最新源码构建是2026-11-22的整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销，并加入市场／RSS 地址策略、待办详情两列对齐、失效会话恢复、诊断清理绑定核验与冷会话删除放行，以及诊断判据修正（缓存缺失不再报异常、空会话按官方冷读折叠复核）、快捷会话失效身份自动换新与延迟创建（首次输入才建空会话），并补迁移记录源状态快照与实体清单视图、语音播报服务标签改名。**本机 `npm run typecheck`、`npm run build` 通过，`npm test` 755项中730通过、7跳过，18项失败全部为环境限制（符号链接权限、Git初始化、子进程ENOENT，另有backup／market两条在HEAD基线同样失败的断言）；两次构建两端摘要一致；7文件安装包扫描0命中，已装到 profile `desktop`，宿主重启后生效。**
+当前源码与本地包为 `1.1.0`。最新源码构建是2026-11-22的整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销，并加入市场／RSS 地址策略、待办详情两列对齐、失效会话恢复、诊断清理绑定核验与冷会话删除放行，以及诊断判据修正（缓存缺失不再报异常、空会话按官方冷读折叠复核）、快捷会话失效身份自动换新与延迟创建（首次输入才建空会话），并补迁移记录源状态快照与实体清单视图、语音播报服务标签改名。**本机 `npm run typecheck`、`npm run build` 通过，`npm test` 755项中730通过、7跳过，18项失败全部为环境限制（符号链接权限、Git初始化、子进程ENOENT，另有backup／market两条在HEAD基线同样失败的断言）；两次构建两端摘要一致；7文件安装包扫描0命中，已装到 profile `desktop`，宿主重启后生效。**
 
 | 项目 | 最近一次已记录状态 |
 | --- | --- |
@@ -154,7 +154,7 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ### 安装与发布
 
-当前版本 `1.0.4`；registry包完整性校验入口为`dsh-workbase-1.0.4.tgz`（完整性校验用 `npm view dsh-workbase@1.0.4 dist.integrity`）。registry integrity仅校验registry包；本地包使用实际产出路径及SHA-256，最新构建与已安装构建分别见首表，同版本号不证明内容一致。
+当前版本 `1.1.0`；registry包完整性校验入口为`dsh-workbase-1.1.0.tgz`（完整性校验用 `npm view dsh-workbase@1.1.0 dist.integrity`）。registry integrity仅校验registry包；本地包使用实际产出路径及SHA-256，最新构建与已安装构建分别见首表，同版本号不证明内容一致。
 
 版本由semantic-release按提交type推断，GitHub Actions发布、CNB定时镜像及凭据配置统一见[AGENTS发版规则](../../AGENTS.md#发版)。本地pack前必须build，pack本身不触发构建；7项发布文件以package白名单及npm自动包含项核对，源码／设计／过程与验收证据不入包。发布前按当前文件重新检查，不沿用旧扫描。
 
