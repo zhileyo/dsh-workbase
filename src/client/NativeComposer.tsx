@@ -218,6 +218,12 @@ type Shell = SessionInput & {
 interface ComposerImageLimits {
   mediaTypes: readonly string[]; maxImagesPerMessage: number; maxImageBytes: number; maxMessageImageBytes: number;
 }
+export interface NativeComposerAccess {
+  create(workspaceId: string, preset: string, previous: string, signal: AbortSignal, requestId: string): Promise<string>;
+  validate(workspaceId: string, sessionId: string, signal: AbortSignal): Promise<string>;
+  release(token: string): Promise<void>;
+}
+const nativeCreations = new WeakMap<UiMemory, Map<string, Promise<string>>>();
 /** 使用当前会话的宿主限制；批次校验通过后才交给官方分配附件。 */
 export function composerFileRejection(files: readonly File[], attachments: readonly { kind: string; file: File }[], limits?: ComposerImageLimits) {
   if (!limits) return null;
@@ -230,17 +236,35 @@ export function composerFileRejection(files: readonly File[], attachments: reado
   return null;
 }
 export async function prepareNativeComposer(ctx: Context, memory: UiMemory, workspaceId: string, signal: AbortSignal, preset = '',
-  from?: SessionReference, commit?: (reference: SessionReference) => void): Promise<SessionReference> {
+  from?: SessionReference, commit?: (reference: SessionReference) => void, access?: NativeComposerAccess): Promise<SessionReference> {
   signal.throwIfAborted();
   const saved = memory.composer;
-  const previous = saved.nativeWorkspaceId === workspaceId && saved.nativePreset === preset ? saved.nativeSessionId : '';
-  const sessionId = await ctx.sessions.create({
-    workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}),
-    ...(previous ? { sessionId: previous as SessionId } : {}),
-  });
+  const pending = (saved as typeof saved & { nativeHandoffs?: Record<string, string> }).nativeHandoffs ??= {};
+  const key = JSON.stringify([workspaceId, preset]);
+  const previous = pending[key] ?? (saved.nativeWorkspaceId === workspaceId && saved.nativePreset === preset ? saved.nativeSessionId : '');
+  const creations = nativeCreations.get(memory) ?? new Map<string, Promise<string>>();
+  nativeCreations.set(memory, creations);
+  const creation = creations.get(key) ?? (async () => {
+    const requestKey = `native:${key}`;
+    // 请求身份先保存；未知网络错误不换身份重建。
+    const requestId = access ? saved.creationRequests[requestKey] ??= crypto.randomUUID() : '';
+    if (access) memory.save();
+    const id = access ? await access.create(workspaceId, preset, previous, signal, requestId) : await ctx.sessions.create({
+      workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}),
+      ...(previous ? { sessionId: previous as SessionId } : {}),
+    });
+    // 创建回执立即持久化；加载、交接或取消失败不能丢失已创建的身份。
+    pending[key] = id;
+    memory.save();
+    return id;
+  })();
+  creations.set(key, creation);
+  let sessionId: string;
+  try { sessionId = await creation; }
+  finally { if (creations.get(key) === creation) creations.delete(key); }
   signal.throwIfAborted();
   // 加载请求可取消；成功后的引用独立持有，不能随旧 effect 的 abort 释放附件。
-  const reference = ctx.sessions.retain(sessionId, { source: 'workbaseComposer' });
+  const reference = ctx.sessions.retain(sessionId as SessionId, { source: 'workbaseComposer' });
   let released = false;
   const release = () => { if (!released) { released = true; reference.release(); } };
   signal.addEventListener('abort', release, { once: true });
@@ -272,6 +296,8 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
       });
     }
     Object.assign(saved, { nativeWorkspaceId: workspaceId, nativeSessionId: sessionId, nativePreset: preset });
+    delete pending[key];
+    delete saved.creationRequests[`native:${key}`];
     memory.save();
     signal.removeEventListener('abort', release);
     // 与交接同步提交所有权，避免 promise 返回至下一微任务前切换造成附件丢失。
@@ -283,9 +309,9 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
 
 type MenuRender = PropsRenderSlots<'workbase.command-menu' | 'workbase.model-selector' | 'workbase.input-activity'>;
 /** 只挂菜单及输入服务桥接，不渲染官方输入栏或会话布局。 */
-export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, activityTarget, activityLocked,
+export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, activityTarget, activityLocked, access,
   onActivityChange, onModelState, onReady, onState, SessionProvider, renderSlot }:
-  ComposerMenuProps & MenuRender & { ctx: Context; memory: UiMemory }) {
+  ComposerMenuProps & MenuRender & { ctx: Context; memory: UiMemory; access: NativeComposerAccess }) {
   useWorkbaseLocale();
   const [reference, setReference] = useState<SessionReference | null>(null);
   const [error, setError] = useState('');
@@ -341,7 +367,7 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
       const previous = active.current;
       active.current = next;
       previous?.release();
-    }).then(next => {
+    }, access).then(next => {
       if (abort.signal.aborted) return;
       const shell = ctx.conversation.input.for(next.binding.ctx) as Shell;
       const service = ctx.get('inputTriggers') as { sessionOf(ctx: Context): {
@@ -350,6 +376,7 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
       } } | undefined;
       if (!service) throw new Error('Harness 添加菜单服务不可用');
       const trigger = service.sessionOf(next.binding.ctx);
+      let submitting = false;
       const fileActions = () => {
         const entry = ctx.slots.entriesOfSlot?.('conversation.composer.bar')[0];
         return entry ? (entry.inject as unknown as (id: SessionId) => ComposerBarInjected)(next.sessionId) : undefined;
@@ -399,31 +426,76 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
           const mapped = ({ ArrowUp: 'up', ArrowDown: 'down', Enter: 'enter', Escape: 'escape', Tab: 'tab', ShiftTab: 'tabBack' } as Record<string, ArbitrateKey>)[key];
           return !!mapped && trigger.arbitrate(mapped, composing) !== 'pass';
         },
-        submit() {
-          const conversation = ctx.conversation as ConversationController;
-          const uploads = conversation.fileUploads.getSnapshot();
-          for (const id of shell.state.getSnapshot().attachmentIds) {
-            const upload = uploads[id];
-            if (upload?.status === 'error') return Promise.reject(new Error(upload.message));
-            if (upload?.status === 'uploading') return Promise.reject(new Error('附件仍在上传，请稍后发送'));
+        async submit() {
+          abort.signal.throwIfAborted();
+          if (submitting) throw new Error('正在提交，请稍后添加文件');
+          let token: string | undefined;
+          // 终态监听独立于组件生命周期，导航取消后也需要保持宿主会话服务存活。
+          const submissionReference = ctx.sessions.retain(next.sessionId, { source: 'workbaseComposer' });
+          submitting = true;
+          const release = async () => {
+            try { if (token) await access.release(token); }
+            finally { submissionReference.release(); submitting = false; }
+          };
+          try {
+            token = await access.validate(workspaceId, next.sessionId, abort.signal);
+            abort.signal.throwIfAborted();
+            const conversation = ctx.conversation as ConversationController;
+            const uploads = conversation.fileUploads.getSnapshot();
+            for (const id of shell.state.getSnapshot().attachmentIds) {
+              const upload = uploads[id];
+              if (upload?.status === 'error') throw new Error(upload.message);
+              if (upload?.status === 'uploading') throw new Error('附件仍在上传，请稍后发送');
+            }
+          } catch (error) {
+            await release();
+            throw error;
           }
           return new Promise<boolean>((resolve, reject) => {
-            let started = false, done = false;
+            let started = false, settled = false, finished = false;
+            let stop = () => {};
+            const settle = (error?: Error, accepted = false) => {
+              if (settled) return; settled = true;
+              if (error) reject(error); else resolve(accepted);
+            };
             const finish = (error?: Error) => {
-              if (done) return; done = true; stop(); abort.signal.removeEventListener('abort', cancelled);
-              if (error) reject(error); else resolve(!next.binding.session.getSnapshot().blank);
+              if (finished) return; finished = true;
+              let accepted = false;
+              if (!error && !settled) {
+                try { accepted = !submissionReference.binding.session.getSnapshot().blank; }
+                catch (e) { error = e instanceof Error ? e : new Error('提交失败'); }
+              }
+              stop(); abort.signal.removeEventListener('abort', cancelled);
+              void release().then(() => settle(error, accepted), e => settle(e instanceof Error ? e : new Error('提交失败')));
             };
             const check = () => {
-              const state = shell.state.getSnapshot();
-              if (!['plain', 'claimed'].includes(state.phase)) started = true;
-              else if (started) finish(state.draft.trim() || state.attachmentIds.length
-                ? new Error(shell.notices.getSnapshot()?.text ?? '提交未完成，请检查附件或重试') : undefined);
+              try {
+                const state = shell.state.getSnapshot();
+                if (!['plain', 'claimed'].includes(state.phase)) started = true;
+                else if (started) finish(state.draft.trim() || state.attachmentIds.length
+                  ? new Error(shell.notices.getSnapshot()?.text ?? '提交未完成，请检查附件或重试') : undefined);
+              } catch (e) {
+                // 状态读取失败也属于未知结果，保留保护和终态监听。
+                started = true;
+                settle(e instanceof Error ? e : new Error('提交失败'));
+              }
             };
-            const cancelled = () => finish(new Error('输入会话已切换，草稿仍保留'));
-            const stop = shell.state.subscribe(check);
-            abort.signal.addEventListener('abort', cancelled, { once: true });
-            try { shell.submit('queue', 'click'); check(); if (!started && !done) finish(new Error('宿主未接受提交')); }
-            catch (e) { finish(e instanceof Error ? e : new Error('提交失败')); }
+            const cancelled = () => {
+              check();
+              const error = new Error('输入会话已切换，草稿仍保留');
+              if (!started) finish(error); else settle(error);
+            };
+            try {
+              stop = shell.state.subscribe(check);
+              abort.signal.addEventListener('abort', cancelled, { once: true });
+              abort.signal.throwIfAborted();
+              shell.submit('queue', 'click'); check();
+              if (!started && !finished) finish(new Error('宿主未接受提交'));
+            } catch (e) {
+              check();
+              const error = e instanceof Error ? e : new Error('提交失败');
+              if (!started) finish(error); else settle(error);
+            }
           });
         },
       };
@@ -432,7 +504,7 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
       if (!abort.signal.aborted) setError(e instanceof Error ? e.message : '添加菜单加载失败');
     });
     return () => { abort.abort(); disposers.forEach(dispose => dispose()); bridge.current = null; callbacks.current.onReady(null); };
-  }, [ctx, memory, workspaceId, preset, retry]);
+  }, [ctx, memory, workspaceId, preset, retry, access]);
   return <>
       <button ref={button} className="wb-icon field-settings" type="button" aria-label="添加上下文" aria-haspopup="menu" aria-expanded={menuOpen} title="添加上下文" disabled={disabled || !bridge.current} onClick={e => {
         const textarea = e.currentTarget.closest('.composer-shell')?.querySelector('textarea');

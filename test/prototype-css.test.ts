@@ -6,6 +6,18 @@ import { readFile } from 'node:fs/promises';
 // sync-ui.mjs 在生成时剪掉它们，这里守着剪枝结果，避免改原型后死样式又被打进包。
 const css = await readFile(new URL('../src/client/prototype.css', import.meta.url), 'utf8');
 
+test('项目右栏入口保持官方28px控件与15px镜像图标，展开后隐藏整个分隔组', () => {
+  assert.match(css, /\.wb-project-sidebar-control button\{[^}]*width:28px;min-width:28px;height:28px;min-height:28px;[^}]*font-size:12px;line-height:18px/);
+  assert.match(css, /\.wb-project-sidebar-control button svg\{width:15px;height:15px;stroke-width:1;transform:scaleX\(-1\)\}/);
+  assert.match(css, /\.wb-project-sidebar-separator\{width:1px;height:16px/);
+  assert.match(css, /\.wb-project-sidebar-control:not\(:has\(button\)\)\{display:none\}/);
+  assert.match(css, /\[data-state=ready\]:has\(\[data-sidebar-right-expand\]:disabled\)\{visibility:hidden;pointer-events:none\}/);
+});
+
+test('规则预览内官方代码块标题随正文滚动，不覆盖宿主其他预览', () => {
+  assert.match(css, /\.rules-md-preview \.md-code-block>:has\(>\[data-code-block-banner\]\)\{position:static;z-index:auto\}/);
+});
+
 test('生成的原型样式不含评审工具条与旧输入框预览的选择器', () => {
   assert.doesNotMatch(css, /:scope\.b(?![\w-])/);
   for (const dead of ['review', 'review-tools', 'review-label', 'review-note', 'design-intro', 'directions', 'chat-preview']) {
@@ -27,6 +39,17 @@ test('宽度断点全部转成容器查询，视口能力查询仍留在 @media'
   // pointer/hover 是视口能力，塞进 @container 会得到恒假条件，触屏窄屏的点按目标会静默失效。
   assert.match(css, /@media \(pointer:coarse\)\{@container workbase \(max-width:420px\)\{/);
   assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
+});
+
+test('原型弹窗容器与媒体宽度转换分开命名，不让抽屉提前触发外层面板断点', async () => {
+  const adapter = await readFile(new URL('../src/client/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /@container workbase-dialog \(max-width:650px\)\{:scope \.settings-layout/);
+  assert.match(css, /@container workbase \(max-width:650px\)\{\.overlay\.settings-overlay/);
+  assert.match(css, /:scope \.overlay\{container:workbase-dialog \/ inline-size\}/);
+  assert.match(adapter, /\.wb\{[^}]*container:workbase workbase-dialog\/inline-size/);
+  assert.match(adapter, /\.wb \.wb-drawer\{[^}]*container:workbase-dialog\/inline-size/);
+  assert.match(css, /\.integration-detail-head\{[^}]*height:72px;min-height:72px/);
+  assert.match(css, /@container workbase \(max-width:650px\)\{:scope \.integration-detail-head\{height:60px;min-height:60px/);
 });
 
 test('剪枝后规则块仍然配平，且保留原型注释与关键帧', () => {

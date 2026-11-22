@@ -62,7 +62,7 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
   return <div className="wb-backup-settings">
     <div className="settings-subpanel" role="tabpanel" id="wb-settings-backup-panel-backup" aria-labelledby="wb-settings-backup-tab-backup" hidden={tab !== 'backup'}>
     <label className="wb-setting-row setting-row"><div><strong>启动时自动备份</strong>
-      <small>保存后下次启动生效；每次宿主启动就绪并空闲后执行一次。</small></div>
+      <small>下次启动生效；宿主就绪且空闲后备份一次。</small></div>
       <input type="checkbox" aria-label="启动时自动备份" checked={value.autoOnStartup} disabled={disabled || starting}
         onChange={e => onChange({ ...value, autoOnStartup: e.target.checked })}/></label>
     <DirectoryInput label="备份目录" value={value.directory} onChange={directory => onChange({ ...value, directory })}
@@ -73,15 +73,15 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
         options={[{ value: '7', label: '7 天' }, { value: '14', label: '14 天' }, { value: '30', label: '30 天' }, { value: '0', label: '永久' }]}
         onChange={days => onChange({ ...value, retentionDays: Number(days) as BackupPreferences['retentionDays'] })}/></div>
     <div className="wb-setting-row setting-row"><div><strong>立即备份</strong>
-      <small>后台执行，关闭设置后继续。将保存当前备份配置。</small></div>
+      <small>保存当前备份配置并开始备份，关闭设置后继续。</small></div>
       <button type="button" className="primary" disabled={disabled || starting || !!running || !value.directory.trim() || !call}
         onClick={() => { void start(); }}>{starting ? '正在启动…' : running ? '备份进行中…' : '立即备份'}</button></div>
     {error && <p id={`${errorId}-backup`} className="wb-warning" role="alert">{errorText(error)}</p>}
     <div className="settings-inline-note" style={{ overflowWrap: 'anywhere' }}>
       <p>密钥位置：{status?.keyPath ?? 'DSH 数据目录下的 backup/identity.txt（默认 ~/.dsh/backup/identity.txt）'}</p>
-      <p>首次备份时生成，恢复自动使用当前宿主密钥。密钥不在备份文件内，请单独妥善保管。</p>
+      <p>备份加密，密钥不在备份文件内，请单独保管。</p>
     </div>
-    <p className="settings-inline-note">备份会加密保存。运行中文件为观察副本；客户端草稿、自定义附件根等范围尚未覆盖。</p>
+    <p className="settings-inline-note">运行中文件不保证一致性；暂不含客户端草稿、自定义附件目录等。</p>
     </div>
     <div className="settings-subpanel" role="tabpanel" id="wb-settings-backup-panel-restore" aria-labelledby="wb-settings-backup-tab-restore" hidden={tab !== 'restore'}>
     <RestoreSettings call={call} disabled={disabled || starting || !!running} pickDirectory={pickDirectory}

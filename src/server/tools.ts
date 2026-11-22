@@ -44,8 +44,7 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
     const sessionId = exec.agent?.session.id;
     if (!sessionId) throw new WorkbaseError('forbidden', '工具必须由当前会话的 Agent 调用');
     const workspace = ctx.workspaceRegistry.list().find(w => w.sessionIds.includes(sessionId));
-    if (!workspace) throw new WorkbaseError('binding-unavailable', '当前会话未关联已注册项目');
-    return workspace.id;
+    return service.workspaceForSession(sessionId, workspace?.id);
   };
   const definitions: ToolDefinition[] = [
     {

@@ -18,16 +18,32 @@ export function themeStyle(theme: 'follow' | keyof typeof base, dark: boolean): 
   const values = [...base[kind][mode], ...components[kind][mode]];
   const result = Object.fromEntries(names.map((name, i) => [`--wb-${name}`, values[i]]));
   if (theme === 'follow') {
-    Object.assign(result, {
-      '--wb-bg': 'var(--dsw-alias-bg-base,#fff)', '--wb-surface': 'var(--dsw-alias-bg-layer-1,#fff)',
-      '--wb-text': 'var(--dsw-alias-label-primary,#0f1115)', '--wb-muted': 'var(--dsw-alias-label-secondary,#61666b)',
-      '--wb-line': 'var(--dsw-alias-border-l2,#0000001a)', '--wb-hover': 'var(--dsw-alias-interactive-bg-hover,#2631480f)',
-    });
+    // 引用公开语义令牌，平台换色时由 CSS 实时更新；缺失时沿用当前明暗配色。
+    const hostTokens = {
+      bg: 'bg-base', surface: 'bg-layer-1', text: 'label-primary', muted: 'label-secondary',
+      line: 'border-l2', hover: 'interactive-bg-hover', panel: 'bg-layer-2',
+      primary: 'state-business-primary', 'on-primary': 'label-primary-foreground',
+      selected: 'state-business-tertiary', 'selected-text': 'label-primary',
+      danger: 'state-error-primary', checkbox: 'border-selected', 'control-line': 'border-l4',
+      'switch-thumb-off': 'switch-thumb', 'switch-thumb-on': 'label-primary-foreground',
+      success: 'state-success-primary',
+    };
+    for (const [name, token] of Object.entries(hostTokens)) {
+      result[`--wb-${name}`] = `var(--dsw-alias-${token},${result[`--wb-${name}`]})`;
+    }
+    result['--wb-focus'] = `var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,${result['--wb-focus']}))`;
   }
   const aliases = { 'primary-bg': 'primary', 'selected-bg': 'selected', 'danger-text': 'danger', 'focus-tone': 'focus', 'checkbox-border': 'checkbox' };
   for (const name of names) result[`--${name}`] = result[`--wb-${name}`]!;
   for (const [name, source] of Object.entries(aliases)) result[`--${name}`] = result[`--wb-${source}`]!;
-  result['--accent'] = result['--primary-bg']!;
+  result['--accent'] = result['--wb-primary']!;
+  // 主按钮与强调文字分开：官方按钮可能采用黑白配色，强调文字仍使用业务色。
+  if (theme === 'follow') {
+    const primary = components.dsh[mode][1]!;
+    result['--primary-bg'] = `var(--dsw-alias-button-primary-fill,${primary})`;
+    result['--primary-hover'] = `var(--dsw-alias-button-primary-hover,${primary})`;
+    result['--switch-bg'] = `var(--dsw-alias-brand-primary,${primary})`;
+  }
   result['--on'] = result['--on-primary']!;
   result['--soft'] = result['--selected-bg']!;
   result['--warntext'] = result['--warning']!;

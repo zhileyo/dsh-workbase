@@ -2,16 +2,24 @@ import type { Context } from '@deepseek-ai/cordis';
 import { defineDomain } from '@deepseek-ai/dsh-storage-domain';
 import { randomUUID } from 'node:crypto';
 import { stateSchema, initialState } from '../shared/model.js';
-import { RPC_CHANNEL, RPC_ENDPOINT } from '../shared/commands.js';
+import { RPC_CHANNEL, RPC_ENDPOINT, EXTENSIONS_ENDPOINT, ASSISTANT_ENDPOINT } from '../shared/commands.js';
 import { WorkbaseService } from './service.js';
 import { createHost } from './host.js';
 import { handleRequest } from './http.js';
+import { RULES_ENDPOINT, MESSAGE_ENDPOINT } from '../shared/project-rules.js';
 import { registerTools } from './tools.js';
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
 import { BackupManager } from './backup.js';
 import { createBackupSources, backupBusy } from './backup-sources.js';
 import { RestoreManager } from './restore.js';
 import { todoFetchRoutes } from './todo-images.js';
+import { Extensions } from './extensions.js';
+import { registerExtensionTools } from './extension-tools.js';
+import { Personalization } from './personalization.js';
+import { Speech, type SpeechVault } from './speech.js';
+import { speechFetch } from './speech-fetch.js';
+import type {} from '@deepseek-ai/dsh-fs';
+import type {} from '@deepseek-ai/dsh-system-prompt';
 
 export const name = 'dsh-workbase';
 export const inject = ['workspaceRegistry', 'sessionController', 'agentPresets', 'storageDomain', 'connection', 'tools'];
@@ -38,13 +46,14 @@ export async function inheritLegacyStorage(ctx: Pick<Context, 'storageDomain'>,
   try {
     const inherited = legacy.global.get();
     if (isEmptyState(inherited)) return false;
-    await domain.global.set(inherited);
+    await domain.global.set(modernizeHomeState(inherited, 'dsh_workbench'));
     return true;
   } finally { await legacy.close(); }
 }
-// 0.2.10 及更早的首页默认是「会话显示、统计卡隐藏」；旧默认组合一次性迁移到新默认
-// 「会话隐藏、统计卡显示」。仅命中任一旧默认值时改写，用户显式配置过的完整新组合不受影响。
-export const modernizeHomeState = <T extends { preferences: { home: { recent: boolean; stats: boolean } } }>(state: T): T => {
+// 只有旧存储域迁入有来源见证；当前域的相同值可能是用户保存的合法偏好。
+export const modernizeHomeState = <T extends { preferences: { home: { recent: boolean; stats: boolean } } }>(
+  state: T, source?: 'dsh_workbench'): T => {
+  if (source !== 'dsh_workbench') return state;
   const home = state.preferences.home;
   if (home.recent === true || home.stats === false)
     return { ...state, preferences: { ...state.preferences, home: { ...home, recent: false, stats: true } } };
@@ -54,13 +63,27 @@ export async function apply(ctx: Context) {
   const domain = await ctx.storageDomain.open(workbaseDomain);
   ctx.effect(() => () => domain.close());
   try {
-    // 旧域整份搬迁后再统一做首页默认值现代化，两条路径的存量数据都覆盖。
+    // 默认转换与旧域继承同一次写入；当前域不会在再次启用时重置用户偏好。
     await inheritLegacyStorage(ctx, domain);
-    const current = domain.global.get();
-    const modernized = modernizeHomeState(current);
-    if (modernized !== current) await domain.global.set(modernized);
   } catch { /* 旧域读取失败不阻塞启动；新域继续以初始状态服务。 */ }
   const host = createHost(ctx);
+  const speech = new Speech(() => {
+    const service = ctx.get('credentials') as SpeechVault | undefined;
+    return service && typeof service.readRecord === 'function' && typeof service.modifyRecord === 'function' ? service : undefined;
+  });
+  const personal = new Personalization(resolveDshHome(), () => ctx.get('fs'), () => ctx.emit('system-prompt/change'));
+  // 可选官方服务热插拔；不占用宿主persona自身的section名称。
+  ctx.inject(['systemPrompt'], scope => {
+    const dispose = scope.systemPrompt.section({ name: 'dsh-workbase:personalization',
+      order: scope.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX') + 1,
+      text: () => personal.prompt(), interpolate: false });
+    personal.active = true;
+    return () => { personal.active = false; dispose(); };
+  });
+  await personal.list().catch(() => { /* 文件冲突在设置读取时明确反馈，不能阻塞插件。 */ });
+  const extensions = new Extensions(ctx, resolveDshHome(), host, () => domain.global.get().bindings,
+    () => domain.global.get().preferences.extensionConfig);
+  ctx.effect(() => () => extensions.dispose());
   const startupKey = Symbol.for('dsh-workbase.backup-startup');
   const runtime = globalThis as typeof globalThis & { [startupKey]?: boolean };
   const backup: BackupManager = new BackupManager({
@@ -83,12 +106,28 @@ export async function apply(ctx: Context) {
   ctx.effect(() => () => restore.dispose());
   const service: WorkbaseService = new WorkbaseService({
     get: () => domain.global.get(), set: next => domain.global.set(next),
-  }, host, randomUUID, Date.now, backup, restore);
+  }, host, randomUUID, Date.now, backup, restore, personal, speech);
+  for (const failure of await service.syncMigratedWorkspaces()) ctx.logger?.warn(`workbase: ${failure}`);
+  ctx.effect(() => () => speech.dispose());
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: `${RPC_CHANNEL}/workbase/speech-stream`, methods: ['POST'], requestBody: 'streaming',
+    fetch: request => speechFetch(speech, request),
+  }));
   ctx.effect(() => ctx.connection.fetch.register({
     path: `${RPC_CHANNEL}/${RPC_ENDPOINT}`, methods: ['POST'], requestBody: 'streaming',
     // 精确Fetch路由由Connection强制只允许owner；沿用官方RPC线上封装。
-    fetch: request => handleRequest(service, request),
+    fetch: request => handleRequest(service, request, extensions),
   }));
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: `${RPC_CHANNEL}/${EXTENSIONS_ENDPOINT}`, methods: ['POST'], requestBody: 'streaming',
+    fetch: request => handleRequest(service, request, extensions, true),
+  }));
+  for (const [endpoint, route] of [[RULES_ENDPOINT, 'rules'], [MESSAGE_ENDPOINT, 'message'], [ASSISTANT_ENDPOINT, 'assistant']] as const)
+    ctx.effect(() => ctx.connection.fetch.register({
+      path: `${RPC_CHANNEL}/${endpoint}`, methods: ['POST'], requestBody: 'streaming',
+      fetch: request => handleRequest(service, request, extensions, route),
+    }));
   registerTools(ctx, service);
+  registerExtensionTools(ctx, extensions.rss);
   for (const route of todoFetchRoutes(service)) ctx.effect(() => ctx.connection.fetch.register(route));
 }

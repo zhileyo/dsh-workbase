@@ -40,3 +40,42 @@ test('紫晶主题的面板、悬停与语义状态保持可读', () => {
     }
   }
 });
+
+function resolveColor(value: string, host: Record<string, string>): string {
+  const variable = /^var\((--[\w-]+),(.+)\)$/.exec(value);
+  return variable ? resolveColor(host[variable[1]!] ?? variable[2]!, host) : value;
+}
+
+test('跟随平台分别继承按钮配色、强调色和选中状态，宿主换色无需重新映射', () => {
+  const style = themeStyle('follow', false) as Record<string, string>;
+  const host = {
+    '--dsw-alias-button-primary-fill': '#111111',
+    '--dsw-alias-button-primary-hover': '#333333',
+    '--dsw-alias-label-primary-foreground': '#ffffff',
+    '--dsw-alias-state-business-primary': '#2856b3',
+    '--dsw-alias-state-business-tertiary': '#e4edfd',
+    '--dsw-alias-label-primary': '#0f1115',
+    '--dsw-alias-brand-primary': '#111111',
+  };
+  assert.equal(resolveColor(style['--primary-bg']!, host), '#111111');
+  assert.equal(resolveColor(style['--primary-hover']!, host), '#333333');
+  assert.equal(resolveColor(style['--on-primary']!, host), '#ffffff');
+  assert.equal(resolveColor(style['--accent']!, host), '#2856b3');
+  assert.equal(resolveColor(style['--selected-bg']!, host), '#e4edfd');
+  assert.equal(resolveColor(style['--selected-text']!, host), '#0f1115');
+  assert.equal(resolveColor(style['--switch-bg']!, host), '#111111');
+  host['--dsw-alias-button-primary-fill'] = '#785a39';
+  host['--dsw-alias-state-business-tertiary'] = '#eee5d5';
+  assert.equal(resolveColor(style['--primary-bg']!, host), '#785a39');
+  assert.equal(resolveColor(style['--selected-bg']!, host), '#eee5d5');
+});
+
+test('宿主颜色缺失时跟随平台逐项回退到对应明暗配色，不出现深色白底', () => {
+  for (const dark of [false, true]) {
+    const style = themeStyle('follow', dark) as Record<string, string>;
+    const fallback = themeStyle('dsh', dark) as Record<string, string>;
+    for (const name of ['bg', 'surface', 'text', 'muted', 'line', 'hover', 'panel', 'primary-bg', 'on-primary', 'selected-bg', 'selected-text', 'danger-text', 'focus-tone', 'checkbox-border', 'control-line', 'switch-thumb-off', 'switch-thumb-on', 'success']) {
+      assert.equal(resolveColor(style[`--${name}`]!, {}), fallback[`--${name}`], `${dark}/${name}`);
+    }
+  }
+});

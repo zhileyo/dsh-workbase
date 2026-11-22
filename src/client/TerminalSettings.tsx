@@ -202,7 +202,7 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
           {state.font.invalid && <p className="wb-terminal-error">字体名称最多 200 个字符。</p>}
         </div>
       </div>
-      <div className="wb-terminal-value-field"><SettingsValueField id={`${id}-size`} label="字体大小" hint="支持 10–20 px，官方默认 13 px；留空恢复默认。"
+      <div className="wb-terminal-value-field"><SettingsValueField id={`${id}-size`} label="字体大小" hint="10–20 px，默认 13 px；留空恢复默认。"
         invalidLabel="请输入 10–20 之间的整数。" {...state.size} numeric overriddenLabel="已自定义" resetLabel="恢复默认"
         disabled={!state.shell.available || !state.shell.writable || locked}
         onEdit={text => edit('terminalFontSize', text)} onReset={() => { setFailed(false); setSaved(false); actions.resetField('terminalFontSize'); }}/></div>

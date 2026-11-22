@@ -5,6 +5,25 @@ import { launchMessage } from '../src/client/launch.js';
 import type { Command } from '../src/shared/commands.js';
 import { commandSchema } from '../src/shared/commands.js';
 
+test('创建回执丢失后重启仍使用原创建请求身份', async () => {
+  let stored = '', fail = true;
+  const storage = { getItem: () => stored || null, setItem: (_key: string, value: string) => { stored = value; }, removeItem() {} };
+  const calls: Command[] = [];
+  const api = { call: async (command: Command) => {
+    calls.push(command);
+    if (command.op === 'begin-session') {
+      if (fail) throw new Error('回执丢失');
+      return { sessionId: 's' };
+    }
+    return { accepted: true };
+  } } as ClientPort;
+  const input = { projectId: 'p', preset: 'coding', provider: 'provider', model: 'model', text: '任务' };
+  await assert.rejects(launchMessage(api, new UiMemory(storage), input), /回执丢失/);
+  fail = false;
+  await launchMessage(api, new UiMemory(storage), input);
+  assert.deepEqual(calls[0], calls[1]);
+});
+
 test('首消息失败后重启仍复用原会话、消息标识及选中配置，成功才清草稿', async () => {
   let stored = '';
   const storage = { getItem: () => stored || null, setItem: (_key: string, value: string) => { stored = value; }, removeItem: (_key: string) => {} };

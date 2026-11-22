@@ -3,6 +3,10 @@ import type { Diagnosis } from './diagnostics.js';
 import { backupPreferencesSchema } from './backup.js';
 import { terminalPaletteSchema, defaultTerminalPalette } from './terminal-palette.js';
 import { prioritySchema, todoImageSchema, todoAttachmentSchema, MAX_TODO_IMAGES } from './todo.js';
+import { projectInitializationSchema, defaultProjectInitialization } from './project-initialization.js';
+import { projectRulesSchema, defaultProjectRules } from './project-rules.js';
+import { extensionConfigSchema, defaultExtensionConfig } from './extensions.js';
+import { migrationRecordSchema, sessionOwnershipSchema } from './migration.js';
 
 export const markSchema = z.object({ pinned: z.boolean(), favorite: z.boolean() }).strict();
 export const todoSchema = z.object({
@@ -32,16 +36,36 @@ export const defaultFields = (view: 'grid' | 'list') => ({
 });
 export const statCardsSchema = z.object({
   running: z.boolean(), recent: z.boolean(), pending: z.boolean(), diagnostic: z.boolean(),
-}).strict().default(() => ({ running: true, recent: true, pending: true, diagnostic: true }));
-export const defaultStatCards = () => ({ running: true, recent: true, pending: true, diagnostic: true });
-export const homeSchema = z.object({
+  skills: z.boolean().default(false), mcp: z.boolean().default(false), rss: z.boolean().default(false),
+}).strict().refine(value => Object.values(value).filter(Boolean).length <= 6,
+  '最多显示 6 张统计卡，请先关闭一项').default(() => defaultStatCards());
+export const defaultStatCards = () => ({ running: true, recent: true, pending: true, diagnostic: false, skills: true, mcp: false, rss: true });
+export const statCardKeys = ['running', 'recent', 'pending', 'diagnostic', 'skills', 'mcp', 'rss'] as const;
+export const defaultStatOrder = (): (typeof statCardKeys)[number][] => ['running', 'pending', 'recent', 'skills', 'rss', 'diagnostic', 'mcp'];
+// 只升级旧标准组合；新顺序下重新开启诊断，以及自定义显隐／排序均保留。
+const modernizeStatCards = (value: unknown) => {
+  if (typeof value !== 'object' || value === null) return value;
+  const home = value as { statCards?: unknown; statOrder?: unknown };
+  const oldOrder = home.statOrder === undefined || (Array.isArray(home.statOrder)
+    && home.statOrder.length === statCardKeys.length && home.statOrder.every((key, i) => key === statCardKeys[i]));
+  if (!oldOrder || home.statCards === undefined) return value;
+  const parsed = statCardsSchema.safeParse(home.statCards);
+  if (!parsed.success) return value;
+  const cards = parsed.data;
+  const standard = cards.running && cards.pending && cards.recent && !cards.mcp
+    && ((cards.diagnostic && cards.skills === cards.rss) || (!cards.diagnostic && cards.skills && cards.rss));
+  return standard ? { ...value, statCards: defaultStatCards(), statOrder: defaultStatOrder() } : value;
+};
+export const homeSchema = z.preprocess(modernizeStatCards, z.object({
   quick: z.boolean(), recent: z.boolean(), stats: z.boolean(), projects: z.boolean(),
   recentStyle: z.enum(['cards', 'buttons']),
   statCards: statCardsSchema,
+  statOrder: z.array(z.enum(statCardKeys)).length(statCardKeys.length)
+    .refine(value => new Set(value).size === statCardKeys.length, '统计卡顺序必须完整且不重复').default(defaultStatOrder),
   // 「会话」统计卡与「近期活跃」的统计窗口天数。
   statDays: z.number().int().min(1).max(365).default(7),
-}).strict();
-export const defaultHome = () => ({ quick: true, recent: false, stats: true, projects: true, recentStyle: 'cards' as const, statCards: defaultStatCards(), statDays: 7 });
+}).strict());
+export const defaultHome = () => ({ quick: true, recent: false, stats: true, projects: true, recentStyle: 'cards' as const, statCards: defaultStatCards(), statOrder: defaultStatOrder(), statDays: 7 });
 export const navigationSchema = z.object({
   sidebarName: z.string().trim().min(1).max(30),
   sidebarVisible: z.boolean(), headerButtonVisible: z.boolean(),
@@ -66,11 +90,15 @@ export const preferencesSchema = z.object({
   fields: z.object({ grid: fieldsSchema, list: fieldsSchema }).strict()
     .default(() => ({ grid: defaultFields('grid'), list: defaultFields('list') })),
   root: z.string().max(4096).default(''),
+  projectInitialization: projectInitializationSchema.default(defaultProjectInitialization),
+  rules: projectRulesSchema.default(defaultProjectRules),
+  extensionConfig: extensionConfigSchema.default(defaultExtensionConfig),
   openOnStartup: z.boolean().default(false),
   agentManageTodos: z.boolean().default(true),
   pluginUpdateVisible: z.boolean().default(true),
   pluginAutoUpdate: z.boolean().default(false),
   terminalSettingsVisible: z.boolean().default(false),
+  speechComponentEnabled: z.boolean().default(false),
   terminalPalette: terminalPaletteSchema.default(defaultTerminalPalette),
   backup: backupPreferencesSchema,
   navigation: navigationInput.default(defaultNavigation),
@@ -85,8 +113,24 @@ export const preferencesSchema = z.object({
 export const stateSchema = z.object({
   revision: z.number().int().nonnegative(),
   bindings: z.array(bindingSchema), todos: z.array(todoSchema),
+  migrations: z.array(migrationRecordSchema).default([]),
+  sessionOwnership: z.array(sessionOwnershipSchema).default([]),
+  sessionCreations: z.array(z.object({
+    requestId: z.string().uuid(), projectId: z.string(), workspaceId: z.string(), path: z.string(),
+    preset: z.string(), sessionId: z.string().min(1).optional(),
+  }).strict()).default([]),
+  pendingSessionDeletions: z.array(z.object({
+    projectId: z.string(), workspaceId: z.string(), path: z.string(), sessionId: z.string(),
+    identity: z.string().min(1),
+    witness: z.object({ sessionId: z.string(), title: z.string(), updatedAt: z.number(),
+      archived: z.boolean(), running: z.boolean() }).strict(),
+  }).strict()).default([]),
+  detachedMigrationRules: z.array(z.string()).default([]),
   // 经「新建工作树」在项目目录之外创建的会话：登记归属，使其可提交消息与预览。
   worktreeSessions: z.array(z.object({ sessionId: z.string(), projectId: z.string() }).strict()).default([]),
+  pendingImports: z.array(z.object({
+    workspaceId: z.string(), path: z.string(), initialization: projectInitializationSchema,
+  }).strict()).default([]),
   projectMarks: z.record(z.string(), markSchema),
   sessionMarks: z.record(z.string(), markSchema),
   preferences: preferencesSchema,
@@ -99,9 +143,10 @@ export type Mark = z.infer<typeof markSchema>;
 export const emptyMark = (): Mark => ({ pinned: false, favorite: false });
 export const defaultDetail = () => ({ ratio: 65, group: 'pending' as const, sessionFilter: 'active' as const });
 export const initialState = (): State => ({
-  revision: 0, bindings: [], todos: [], worktreeSessions: [], projectMarks: {}, sessionMarks: {},
-  preferences: { theme: 'follow', view: 'grid', layout: 'list', selectedProject: null, projectFilter: 'active', detail: {},
-    language: 'follow', home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, terminalSettingsVisible: false, terminalPalette: defaultTerminalPalette(), backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
+  revision: 0, bindings: [], todos: [], migrations: [], sessionOwnership: [], sessionCreations: [], pendingSessionDeletions: [],
+  detachedMigrationRules: [], worktreeSessions: [], pendingImports: [], projectMarks: {}, sessionMarks: {},
+  preferences: { theme: 'violet', view: 'grid', layout: 'list', selectedProject: null, projectFilter: 'active', detail: {},
+    language: 'follow', home: defaultHome(), fields: { grid: defaultFields('grid'), list: defaultFields('list') }, root: '', projectInitialization: defaultProjectInitialization(), rules: defaultProjectRules(), extensionConfig: defaultExtensionConfig(), openOnStartup: false, agentManageTodos: true, pluginUpdateVisible: true, pluginAutoUpdate: false, terminalSettingsVisible: false, speechComponentEnabled: false, terminalPalette: defaultTerminalPalette(), backup: { directory: '', autoOnStartup: false, retentionDays: 0 }, navigation: defaultNavigation() },
 });
 export interface HostWorkspace {
   workspaceId: string; path: string; title: string; available: boolean; sessionIds: readonly string[];

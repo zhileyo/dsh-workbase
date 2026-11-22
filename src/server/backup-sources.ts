@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { resolveAgentsHome } from '@deepseek-ai/dsh-home-paths';
 import { jsonFile, type BackupSource } from './backup-files.js';
 import type { HostPort } from './service.js';
+import { personalFiles } from '../shared/personalization.js';
 
 const header = z.object({ id: z.string().min(1), version: z.number(), createdAt: z.number(), isSeeded: z.boolean() }).passthrough();
 const rowsSchema = z.array(z.object({ header, eventCount: z.number().int().nonnegative().optional(), revision: z.unknown().optional() }));
@@ -97,6 +98,7 @@ export function createBackupSources(ctx: Context, home: string, host: HostPort) 
       dsh('file-reference-links', 'attachments/v1/files'),
       dsh('attachment-request-cache', 'cache/attachments/request-images'),
       dsh('profiles', 'profiles'),
+      ...personalFiles.map(file => dsh(`personal-${file.slice(0, -3).toLowerCase()}`, file)),
       dsh('market-profile-state', 'profiles'),
       dsh('market-build-markers', 'dsh-market/printed-build-keys.json'),
       dsh('agent-presets', '.agent-presets'),
@@ -104,6 +106,7 @@ export function createBackupSources(ctx: Context, home: string, host: HostPort) 
       dsh('legacy-settings', 'settings.yaml.imported'),
       dsh('remote-devices', 'remote-web-ui-devices.json'),
       dsh('skills-manager', 'skills-manager'),
+      dsh('workbase-extensions', 'workbase'),
       dsh('dsh-user-skills', 'skills'),
       { id: 'shared-agent-skills', path: path.join(resolveAgentsHome(), 'skills') },
       { id: 'project-skills', unsupported: '按项目分别发现，见 project-skills-N 范围；不包含项目源码' },

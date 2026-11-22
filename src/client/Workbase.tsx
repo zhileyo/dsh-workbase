@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentProps, type ReactNode } from 'react';
 import type { Command } from '../shared/commands.js';
+import type { ProjectInitializationResult } from '../shared/project-initialization.js';
 import type { HostSession, Preferences, Project, SessionPreview, Snapshot, Todo } from '../shared/model.js';
 import { readSnapshot, type ClientPort, type UiMemory } from './api.js';
 import { themeStyle } from './theme.js';
-import { Home } from './Home.js';
+import { Home, StatsOverview } from './Home.js';
 import { Detail } from './Detail.js';
 import { Search } from './Search.js';
 import { Settings } from './Settings.js';
-import { dateText, Icon, IconButton, Modal, preventImeSubmit } from './ui.js';
+import { dateText, Icon, IconButton, Modal, Picker, preventImeSubmit, type ModalState, type Notify } from './ui.js';
 import { DirectoryInput } from './DirectoryInput.js';
 import { Brand } from './Brand.js';
 import { TodoDetail } from './TodoDetail.js';
 import { errorText, languageTag, useWorkbaseLocale } from './i18n.js';
+import type { Diagnosis } from '../shared/diagnostics.js';
+import { fallbackDiagnosis } from './DiagnosticsPanel.js';
+import { SkillsPanel } from './SkillsPanel.js';
+import { McpPanel } from './McpPanel.js';
+import { RssPanel } from './RssPanel.js';
+import { OverviewNavigation, type OverviewTab } from './OverviewNavigation.js';
+import type { ExtensionTab } from './ExtensionSettings.js';
+import { MigrationPanel } from './MigrationPanel.js';
 
 type DialogState = { kind: 'rename'; project: Project }
   | { kind: 'archive'; session: HostSession } | { kind: 'rename-session'; session: HostSession; projectId: string }
@@ -38,6 +47,62 @@ function savedMessage(command: Command): string {
 }
 const noUpdates = () => false;
 const subscribeNoUpdates = () => () => {};
+/** 仅替换管理内容，保持概览的遮罩、dialog及入场动画实例。 */
+export function WorkbaseOverview({ kind, api, snapshot, busy, diagnosis, onReport, refresh, navigate, memory, navigation, notify, onClose, settings }: {
+  kind: OverviewTab; api: ClientPort; snapshot: Snapshot; busy: boolean; diagnosis?: Diagnosis;
+  onReport(report: Diagnosis): void; refresh(): Promise<void>; navigate(projectId: string): void;
+  memory?: UiMemory; navigation?: ReactNode; notify: Notify; onClose(): void;
+  settings?: Pick<ComponentProps<typeof Settings>, 'preview' | 'save' | 'pluginUpdateBusy' | 'dark' | 'onRestored'> & { resetPreview(): void };
+}) {
+  const [state, onModalState] = useState<ModalState>({ busy: false, suspended: false });
+  const [extension, setExtension] = useState<ExtensionTab | null>(null);
+  const [settingsState, setSettingsState] = useState<ModalState>({ busy: false, suspended: false });
+  const managerRoot = useRef<HTMLDivElement>(null);
+  const settingsRoot = useRef<HTMLDivElement>(null);
+  const origin = useRef<HTMLElement | null>(null);
+  const positions = useRef<{ node: HTMLElement; top: number; left: number }[]>([]);
+  const openSettings = (target: ExtensionTab) => {
+    origin.current = document.activeElement as HTMLElement;
+    positions.current = [...managerRoot.current?.querySelectorAll<HTMLElement>('.settings-content,.integration-records,.integration-groups') ?? []]
+      .map(node => ({ node, top: node.scrollTop, left: node.scrollLeft }));
+    setExtension(target);
+  };
+  useLayoutEffect(() => {
+    if (extension) settingsRoot.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
+    else {
+      for (const { node, top, left } of positions.current) { node.scrollTop = top; node.scrollLeft = left; }
+      positions.current = [];
+      origin.current?.focus({ preventScroll: true });
+      origin.current = null;
+    }
+  }, [extension]);
+  const closeGuard = useRef<(() => Promise<boolean>) | null>(null);
+  const registerCloseGuard = useCallback((guard: (() => Promise<boolean>) | null) => { closeGuard.current = guard; }, []);
+  const returnToManager = () => {
+    void (closeGuard.current?.() ?? Promise.resolve(true)).then(ok => {
+      if (!ok) return;
+      settings?.resetPreview();
+      setExtension(null);
+    });
+  };
+  const props = { api, projects: snapshot.projects, memory, navigation, notify, onClose, embedded: true, onModalState };
+  const active = extension ? settingsState : state;
+  const back = <IconButton name="back" label="返回管理" disabled={busy || active.busy} onClick={returnToManager}/>;
+  return <Modal title={active.presentation?.title ?? (extension ? '工作台设置' : '工作台概览')} leading={active.presentation?.leading ?? (extension ? back : undefined)}
+    drawer className={active.presentation?.className ?? (extension ? '' : 'stats-drawer')} busy={busy || active.busy} suspended={active.suspended}
+    onClose={active.presentation?.onClose ?? (extension ? returnToManager : onClose)}>
+    <div ref={managerRoot} hidden={!!extension} style={{ display: extension ? 'none' : 'contents' }}>
+    {kind === 'skills' && <SkillsPanel {...props} onSettings={settings ? () => openSettings('skills') : undefined}/>}
+    {kind === 'mcp' && <McpPanel {...props} onSettings={settings ? () => openSettings('mcp') : undefined}/>}
+    {kind === 'rss' && <RssPanel {...props} recentDays={snapshot.preferences.home.statDays} onSettings={settings ? () => openSettings('rss') : undefined}/>}
+    {kind !== 'skills' && kind !== 'mcp' && kind !== 'rss' && <StatsOverview {...props} stat={kind} snapshot={snapshot} busy={busy}
+      diagnosis={diagnosis ?? snapshot.diagnostics ?? fallbackDiagnosis(snapshot)} onReport={onReport} refresh={refresh} navigate={navigate}/>}
+    </div>
+    {extension && settings && <div ref={settingsRoot} style={{ display: 'contents' }}><Settings {...settings} snapshot={snapshot} busy={busy} call={api.call} pickDirectory={api.pickDirectory}
+      renderMarkdown={api.renderMarkdown} initialExtension={extension} onClose={returnToManager} registerCloseGuard={registerCloseGuard}
+      embedded onModalState={setSettingsState}/></div>}
+  </Modal>;
+}
 export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory }) {
   useWorkbaseLocale();
   const pluginUpdateBusy = useSyncExternalStore(
@@ -52,6 +117,12 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
   const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'info'; undo?: { projectId: string; token: string; expiresAt: number } } | null>(null);
   const notify = useCallback((message: string, tone: 'success' | 'info' = 'info') => setNotice({ message, tone }), []);
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [migration, setMigration] = useState<{ project: Project; records: boolean } | null>(null);
+  const [settingsModal, setSettingsModal] = useState<ModalState>({ busy: false, suspended: false });
+  const [overview, setOverview] = useState<OverviewTab | null>(null);
+  const [freshDiagnosis, setFreshDiagnosis] = useState<{ snapshot: Snapshot; report: Diagnosis } | null>(null);
+  const diagnosis = freshDiagnosis?.snapshot === snapshot ? freshDiagnosis?.report : undefined;
+  const overviewNavigation = overview && <OverviewNavigation value={overview} onChange={setOverview} onClose={() => setOverview(null)}/>;
   const [todoDialog, setTodoDialog] = useState<{ projectId: string; todo?: Todo } | null>(null);
   const [themePreview, setThemePreview] = useState<Preferences['theme'] | null>(null);
   // 暗色属性读取做了兜底：服务端渲染没有 document，客户端挂载后由订阅同步。
@@ -131,9 +202,22 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
   };
   const navigate = (projectId: string | null) => { void mutate({ op: 'preferences', patch: { selectedProject: projectId } }); };
   const selected = snapshot?.projects.find(p => p.projectId === snapshot.preferences.selectedProject);
-  const close = () => { setDialog(null); setThemePreview(null); };
+  useLayoutEffect(() => {
+    api.projectSidebar?.select(selected ? {
+      projectId: selected.projectId, workspaceId: selected.workspaceId, path: selected.path, available: selected.available,
+    } : null);
+    return () => api.projectSidebar?.select(null);
+  }, [api, selected?.projectId, selected?.workspaceId, selected?.path, selected?.available]);
+  const settingsCloseGuard = useRef<(() => Promise<boolean>) | null>(null);
+  const registerSettingsCloseGuard = useCallback((guard: (() => Promise<boolean>) | null) => { settingsCloseGuard.current = guard; }, []);
+  const close = () => {
+    const finish = () => { setDialog(null); setThemePreview(null); };
+    if (dialog?.kind === 'settings' && settingsCloseGuard.current)
+      void settingsCloseGuard.current().then(ok => { if (ok) finish(); });
+    else finish();
+  };
   // 只缓存服务端确认的主题，不缓存设置预览或明暗状态。
-  const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? memory.theme ?? 'follow';
+  const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? memory.theme ?? 'violet';
   const lastActivity = Math.max(0, ...snapshot?.projects.map(p => p.updatedAt) ?? []);
   return <div lang={languageTag()} className={`wb ${chosenTheme === 'warm' ? 'c' : 'a'} ${chosenTheme} ${dark ? 'dark' : 'light'}`} data-style={chosenTheme === 'follow' ? 'dsh' : chosenTheme} data-theme={chosenTheme} data-dark={dark} style={themeStyle(chosenTheme, dark)}>
     <header className="wb-header app-header" style={!snapshot && !memory.theme ? { visibility: 'hidden' } : undefined}>
@@ -142,6 +226,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
       {snapshot && <button type="button" className="wb-sync sync flat" disabled={busy} title={`最近同步 ${dateText(snapshot.syncedAt)} · 点击刷新`} onClick={() => { if (!busy) void load().catch(() => {}); }}><i className="sync-dot"/><span>{error ? '同步中断' : '已同步'}</span>{lastActivity > 0 && <span className="header-activity">最近活动 · {dateText(lastActivity)}</span>}</button>}
       <div className="header-actions"><button type="button" className="header-add" aria-label="添加项目" title="添加项目" disabled={busy || !snapshot} onClick={() => setDialog({ kind: 'add' })}><Icon name="plus"/><span className="action-label">添加项目</span></button>
       <IconButton name="settings" label="工作台设置" disabled={!snapshot || busy} onClick={() => setDialog({ kind: 'settings' })}/>
+      {selected && api.renderProjectSidebar?.()}
       </div>
     </header>
     {error && <div className="wb-feedback wb-error banner" role="alert"><Icon name="alert"/><span className="banner-body">{errorText(error)}{snapshot ? ` · 数据可能不是最新 · 上次同步 ${dateText(snapshot.syncedAt)}` : ''}</span><button type="button" onClick={() => void load().catch(() => {})} disabled={busy}>重试</button><IconButton name="close" label="关闭错误提示" onClick={() => setError('')}/></div>}
@@ -165,9 +250,19 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
         renameSession={session => setDialog({ kind: 'rename-session', session, projectId: selected.projectId })}
         deleteSession={session => setDialog({ kind: 'delete-session', session, projectId: selected.projectId })}
         removeProject={project => setDialog({ kind: 'remove-project', project })} notify={notify}
+        migration={(project, records) => setMigration({ project, records })}
         showSession={session => setDialog({kind:'read-session',project:selected,session})}/>
       : <Home snapshot={snapshot} api={api} memory={memory} busy={busy} mutate={mutate} navigate={navigate} refresh={load}
-          rename={project => setDialog({ kind: 'rename', project })} removeProject={project => setDialog({ kind: 'remove-project', project })} notify={notify}/>)}
+          rename={project => setDialog({ kind: 'rename', project })} removeProject={project => setDialog({ kind: 'remove-project', project })} notify={notify} openOverview={setOverview} diagnosis={diagnosis}
+          migration={(project, records) => setMigration({ project, records })}/>)}
+    {migration && snapshot && <MigrationPanel api={api} project={snapshot.projects.find(p => p.projectId === migration.project.projectId) ?? migration.project}
+      projects={snapshot.projects} revision={snapshot.revision} records={migration.records} onClose={() => setMigration(null)}
+      onMigrated={async (targetProjectId, reverted) => { await load(); navigate(targetProjectId); notify(reverted ? '项目迁移已撤销' : '项目迁移已完成', 'success'); }}/>}
+    {snapshot && overview && <WorkbaseOverview kind={overview} api={api} snapshot={snapshot} busy={busy} diagnosis={diagnosis}
+      onReport={report => setFreshDiagnosis({ snapshot, report })} refresh={load} navigate={navigate}
+      settings={{ preview: setThemePreview, resetPreview: () => setThemePreview(null), save: mutate, pluginUpdateBusy, dark,
+        onRestored: () => { setOverview(null); setThemePreview(null); void load().catch(() => {}); notify('工作台状态已恢复，原数据已保留回滚副本', 'success'); } }}
+      memory={memory} navigation={overviewNavigation} notify={notify} onClose={() => setOverview(null)}/>}
     {todoDialog && snapshot && (() => {
       const project = snapshot.projects.find(p => p.projectId === todoDialog.projectId);
       return project ? <TodoDetail key={todoDialog.todo?.id ?? `new-${project.projectId}`} api={api} project={project}
@@ -175,13 +270,23 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     })()}
     {dialog && snapshot && (dialog.kind === 'read-session' ?
       <SessionPreviewDialog api={api} project={dialog.project} session={dialog.session} onClose={close}/>
-      : <Modal drawer={dialog.kind === 'settings'} title={dialog.kind === 'delete-session' ? '永久删除会话？' : dialog.kind === 'add' ? '添加项目' : dialog.kind === 'settings' ? '工作台设置' : dialog.kind === 'remove-project' ? '移除项目？' : dialog.kind === 'rename-session' ? '重命名会话' : dialog.kind === 'rename' ? '重命名项目' : '归档会话'} busy={busy} onClose={close}>
+      : <Modal drawer={dialog.kind === 'settings'} title={dialog.kind === 'delete-session' ? '永久删除会话？' : dialog.kind === 'add' ? '添加项目' : dialog.kind === 'settings' ? settingsModal.presentation?.title ?? '工作台设置' : dialog.kind === 'remove-project' ? '移除项目？' : dialog.kind === 'rename-session' ? '重命名会话' : dialog.kind === 'rename' ? '重命名项目' : '归档会话'}
+        leading={dialog.kind === 'settings' ? settingsModal.presentation?.leading : undefined}
+        className={dialog.kind === 'settings' ? settingsModal.presentation?.className : undefined}
+        busy={busy} onClose={dialog.kind === 'settings' ? settingsModal.presentation?.onClose ?? close : close}>
       {error && <p id={dialogErrorId} className="wb-warning" role="alert">{errorText(error)}</p>}
-      {dialog.kind === 'add' ? <AddProject api={api} root={snapshot.preferences.root} busy={busy} save={(path, name) => run(async () => {
-        const result = await api.call({ op: 'add-project', path, ...(name ? { name } : {}) }) as { duplicate: boolean };
-        return !result.duplicate;
-      }, '项目已添加')} onClose={close} describedBy={error ? dialogErrorId : undefined}/>
-        : dialog.kind === 'settings' ? <Settings snapshot={snapshot} busy={busy} pluginUpdateBusy={pluginUpdateBusy} preview={setThemePreview} save={mutate} call={api.call} onClose={close} dark={dark} pickDirectory={api.pickDirectory}
+      {dialog.kind === 'add' ? <AddProject api={api} root={snapshot.preferences.root} busy={busy} save={async (path, name) => {
+        let result: { duplicate: boolean; initialization?: ProjectInitializationResult } | undefined;
+        const ok = await run(async () => {
+          result = await api.call({ op: 'add-project', path, ...(name ? { name } : {}) }) as typeof result;
+          return !result?.duplicate;
+        }, '');
+        if (ok && mounted.current && result && !result.duplicate) notify(result.initialization
+          ? `项目已添加，补齐 ${result.initialization.created.length} 项，保留 ${result.initialization.preserved.length} 项`
+          : '项目已添加', 'success');
+        return ok;
+      }} onClose={close} describedBy={error ? dialogErrorId : undefined}/>
+        : dialog.kind === 'settings' ? <Settings snapshot={snapshot} busy={busy} pluginUpdateBusy={pluginUpdateBusy} preview={setThemePreview} save={mutate} call={api.call} onClose={close} dark={dark} pickDirectory={api.pickDirectory} renderMarkdown={api.renderMarkdown} registerCloseGuard={registerSettingsCloseGuard} embedded onModalState={setSettingsModal}
           describedBy={error ? dialogErrorId : undefined} onRestored={() => { close(); void load().catch(() => {}); notify('工作台状态已恢复，原数据已保留回滚副本', 'success'); }}/>
         : dialog.kind === 'delete-session' ? <><p className="dialog-description">永久删除「{dialog.session.title}」及其子 Agent 会话、转录与附件缓存。此操作无法撤销，独立的 fork 会话会保留。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || dialog.session.running} onClick={() => void mutate({ op: 'delete-session', projectId: dialog.projectId, sessionId: dialog.session.sessionId }).then(ok => { if (ok) close(); })}>永久删除</button></footer></>
         : dialog.kind === 'remove-project' ? <><p className="dialog-description">移除「{dialog.project.title}」的 Harness 注册。保留本地目录、待办与历史关联；重新添加同一目录可恢复。运行中会话必须先停止。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || dialog.project.sessions.some(s => s.running)} onClick={() => void mutate({ op: 'remove-project', projectId: dialog.project.projectId }).then(ok => { if (ok) close(); })}>确认移除</button></footer></>
@@ -236,7 +341,7 @@ export function RenameForm({ label, initial, busy, save, onClose, path, describe
   }}>
     <label>{label}<input autoFocus name="title" value={title} required maxLength={200} disabled={busy}
       aria-describedby={describedBy} onChange={e => setTitle(e.target.value)}/></label>
-    {path && <><p className="dialog-description" style={{marginTop:14}}>名称与 Harness 同步；不改变本地文件夹名称和路径。Enter 保存，Esc 取消。</p><div className="path-preview">{path}</div></>}
+    {path && <><p className="dialog-description" style={{marginTop:14}}>名称与 Harness 同步，不改变本地文件夹名称和路径。</p><div className="path-preview">{path}</div></>}
     <footer><button type="button" disabled={busy} onClick={onClose}>取消</button><button type="submit" className="wb-primary" disabled={busy || !title.trim()}>保存</button></footer>
   </form>;
 }
@@ -245,23 +350,25 @@ export function AddProject({ api, root, busy, save, onClose, describedBy }: { ap
   const [name, setName] = useState('');
   const [mode, setMode] = useState<'existing' | 'new'>('existing');
   const [picking, setPicking] = useState(false);
+  const submitting = useRef(false);
   return <form aria-describedby={describedBy} onKeyDown={preventImeSubmit} onSubmit={e => {
     e.preventDefault();
-    if (busy || picking || (mode === 'existing' ? !path.trim() : !root || !name.trim())) return;
-    void save(mode === 'existing' ? path.trim() : root, mode === 'new' ? name.trim() : undefined).then(ok => { if (ok) onClose(); });
+    if (busy || picking || submitting.current || (mode === 'existing' ? !path.trim() : !root || !name.trim())) return;
+    submitting.current = true;
+    const pending = save(mode === 'existing' ? path.trim() : root, mode === 'new' ? name.trim() : undefined);
+    void pending.then(ok => { if (ok) onClose(); }).finally(() => { submitting.current = false; });
   }}>
-    <div className="wb-tabs tabs"><button type="button" aria-pressed={mode === 'existing'} className={mode === 'existing' ? 'wb-active active' : ''} disabled={busy} onClick={() => setMode('existing')}>打开已有项目</button><button type="button" aria-pressed={mode === 'new'} className={mode === 'new' ? 'wb-active active' : ''} disabled={busy} onClick={() => setMode('new')}>创建新项目</button></div>
+    <div className="wb-tabs tabs add-project-tabs"><button type="button" aria-pressed={mode === 'existing'} className={mode === 'existing' ? 'wb-active active' : ''} disabled={busy} onClick={() => setMode('existing')}>添加已有项目</button><button type="button" aria-pressed={mode === 'new'} className={mode === 'new' ? 'wb-active active' : ''} disabled={busy} onClick={() => setMode('new')}>创建新项目</button></div>
     {/* 两种模式叠放在同一网格单元：容器高度恒等于较高者，切换不再跳动。 */}
     <div className="add-project-body">
     <div className="add-project-pane" data-active={mode === 'existing'}>
     <DirectoryInput label="项目路径" placeholder="输入或粘贴项目路径" value={path} onChange={setPath} disabled={busy || mode !== 'existing'} required={mode === 'existing'} pickDirectory={api.pickDirectory} onPickingChange={setPicking} describedBy={describedBy}/>
-    <p className="wb-help" style={{ marginTop: 12 }}>也可点击右侧图标选择项目。</p>
     </div>
     <div className="add-project-pane" data-active={mode === 'new'}>
       <label>项目名称<input required={mode === 'new'} maxLength={200} value={name} disabled={busy || mode !== 'new'} aria-describedby={describedBy} onChange={e => setName(e.target.value)} placeholder="作为初始文件夹名称"/></label>
-      <p className="wb-help">{root ? `创建位置：${root}` : '请先在工作台设置 → 项目配置 → 全局配置中设置默认项目根目录。'}</p>
+      <p className="wb-help">{root ? `创建位置：${root}` : '请先在工作台设置 → 项目配置 → 全局设置中设置默认项目根目录。'}</p>
     </div>
     </div>
-    <footer><button type="button" disabled={busy || picking} onClick={onClose}>取消</button><button type="submit" className="wb-primary" disabled={busy || picking || (mode === 'existing' ? !path.trim() : !root || !name.trim())}>{mode === 'new' ? '创建项目' : '打开项目'}</button></footer>
+    <footer><button type="button" disabled={busy || picking} onClick={onClose}>取消</button><button type="submit" className="wb-primary" disabled={busy || picking || (mode === 'existing' ? !path.trim() : !root || !name.trim())}>{mode === 'new' ? '创建项目' : '添加项目'}</button></footer>
   </form>;
 }

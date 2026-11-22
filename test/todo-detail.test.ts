@@ -134,6 +134,23 @@ test('通用文件交接保留名称和原始字节，读取失败不创建会�
   }), /读取失败/);
   assert.equal(begun, 1);
 });
+test('A02：待办交接失败重试复用已创建会话，打开失败重试不重复交接附件', async () => {
+  const todo = todoSchema.parse({ id: 't', projectId: 'p', title: '任务', note: '', done: false,
+    creator: 'user', createdAt: 1, updatedAt: 1, completedAt: null, version: 1 });
+  let created = 0, drafted = 0, rejectDraft = true, rejectOpen = true;
+  const port = { read: async () => new Blob(),
+    begin: async () => `s${++created}`,
+    draft: async () => { drafted++; if (rejectDraft) throw new Error('交接失败'); },
+    open: () => { if (rejectOpen) throw new Error('导航失败'); },
+  };
+  await assert.rejects(prepareTodoSession(todo, port), /交接失败/);
+  rejectDraft = false;
+  await assert.rejects(prepareTodoSession(todo, port), /导航失败/);
+  rejectOpen = false;
+  assert.equal(await prepareTodoSession(todo, port), 's1');
+  assert.equal(created, 1);
+  assert.equal(drafted, 2);
+});
 test('旧图片和通用文件共享10个额度，超限、归档和权限拒绝时不读取文件', async () => {
   const f = fixture({ saveTodoImage: async () => image });
   const { projectId } = await f.service.listForAgent('w1');

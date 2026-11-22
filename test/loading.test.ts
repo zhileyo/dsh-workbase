@@ -40,6 +40,7 @@ test('主题缓存缺失或无效时先显示中性骨架，隐藏带主题色�
     const html = renderToStaticMarkup(createElement(Workbase, { api: {} as ClientPort, memory: new UiMemory(storage) }));
     assert.ok(html.includes('wb-skeleton'));
     assert.ok(html.includes('visibility:hidden'));
+    assert.ok(html.includes('data-theme="violet"'));
   }
 });
 

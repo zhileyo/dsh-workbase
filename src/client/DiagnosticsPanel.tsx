@@ -91,6 +91,7 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
   const mounted = useRef(true);
   const lock = useRef(false);
   const refreshRequest = useRef<AbortController | null>(null);
+  const initialCheck = useRef(false);
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; refreshRequest.current?.abort(); };
@@ -109,6 +110,16 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
     catch (reason) { if (mounted.current) setError(reason instanceof Error ? reason.message : '重新检查失败'); }
     finally { lock.current = false; if (mounted.current) setWorking(false); }
   };
+  useEffect(() => {
+    let active = true;
+    // 等待首次可检查的时机；延后一轮避免严格模式试挂载发出已取消请求。
+    if (!busy && !initialCheck.current) void Promise.resolve().then(() => {
+      if (!active) return;
+      initialCheck.current = true;
+      void reload();
+    });
+    return () => { active = false; };
+  }, [busy]);
   const repair = async (kind: DiagnosticRepairKind, items: DiagnosticCandidate[]) => {
     if (lock.current || busy || !items.length) return;
     lock.current = true; setWorking(true); setError(''); setConfirmation(null); setProgress({ done: 0, total: items.length });
@@ -179,7 +190,10 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
     {error && <p className="diagnostic-message" role="alert">{errorText(error)}</p>}
     {progress && <p className="diagnostic-message" role="status">已处理 {progress.done} / {progress.total}</p>}
     {feedback && <div className="diagnostic-feedback" role="status">
-      <p>{feedback.kind === 'cache' ? '缓存重建' : feedback.kind === 'empty' ? '空会话删除' : '残留清理'}：成功 {feedback.result.succeeded.length} · 跳过 {feedback.result.skipped.length} · 失败 {feedback.result.failures.length}</p>
+      <p>{t('{p0}：成功 {p1} · 跳过 {p2} · 失败 {p3}', {
+        p0: t(feedback.kind === 'cache' ? '缓存重建' : feedback.kind === 'empty' ? '空会话删除' : '残留清理'),
+        p1: feedback.result.succeeded.length, p2: feedback.result.skipped.length, p3: feedback.result.failures.length,
+      })}</p>
       {!!feedback.result.failures.length && <details><summary>失败详情</summary>
         {feedback.result.failures.map(f => <p key={f.sessionId}>{f.sessionId}：{errorText(f.message)}</p>)}</details>}
       {!!retryItems.length && <button type="button" disabled={working || busy}

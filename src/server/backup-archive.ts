@@ -1,11 +1,12 @@
 import { constants, createReadStream, createWriteStream } from 'node:fs';
-import { readFile, mkdir, readdir, lstat, open, link } from 'node:fs/promises';
+import { mkdir, readdir, lstat, open, link } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { Readable, Transform } from 'node:stream';
 import { pipeline, finished } from 'node:stream/promises';
 import path from 'node:path';
 import { Encrypter, Decrypter, identityToRecipient } from 'age-encryption';
-import { c, x } from 'tar';
+import { c } from 'tar';
 import type { BackupManifest } from '../shared/backup.js';
 
 export function archiveFilename(kind: 'backup' | 'rollback', time: number, id: string) {
@@ -60,22 +61,11 @@ export async function decryptArchive(input: string, output: string, identity: st
       limit, createWriteStream(output, { flags: 'wx', mode: 0o600 }), { signal });
   } finally { source.destroy(); await finished(source).catch(() => undefined); await handle.close(); }
 }
-/** 只回读本次生成的归档；固定白名单防止路径穿越，验证内容和完整条目集合。 */
+/** 发布与恢复共用完整准入，回读成功意味着同一归档能通过恢复扫描。 */
 export async function verifyArchive(input: string, directory: string, identity: string, expected: BackupManifest, signal: AbortSignal) {
-  const plain = path.join(directory, 'verified.tar'), extracted = path.join(directory, 'verified');
-  await mkdir(extracted, { mode: 0o700 });
-  await decryptArchive(input, plain, identity, signal);
-  const allowed = new Set(['manifest.json', ...expected.files.map(f => f.path)]);
-  await x({ file: plain, cwd: extracted, strict: true, preservePaths: false,
-    filter: (name, entry) => {
-      signal.throwIfAborted();
-      if (!('type' in entry)) throw new Error('归档条目类型不可识别');
-      if (entry.type === 'Directory') return !name.startsWith('/') && !name.split('/').includes('..');
-      if (entry.type !== 'File' || !allowed.has(name)) throw new Error('归档包含意外条目');
-      return true;
-    } });
-  const manifest = JSON.parse(await readFile(path.join(extracted, 'manifest.json'), 'utf8'));
-  if (JSON.stringify(manifest) !== JSON.stringify(expected)) throw new Error('备份清单校验失败');
-  const actual = (await inventory(extracted, signal)).filter(f => f.path !== 'manifest.json');
-  if (JSON.stringify(actual) !== JSON.stringify(expected.files)) throw new Error('备份文件摘要校验失败');
+  const stage = path.join(directory, 'verified');
+  await mkdir(stage, { mode: 0o700 });
+  const { inspectArchive } = await import('./restore-archive.js');
+  const { manifest } = await inspectArchive(input, stage, identity, signal);
+  if (!isDeepStrictEqual(manifest, expected)) throw new Error('备份清单校验失败');
 }

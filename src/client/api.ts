@@ -1,10 +1,13 @@
 import type { Command } from '../shared/commands.js';
-import { RPC_CHANNEL, RPC_ENDPOINT } from '../shared/commands.js';
+import { RPC_CHANNEL, RPC_ENDPOINT, EXTENSIONS_ENDPOINT, ASSISTANT_ENDPOINT } from '../shared/commands.js';
+import { RULES_ENDPOINT, MESSAGE_ENDPOINT, MAX_RULES_REQUEST_BYTES, MAX_MESSAGE_REQUEST_BYTES, MAX_RPC_REQUEST_BYTES } from '../shared/project-rules.js';
+import type { ExtensionModule } from '../shared/extensions.js';
 import { preferencesSchema, type Preferences, type Snapshot } from '../shared/model.js';
 import type { ReactNode } from 'react';
 import type { DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { Todo } from '../shared/model.js';
 import type { TodoImage, TodoAttachment } from '../shared/todo.js';
+import type { SidebarProject } from './project-sidebar.js';
 export interface ComposerBridge {
   sessionId: string;
   change(text: string): void;
@@ -29,6 +32,8 @@ export interface ComposerProjectProps {
   onChange(projectId: string): void;
 }
 export interface ClientPort {
+  projectSidebar?: { select(project: SidebarProject | null): void };
+  renderProjectSidebar?(): ReactNode;
   uploadTodoAttachment?(todo: Todo, file: File): Promise<Todo>;
   readTodoAttachment?(todo: Todo, attachment: TodoImage | TodoAttachment, signal?: AbortSignal): Promise<Blob>;
   renderMarkdown?(text: string): ReactNode;
@@ -36,6 +41,7 @@ export interface ClientPort {
   readTodoImage?(todo: Todo, image: TodoImage, signal?: AbortSignal): Promise<Blob>;
   openTodoSession?(todo: Todo, preset: string): Promise<void>;
   call(command: Command, signal?: AbortSignal): Promise<unknown>;
+  extensions?<T = unknown>(module: ExtensionModule, method: string, input?: unknown, signal?: AbortSignal): Promise<T>;
   openSession(id: string): void;
   newSession(workspaceId: string): Promise<void>;
   pickDirectory(): Promise<string | null>;
@@ -59,11 +65,27 @@ export interface RpcPort {
 }
 export function caller(rpc: RpcPort) {
   return async (command: Command, signal?: AbortSignal) => {
-    const result = await rpc.call(RPC_CHANNEL, RPC_ENDPOINT, command, signal);
+    const endpoint = command.op === 'extensions' ? EXTENSIONS_ENDPOINT :
+      ['personal-save', 'speech-save', 'speech-synthesize', 'speech-stream-text', 'speech-stream-cancel'].includes(command.op) ? ASSISTANT_ENDPOINT :
+      command.op === 'rules-save' || command.op === 'settings' ? RULES_ENDPOINT :
+      command.op === 'submit-message' ? MESSAGE_ENDPOINT : RPC_ENDPOINT;
+    const limit = endpoint === RULES_ENDPOINT ? MAX_RULES_REQUEST_BYTES : endpoint === MESSAGE_ENDPOINT || endpoint === ASSISTANT_ENDPOINT ? MAX_MESSAGE_REQUEST_BYTES :
+      endpoint === EXTENSIONS_ENDPOINT ? 3 * 1024 * 1024 : MAX_RPC_REQUEST_BYTES;
+    const body = JSON.stringify({ type: 'client-request', rpcId: '00000000-0000-4000-8000-000000000000', method: endpoint, payload: command });
+    let bytes = 0;
+    for (const character of body) {
+      const point = character.codePointAt(0)!;
+      bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
+      if (bytes > limit) break;
+    }
+    if (bytes > limit) throw new Error('请求内容超过传输上限，请缩短内容后重试');
+    const result = await rpc.call(RPC_CHANNEL, endpoint, command, signal);
     if (!result.ok) throw new Error(result.error.message);
     return result.value;
   };
 }
+export const extensionCall = async <T = unknown>(api: ClientPort, module: ExtensionModule, method: string, input?: unknown, signal?: AbortSignal): Promise<T> =>
+  await api.call({ op: 'extensions', module, method, ...(input !== undefined ? { input } : {}) }, signal) as T;
 export const readSnapshot = async (api: ClientPort, signal?: AbortSignal): Promise<Snapshot> =>
   await api.call({ op: 'snapshot' }, signal) as Snapshot;
 export interface DetailMemory {
@@ -71,10 +93,12 @@ export interface DetailMemory {
   sessions: number; pending: number; done: number;
 }
 export class UiMemory {
+  readonly extensions: Partial<Record<ExtensionModule, { tab: string; group: string; search: string; scroll: number }>> = {};
   readonly details = new Map<string, DetailMemory>();
   private values = { homeScroll: 0, search: '' };
   private savedTheme: Preferences['theme'] | null = null;
   composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
+    creationRequests: {} as Record<string, string>,
     nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeDraft: null as DraftSnapshot | null, pending: null as null | {
     projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string;
   } };
@@ -96,6 +120,11 @@ export class UiMemory {
       const theme = preferencesSchema.shape.theme.safeParse(saved?.theme);
       if (theme.success) this.savedTheme = theme.data;
       if (saved && typeof saved.search === 'string' && Number.isFinite(saved.homeScroll)) {
+        for (const key of ['skills', 'mcp', 'rss'] as const) {
+          const item = saved.extensions?.[key];
+          if (item && typeof item.tab === 'string' && typeof item.group === 'string' && typeof item.search === 'string' && Number.isFinite(item.scroll))
+            this.extensions[key] = item;
+        }
         this.values = { search: saved.search, homeScroll: saved.homeScroll };
         if (saved.composer && typeof saved.composer.draft === 'string') this.composer = { ...this.composer, ...saved.composer };
         for (const [id, detail] of Object.entries(saved.details ?? {})) {
@@ -117,7 +146,7 @@ export class UiMemory {
     this.save();
   }
   save() {
-    try { this.storage?.setItem('dsh-workbase-ui-v2', JSON.stringify({ ...this.values, theme: this.savedTheme, composer: this.composer, details: Object.fromEntries(this.details) })); }
+    try { this.storage?.setItem('dsh-workbase-ui-v2', JSON.stringify({ ...this.values, extensions: this.extensions, theme: this.savedTheme, composer: this.composer, details: Object.fromEntries(this.details) })); }
     catch { /* 浏览器存储受限时仍保留本次会话草稿。 */ }
   }
   private track(detail: DetailMemory) {

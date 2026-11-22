@@ -2,11 +2,11 @@ import { useId, useRef, useState } from 'react';
 import { Icon } from './ui.js';
 
 /** 复用宿主原生目录选择，不用浏览器上传接口伪造绝对路径。 */
-export function DirectoryInput({ label, value, onChange, pickDirectory, disabled = false, required = false, autoFocus = false, placeholder = '输入文件夹的绝对路径', onPickingChange, describedBy }: {
+export function DirectoryInput({ label, value, onChange, pickDirectory, disabled = false, required = false, autoFocus = false, placeholder = '输入文件夹的绝对路径', onPickingChange, describedBy, help }: {
   label: string; value: string; onChange(value: string): void;
   pickDirectory(): Promise<string | null>; disabled?: boolean; required?: boolean; autoFocus?: boolean;
   placeholder?: string; onPickingChange?(picking: boolean): void;
-  describedBy?: string;
+  describedBy?: string; help?: string;
 }) {
   const id = useId();
   const [picking, setPicking] = useState(false);
@@ -30,12 +30,13 @@ export function DirectoryInput({ label, value, onChange, pickDirectory, disabled
       <input id={id} autoFocus={autoFocus} required={required} value={value} disabled={disabled || picking}
         maxLength={4096} placeholder={placeholder}
         title="输入或粘贴路径；点击右侧图标或按 Alt + ↓ 选择"
-        aria-describedby={[describedBy, error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
+        aria-describedby={[describedBy, help ? `${id}-help` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ') || undefined}
         onChange={e => { setError(''); onChange(e.target.value); }}
         onKeyDown={e => { if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); void choose(); } }}/>
       <button type="button" className="flat" title={`选择${label}`} aria-label={`选择${label}`}
         disabled={disabled || picking} onClick={() => void choose()}><Icon name="folder"/></button>
     </div>
+    {help && <p id={`${id}-help`} className="settings-inline-note">{help}</p>}
     {error && <p id={`${id}-error`} role="alert" className="wb-warning">{error}</p>}
   </div>;
 }

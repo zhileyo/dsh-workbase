@@ -32,6 +32,33 @@ function fixture() {
   return { service, workspaces, saved: () => saved, fail: (value: boolean) => { fail = value; }, advance: (ms: number) => { tick += ms; } };
 }
 
+test('语音组件开关独立持久化，其他偏好补丁不重置，关闭失败保持已启用状态', async () => {
+  const f = fixture();
+  const defaults = initialState().preferences;
+  assert.equal(defaults.speechComponentEnabled, false);
+  await f.service.saveSettings(defaults.theme, {}, { home: defaults.home, root: '', speechComponentEnabled: true });
+  assert.equal((await f.service.snapshot()).preferences.speechComponentEnabled, true);
+  await f.service.setPreferences({ theme: 'warm' });
+  assert.equal((await f.service.snapshot()).preferences.speechComponentEnabled, true);
+  f.fail(true);
+  await assert.rejects(f.service.saveSettings(defaults.theme, {}, { home: defaults.home, root: '', speechComponentEnabled: false }), /disk full/);
+  assert.equal(f.saved().preferences.speechComponentEnabled, true);
+});
+
+test('首页统计卡顺序通过偏好持久化，恢复与隐藏卡保留顺序，失败不改旧值', async () => {
+  const f = fixture();
+  const home = initialState().preferences.home;
+  home.statOrder = ['rss', 'mcp', 'skills', 'diagnostic', 'pending', 'recent', 'running'];
+  await f.service.setPreferences({ home });
+  assert.deepEqual((await f.service.snapshot()).preferences.home.statOrder, home.statOrder);
+  const restored = new WorkbaseService({ get: () => structuredClone(f.saved()), set: async () => {} },
+    { workspaces: async () => [], sessions: async () => [], rename: async () => {} }, () => 'restored');
+  assert.deepEqual((await restored.snapshot()).preferences.home.statOrder, home.statOrder);
+  f.fail(true);
+  await assert.rejects(f.service.setPreferences({ home: { ...home, statOrder: initialState().preferences.home.statOrder } }), /disk full/);
+  assert.deepEqual((await f.service.snapshot()).preferences.home.statOrder, home.statOrder);
+});
+
 test('删除撤销恢复原始记录，保存失败可重试，不能重复或跨项目恢复', async () => {
   const f = fixture();
   const [a,b] = (await f.service.snapshot()).projects;
@@ -91,6 +118,22 @@ test('保存失败不发布，后续重试仍能保存', async () => {
   f.fail(false);
   await f.service.createTodo({ projectId, title: '已保存' });
   assert.equal(f.saved().todos.length, 1);
+});
+
+test('项目初始化默认值随设置原子保存，旧设置与无关偏好保留已存值', async () => {
+  const f = fixture();
+  const initialization = { ...initialState().preferences.projectInitialization, basic: true, agent: true };
+  const options = { home: initialState().preferences.home, root: '/projects', projectInitialization: initialization };
+  f.fail(true);
+  await assert.rejects(f.service.saveSettings('warm', {}, options), /disk full/);
+  assert.deepEqual(f.saved().preferences.projectInitialization, initialState().preferences.projectInitialization);
+  f.fail(false);
+  await f.service.saveSettings('warm', {}, options);
+  assert.deepEqual(f.saved().preferences.projectInitialization, initialization);
+  await f.service.setPreferences({ view: 'list' });
+  await f.service.saveSettings('follow', {}, { home: options.home, root: '' });
+  assert.deepEqual((await f.service.snapshot()).preferences.projectInitialization, initialization);
+  assert.deepEqual(f.saved().preferences.projectInitialization, initialization);
 });
 
 test('状态两态流转，重新打开清除完成时间，过期修改被拒绝', async () => {

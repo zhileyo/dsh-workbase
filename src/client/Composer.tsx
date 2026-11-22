@@ -28,7 +28,8 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   const [model, setModel] = useState(saved.model);
   const [branch, setBranch] = useState(saved.branch);
   const [worktree, setWorktree] = useState(saved.worktree);
-  const [branches, setBranches] = useState<GitBranches | null>(null);
+  const [branchSnapshot, setBranches] = useState<{ projectId: string; value: GitBranches | null } | null>(null);
+  const branches = branchSnapshot?.projectId === projectId ? branchSnapshot.value : null;
   const [forge, setForge] = useState(() => api.forgeAvailable?.() ?? false);
   const [catalog, setCatalog] = useState<LaunchCatalog | null>(null);
   const [error, setError] = useState('');
@@ -73,10 +74,15 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
     if (!projectId) { setBranches(null); return; }
     const controller = new AbortController();
     void api.call({ op: 'git-branches', projectId }, controller.signal).then(value => {
-      if (!controller.signal.aborted) setBranches(value as GitBranches);
-    }).catch(() => { if (!controller.signal.aborted) setBranches(null); });
+      if (!controller.signal.aborted) setBranches({ projectId, value: value as GitBranches });
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setBranches({ projectId, value: null });
+        setError('无法读取项目分支，请重新读取后再发送。');
+      }
+    });
     return () => controller.abort();
-  }, [api, projectId]);
+  }, [api, projectId, attempt]);
   useEffect(() => {
     // 切换项目后回填该项目的当前分支；手动选过的分支若仍存在则保留。
     if (branches?.git && !branches.branches.includes(branch)) setBranch(branches.current || branches.branches[0] || '');
@@ -108,8 +114,9 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
     return () => { window.clearInterval(timer); unsubscribe(); window.removeEventListener('focus', probe); };
   }, [api]);
   const worktreeOn = worktree && forge && !!branches?.git;
+  const branchWaiting = !pending && worktree && forge && (!branches || branches.git && !branches.branches.includes(branch));
   const send = async () => {
-    if (locked.current || voiceActive || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;
+    if (locked.current || branchWaiting || voiceActive || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;
     if (worktreeOn && !branch) { setError('新建工作树需要先选择基准分支。'); return; }
     locked.current = true; setBusy(true); setError('');
     try {
@@ -196,12 +203,12 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
         options={catalog?.models.map(m => ({ value: JSON.stringify([m.provider, m.id]), label: m.name, description: m.providerName })) ?? [{ value: '', label: '读取模型…' }]}/>}
       {api.renderComposerMenu && <div className="wb-composer-activity" ref={setActivityTarget}/>}
       <button id="composer-send" className="wb-send wb-primary primary" type="button" title={pending ? '重试首条消息' : '发送 · ⌘ Enter'} aria-label={pending ? '重试首条消息' : '发送首条消息'}
-        disabled={voiceActive || busy || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
+        disabled={branchWaiting || voiceActive || busy || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
       </div>
     </div>
     {!project?.available && projectId && <p className="wb-warning">所选项目目录不可用，请选择可用项目。</p>}
     {catalog?.failures.map(f => <p className="wb-help" key={f.name}>{f.name}：{errorText(f.message)}</p>)}
-    {error && <p id={errorId} role="alert" className="wb-warning">{errorText(error)}{!catalog && <button type="button" onClick={() => setAttempt(n => n + 1)}>重新读取</button>}</p>}
+    {error && <p id={errorId} role="alert" className="wb-warning">{errorText(error)}{(!catalog || branchWaiting) && <button type="button" onClick={() => setAttempt(n => n + 1)}>重新读取</button>}</p>}
     </div>
     <BranchBar forge={forge} branches={branches} worktree={worktree} branch={branch} busy={busy || nativeBusy} pending={!!pending}
       projectPath={project?.path} onBranch={setBranch} onWorktree={setWorktree}/>

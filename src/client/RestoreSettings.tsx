@@ -119,7 +119,7 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
   const locked = disabled || pending || running || !call;
   return <div className="wb-restore-settings">
     <h3>数据恢复</h3>
-    <p className="settings-inline-note">先解密校验，再预览确认。关闭设置后后台任务继续；恢复期间请勿退出宿主。</p>
+    <p className="settings-inline-note">校验预览后确认恢复；关闭设置不影响任务，期间请勿退出宿主。</p>
     <ArchiveInput value={archive} onChange={setArchive} archives={archives} disabled={locked || !!preview} describedBy={error ? errorId : undefined}
       refresh={() => { if (call) void call({ op: 'restore-catalog' }).then(result => setArchives(result as RestoreArchive[]))
         .catch(e => setError(e instanceof Error ? e.message : '无法读取最近备份')); }}/>

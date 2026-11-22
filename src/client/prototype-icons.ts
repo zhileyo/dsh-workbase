@@ -1,5 +1,7 @@
 // 自动从 UI 原型同步。
 export const prototypeIcons = {
+  "speaker": "<path d=\"M11 5 6 9H3v6h3l5 4V5Z\"/><path class=\"wb-speech-wave\" d=\"M15 8a6 6 0 0 1 0 8\"/><path class=\"wb-speech-wave\" d=\"M18 5a10 10 0 0 1 0 14\"/>",
+  "speaker-off": "<path d=\"M11 5 6 9H3v6h3l5 4V5Z\"/><path d=\"m16 9 6 6m0-6-6 6\"/>",
   "dots": "<circle cx=\"8\" cy=\"8\" r=\"2\"/><circle cx=\"16\" cy=\"8\" r=\"2\"/><circle cx=\"8\" cy=\"16\" r=\"2\"/><circle cx=\"16\" cy=\"16\" r=\"2\"/>",
   "path-dots": "<g transform=\"scale(1.7142857142857142)\" fill=\"currentColor\" stroke=\"none\"><circle cx=\"4\" cy=\"4\" r=\"1.2\"/><circle cx=\"10\" cy=\"4\" r=\"1.2\"/><circle cx=\"4\" cy=\"10\" r=\"1.2\"/><circle cx=\"10\" cy=\"10\" r=\"1.2\"/></g>",
   "git": "<circle cx=\"5.3\" cy=\"5.3\" r=\"2.1\"/><circle cx=\"5.3\" cy=\"18.7\" r=\"2.1\"/><circle cx=\"18.7\" cy=\"12\" r=\"2.1\"/><path d=\"M5.3 7.5v9.1M7.5 18.7h3.5a5.3 5.3 0 0 0 5.3-5.3v-3.9\"/>",
@@ -12,6 +14,7 @@ export const prototypeIcons = {
   "components": "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1\"/><path d=\"m17.5 2 4.5 4.5-4.5 4.5L13 6.5Z\"/>",
   "list": "<path d=\"M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1\"/>",
   "more": "<circle cx=\"5\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"19\" cy=\"12\" r=\"1\"/>",
+  "more-vertical": "<circle cx=\"12\" cy=\"5\" r=\"1\"/><circle cx=\"12\" cy=\"12\" r=\"1\"/><circle cx=\"12\" cy=\"19\" r=\"1\"/>",
   "back": "<path d=\"m14 6-6 6 6 6M8 12h13\"/>",
   "down": "<path d=\"m7 10 5 5 5-5\"/>",
   "chevron": "<path d=\"m9 6 6 6-6 6\"/>",
@@ -37,7 +40,7 @@ export const prototypeIcons = {
   "file": "<path d=\"M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z\"/><path d=\"M14 2v6h6M8 13h8M8 17h6\"/>",
   "paperclip": "<path d=\"m21 11-9 9a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8-8\"/>",
   "bot": "<rect x=\"4\" y=\"7\" width=\"16\" height=\"13\" rx=\"3\"/><path d=\"M12 3v4M8 12h.01M16 12h.01M9 16h6\"/>",
-  "skills": "<path d=\"m12 3 2.6 5.4 5.9.9-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.3l5.9-.9Z\"/>",
+  "skills": "<path d=\"M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6M8 9h3M8 13h5M8 17h4\"/><path d=\"m18 2 1.2 3.8L23 7l-3.8 1.2L18 12l-1.2-3.8L13 7l3.8-1.2Z\"/>",
   "plug": "<path d=\"M9 3v5m6-5v5M7 8h10v3a5 5 0 0 1-10 0ZM12 16v5\"/>",
   "rss": "<circle cx=\"5\" cy=\"19\" r=\"1\" fill=\"currentColor\"/><path d=\"M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16\"/>",
   "external": "<path d=\"M14 3h7v7m0-7L10 14M10 3H4v17h17v-6\"/>"

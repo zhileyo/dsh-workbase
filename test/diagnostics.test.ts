@@ -50,6 +50,7 @@ function fixture() {
   const maintenance: ReturnType<typeof createSessionMaintenance> = {
     capabilities: () => supported,
     exclusive: operation => operation(),
+    deletionIdentity: async () => 'generation',
     deleteSession: async () => true,
     deleteWithinQueue: async (_id: string, options: DeleteOptions) => !options.validate || await options.validate(),
     rebuildWithinQueue: async () => true,
@@ -340,4 +341,48 @@ test('空会话候选身份带上宿主更新时间，修复时声明驱逐已�
   assert.deepEqual((await f.host.repairDiagnostics!('empty', [{ sessionId: 'workspace', identity: fresh.identity! }])).succeeded, ['workspace']);
   assert.equal(options.at(-1)?.evict, true);
   assert.equal(options.at(-1)?.coldOnly, true);
+});
+
+for (const change of ['nonblank', 'running', 'updated', 'parent', 'origin', 'descendant', 'revision', 'events', 'missing'] as const) {
+  test(`C02 首次确认后 ${change} 变化必须停止删除`, async () => {
+    const f = fixture();
+    let items = [{ sessionId: 'workspace', blank: true, running: false, updatedAt: 11 }];
+    let revision = '1';
+    let eventCount = 0;
+    const list = f.persistence.list;
+    f.persistence.list = async () => (await list()).map(row => ({ ...row, revision, eventCount }));
+    (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items }) };
+    const candidate = (await f.host.diagnose!(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+    f.maintenance.deleteWithinQueue = async (_id, options) => {
+      if (change === 'nonblank') items[0]!.blank = false;
+      if (change === 'running') items[0]!.running = true;
+      if (change === 'updated') items[0]!.updatedAt++;
+      if (change === 'parent') f.rows[0]!.parentSession = 'new-parent';
+      if (change === 'origin') f.rows[0]!.origin = 'subagent';
+      if (change === 'descendant') f.rows.push({ ...f.rows[0]!, id: 'new-child', parentSession: 'workspace' });
+      if (change === 'revision') revision = '2';
+      if (change === 'events') eventCount++;
+      if (change === 'missing') items = [];
+      return await options.validate!();
+    };
+    assert.deepEqual(await f.host.repairDiagnostics!('empty', [candidate]),
+      { succeeded: [], skipped: ['workspace'], failures: [] });
+  });
+}
+
+test('C02 驱逐后控制器返回损坏结果不能当作目标消失', async () => {
+  const f = fixture();
+  let broken = false;
+  const list = f.persistence.list;
+  f.persistence.list = async () => (await list()).map(row => ({ ...row, revision: '1' }));
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () =>
+    broken ? {} : { items: [{ sessionId: 'workspace', blank: true, running: false, updatedAt: 11 }] } };
+  const candidate = (await f.host.diagnose!(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+  f.maintenance.deleteWithinQueue = async (_id, options) => {
+    broken = true;
+    return options.validate!({ evicted: true });
+  };
+  const result = await f.host.repairDiagnostics!('empty', [candidate]);
+  assert.deepEqual(result.succeeded, []);
+  assert.equal(result.failures.length, 1);
 });

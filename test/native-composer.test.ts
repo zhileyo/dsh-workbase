@@ -43,6 +43,28 @@ function handoffFixture() {
   return { memory, events, doc, shells, references, ctx, prepare };
 }
 
+test('A02 原生创建回执完全丢失后重新加载UI仍使用原请求身份', async () => {
+  const f = handoffFixture(); let stored = '', attempts = 0;
+  const requests: string[] = [];
+  const storage = { getItem: () => stored || null, setItem: (_key: string, value: string) => { stored = value; }, removeItem() {} };
+  const access = {
+    async create(_workspace: string, _preset: string, _previous: string, _signal: AbortSignal, requestId: string) {
+      requests.push(requestId);
+      if (++attempts === 1) throw new Error('回执丢失');
+      return 'b';
+    }, async validate() { return 'guard'; }, async release() {},
+  };
+  await assert.rejects(prepareNativeComposer(f.ctx, new UiMemory(storage), 'b',
+    new AbortController().signal, 'standard', undefined, undefined, access), /回执丢失/);
+  const memory = new UiMemory(storage);
+  await prepareNativeComposer(f.ctx, memory, 'b', new AbortController().signal,
+    'standard', undefined, undefined, access);
+  assert.equal(requests.length, 2);
+  assert.match(requests[0]!, /^[0-9a-f-]{36}$/);
+  assert.equal(requests[0], requests[1]);
+  assert.deepEqual(memory.composer.creationRequests, {});
+});
+
 test('切换项目先接收附件并重新绑定上传，再清空原草稿；原引用释放时不再持有附件', async () => {
   const f = handoffFixture();
   await f.prepare(f.ctx, f.memory, 'b', new AbortController().signal, '', f.references.a);
@@ -85,7 +107,7 @@ test('加载取消不会转移附件，后续目标从原会话接续；加载�
   let ready!: () => void;
   f.references.b!.ready = new Promise<void>(resolve => { ready = resolve; });
   const pending = f.prepare(f.ctx, f.memory, 'b', abort.signal, '', f.references.a);
-  await Promise.resolve();
+  for (let i = 0; i < 4; i++) await Promise.resolve();
   abort.abort(); ready();
   await assert.rejects(pending, /abort/i);
   assert.deepEqual(f.shells.a!.ids, ['image']);
@@ -244,4 +266,36 @@ test('原生输入初始加载失败及加载中取消均释放持有引用', as
   })) as unknown as typeof ctx.sessions.retain;
   await assert.rejects(prepareNativeComposer(ctx, new UiMemory(), 'w', controller.signal), /abort/i);
   assert.equal(releases, 2);
+});
+
+test('A02：ready失败及创建回执后取消，重试使用同一会话身份', async () => {
+  for (const cancelled of [false, true]) {
+    const memory = new UiMemory(), requests: any[] = [], abort = new AbortController();
+    let failed = true;
+    const ctx = { sessions: {
+      create: async (options: any) => { requests.push(options); if (cancelled && failed) abort.abort(); return options.sessionId ?? 'created'; },
+      retain: (id: string) => ({ sessionId: id, binding: {}, ready: failed ? Promise.reject(new Error('加载失败')) : Promise.resolve(), release() {} }),
+    }, conversation: { input: { for: () => ({}), requestDraftInitialization() {} } } } as unknown as Context;
+    await assert.rejects(prepareNativeComposer(ctx, memory, 'w', abort.signal, 'standard'));
+    failed = false;
+    await prepareNativeComposer(ctx, memory, 'w', new AbortController().signal, 'standard');
+    assert.equal(requests[1].sessionId, 'created');
+  }
+});
+
+test('A02：创建仍在途时取消并立即重试，同一工作区模式只发送一次创建', async () => {
+  const memory = new UiMemory(), abort = new AbortController(), requests: { resolve(id: string): void }[] = [];
+  const ctx = { sessions: {
+    create: () => new Promise<string>(resolve => requests.push({ resolve })),
+    retain: (id: string) => ({ sessionId: id, binding: {}, ready: Promise.resolve(), release() {} }),
+  }, conversation: { input: { for: () => ({}), requestDraftInitialization() {} } } } as unknown as Context;
+  const first = prepareNativeComposer(ctx, memory, 'w', abort.signal, 'standard');
+  abort.abort();
+  const second = prepareNativeComposer(ctx, memory, 'w', new AbortController().signal, 'standard');
+  requests.forEach((request, i) => request.resolve(`s${i + 1}`));
+  const results = await Promise.allSettled([first, second]);
+  assert.equal(results[0].status, 'rejected');
+  assert.equal(results[1].status, 'fulfilled');
+  assert.equal(requests.length, 1);
+  assert.equal(memory.composer.nativeSessionId, 's1');
 });

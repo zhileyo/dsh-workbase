@@ -166,7 +166,12 @@ export { adaptBreakpoints };
 export async function syncPrototypeUi() {
   const html = await readFile(new URL('./docs/ui/ui-directions.html', import.meta.url), 'utf8');
   const styles = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(match => match[1]).join('\n');
-  const css = pruneRules(adaptBreakpoints(styles.replace(/\.app(?![\w-])/g, ':scope'))
+  // 原型原生容器查询按弹窗内容宽度，媒体宽度转换按外层工作台宽度；
+  // 分开名称，避免窄抽屉把原本用于外层面板的断点提前触发。
+  const localContainers = styles
+    .replace(/@container\s+workbase(?=[\s(])/g, '@container workbase-dialog')
+    .replace(/container:\s*workbase\s*\/\s*inline-size/g, 'container:workbase-dialog / inline-size');
+  const css = pruneRules(adaptBreakpoints(localContainers.replace(/\.app(?![\w-])/g, ':scope'))
     .replace(/\b(pulse|settings-slide-up|settings-mask-in)\b/g, 'wb-$1'));
   const iconSource = html.match(/const icons=(\{[\s\S]*?\n\});/)?.[1];
   if (!iconSource) throw new Error('原型图标表未找到');

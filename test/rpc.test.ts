@@ -4,6 +4,52 @@ import { dispatch } from '../src/server/rpc.js';
 import { WorkbaseService } from '../src/server/service.js';
 import { initialState, defaultFields } from '../src/shared/model.js';
 import { commandSchema } from '../src/shared/commands.js';
+import { preferencesSchema } from '../src/shared/model.js';
+import { DEFAULT_COMMIT_RULE_CONTENT, defaultProjectInitialization, projectInitializationSchema } from '../src/shared/project-initialization.js';
+
+test('旧默认提交规则升级为纯Markdown，自定义内容与分组选择保持原样', () => {
+  const plain = DEFAULT_COMMIT_RULE_CONTENT.replace(/^---\nalwaysApply: true\nscene: git_message\n---\n\n/, '');
+  const previous = `---\nalwaysApply: true\nscene: git_message\n---\n\n${plain}`;
+  const preferences = initialState().preferences;
+  const options = { ...defaultProjectInitialization(), basic: true, agent: true, git: false, completeOnImport: true };
+  const upgraded = preferencesSchema.parse({ ...preferences, projectInitialization: { ...options, commitRuleContent: previous } });
+  assert.deepEqual(upgraded.projectInitialization, { ...options, commitRuleContent: plain });
+  for (const custom of [`${previous}\n`, '# 自定义规范\n\n使用 feat / fix。\n', '']) {
+    const value = { ...options, commitRules: false, commitRuleContent: custom };
+    assert.deepEqual(projectInitializationSchema.parse(value), value);
+  }
+});
+
+test('旧偏好补齐初始化默认值，RPC严格校验且增量更新不填默认', () => {
+  const { completeOnImport: _flag, ...oldGrouped } = defaultProjectInitialization();
+  assert.equal(projectInitializationSchema.parse(oldGrouped).completeOnImport, false);
+  assert.equal(projectInitializationSchema.parse({ ...oldGrouped, completeOnImport: true }).completeOnImport, true);
+  const { projectInitialization: _, ...oldPreferences } = initialState().preferences;
+  assert.deepEqual(preferencesSchema.parse(oldPreferences).projectInitialization, defaultProjectInitialization());
+  for (const template of ['none', 'basic'] as const) {
+    assert.deepEqual(preferencesSchema.parse({ ...oldPreferences, projectInitialization: { template, git: false } }).projectInitialization,
+      { ...defaultProjectInitialization(), basic: template === 'basic', agent: template === 'basic' });
+  }
+  const patch = commandSchema.parse({ op: 'preferences', patch: { view: 'list' } });
+  if (patch.op === 'preferences') assert.deepEqual(patch.patch, { view: 'list' });
+  for (const initialization of [{ template: 'other', git: false }, { template: 'none', git: true }, { template: 'basic', git: true, extra: true }]) {
+    assert.equal(commandSchema.safeParse({ op: 'preferences', patch: { projectInitialization: initialization } }).success, false);
+  }
+});
+
+test('RPC保存项目初始化默认值并在重新载入后保留', async () => {
+  let state = initialState();
+  const make = () => new WorkbaseService({ get: () => state, set: async next => { state = next; } }, {
+    workspaces: async () => [], sessions: async () => [], rename: async () => {},
+  }, () => 'unused-id');
+  const service = make(), signal = new AbortController().signal;
+  const projectInitialization = { template: 'basic', git: true };
+  const result = await dispatch(service, { op: 'settings', theme: 'follow', permissions: {}, options: {
+    home: state.preferences.home, root: '', projectInitialization,
+  } }, true, signal);
+  assert.equal(result.ok, true);
+  assert.deepEqual((await make().snapshot()).preferences.projectInitialization, projectInitializationSchema.parse(projectInitialization));
+});
 
 function fixture() {
   let state = initialState();

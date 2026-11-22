@@ -9,9 +9,58 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { BackupManager } from '../src/server/backup.js';
 import { RestoreManager } from '../src/server/restore.js';
-import { initialState } from '../src/shared/model.js';
+import { initialState, stateSchema, todoSchema } from '../src/shared/model.js';
 import { WorkbaseService } from '../src/server/service.js';
 import { dispatch } from '../src/server/rpc.js';
+import { saveRuleFiles } from '../src/server/project-rules.js';
+import { defaultProjectRules } from '../src/shared/project-rules.js';
+
+test('C12同目录恢复保留当前项目身份及规则、Skills/MCP关联，恢复待办和标记一致映射', async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'wb-restore-rules-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(path.join(directory, 'AGENTS.md'), '# 用户规范\n');
+  let state = initialState();
+  const binding = { projectId: 'p-new', workspaceId: 'w', path: directory, agentCanChangeStatus: true, archived: false, retired: false, removed: false };
+  state.bindings.push(binding);
+  state.preferences.rules.projects.push({ id: 'r', name: '规则', enabled: true, content: '正文', projectIds: ['p-new'] });
+  state = stateSchema.parse(state);
+  await saveRuleFiles(directory, defaultProjectRules(), state.preferences.rules, [{ projectId: 'p-new', path: directory }]);
+  const external = { skills: ['p-new'], mcp: ['p-new'] };
+  const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, {
+    workspaces: async () => [{ workspaceId: 'w', path: directory, title: '项目', available: true, sessionIds: [] }],
+    sessions: async () => [], rename: async () => {}, saveRules: (previous, rules, targets) => saveRuleFiles(directory, previous, rules, targets),
+  }, () => 'id');
+  const input = initialState();
+  input.bindings.push({ ...binding, projectId: 'p-old', workspaceId: 'old' });
+  input.projectMarks['p-old'] = { pinned: true, favorite: false };
+  input.preferences.selectedProject = 'p-old';
+  input.todos.push(todoSchema.parse({ id: 't', projectId: 'p-old', title: '待办', note: '', done: false, creator: 'user', completedAt: 0, version: 1, createdAt: 1, updatedAt: 1 }));
+  assert.deepEqual((await service.inspectRestore(input)).blockers, []);
+  await service.applyRestore(input, 0, async () => {});
+  assert.equal(state.bindings[0]?.projectId, 'p-new');
+  assert.equal(state.todos[0]?.projectId, 'p-new');
+  assert.equal(state.preferences.selectedProject, 'p-new');
+  assert.equal(state.projectMarks['p-new']?.pinned, true);
+  for (const ids of Object.values(external)) assert.ok(ids.every(id => state.bindings.some(b => b.projectId === id)));
+  const previous = structuredClone(state.preferences.rules), rules = structuredClone(previous);
+  rules.projects[0]!.enabled = false;
+  await service.saveRules(previous, rules);
+  assert.equal(await readFile(path.join(directory, 'AGENTS.md'), 'utf8'), '# 用户规范\n');
+});
+
+test('C12目录无法唯一映射时预览阻断且确认不写入', async () => {
+  let state = initialState();
+  state.bindings.push({ projectId: 'current', workspaceId: 'w', path: '/project', agentCanChangeStatus: true, archived: false, retired: false, removed: false });
+  const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, {
+    workspaces: async () => [], sessions: async () => [], rename: async () => {},
+  }, () => 'id');
+  const input = initialState();
+  const preview = await service.inspectRestore(input);
+  assert.ok(preview.blockers.some(message => message.includes('项目关联') && message.includes('/project')));
+  let called = false;
+  await assert.rejects(service.applyRestore(input, 0, async () => { called = true; }), /项目关联/);
+  assert.equal(called, false); assert.equal(state.bindings[0]?.projectId, 'current');
+});
 
 async function fixture(t: TestContext, ttlMs?: number) {
   const root = await mkdtemp(path.join(tmpdir(), 'wb-restore-'));
@@ -50,7 +99,7 @@ test('恢复必须先校验预览，确认后更新正式存储并保存可读�
   assert.equal(ready.phase, 'ready'); assert.equal(f.state().preferences.theme, 'warm');
   assert.equal(ready.preview!.revision, 1);
   const result = await f.restore.confirm({ token: ready.preview!.token, mode: 'workbase' });
-  assert.equal(result.phase, 'completed'); assert.equal(f.state().preferences.theme, 'follow');
+  assert.equal(result.phase, 'completed'); assert.equal(f.state().preferences.theme, 'violet');
   assert.equal(f.state().revision, 2);
   const rollback = await f.restore.preview({ archive: result.result!.path, keyPath: '' });
   assert.equal(rollback.phase, 'ready');
@@ -179,7 +228,7 @@ test('部分写入失败自动恢复原数据，回滚再次失败返回明确�
     } }, { workspaces: async () => [], sessions: async () => [], rename: async () => {} }, () => 'id');
     await assert.rejects(service.applyRestore(input, 0, async () => { saved = true; }), rollbackFails ? /自动回滚均失败/ : /部分写入失败/);
     assert.equal(writes, 2);
-    if (!rollbackFails) { assert.equal(state.preferences.theme, 'follow'); assert.equal(state.revision, 2); }
+    if (!rollbackFails) { assert.equal(state.preferences.theme, 'violet'); assert.equal(state.revision, 2); }
   }
 });
 test('工作台恢复拒绝无法核实的工作树归属且保留当前备份配置', async t => {

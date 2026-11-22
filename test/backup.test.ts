@@ -6,12 +6,17 @@ import path from 'node:path';
 import { BackupManager } from '../src/server/backup.js';
 import { initialState, preferencesSchema } from '../src/shared/model.js';
 import { commandSchema } from '../src/shared/commands.js';
-import { decryptArchive, encryptArchive, archiveFilename, publishArchive } from '../src/server/backup-archive.js';
+import { decryptArchive, encryptArchive, archiveFilename, publishArchive, inventory, verifyArchive } from '../src/server/backup-archive.js';
+import { inspectArchive } from '../src/server/restore-archive.js';
+import { personalFiles } from '../src/shared/personalization.js';
 import { pruneBackups } from '../src/server/backup-retention.js';
 import { x } from 'tar';
 import { spawn, execFileSync } from 'node:child_process';
 import { exportSessions, createBackupSources } from '../src/server/backup-sources.js';
 import { copyObserved } from '../src/server/backup-files.js';
+import { Header } from 'tar';
+import { Encrypter, generateIdentity, identityToRecipient } from 'age-encryption';
+import { createHash } from 'node:crypto';
 import { WorkbaseService } from '../src/server/service.js';
 import { dispatch } from '../src/server/rpc.js';
 import type { Context } from '@deepseek-ai/cordis';
@@ -68,6 +73,109 @@ async function fixture(t: TestContext) {
   t.after(() => manager.dispose());
   return { root, home, out, state, manager };
 }
+test('A04 四个根级私人档案按文件白名单加密归档，不扫描其他根级文件', async t => {
+  const f = await fixture(t);
+  for (const file of personalFiles) await writeFile(path.join(f.home, file), `synthetic-${file}`);
+  await writeFile(path.join(f.home, 'NOT-PERSONAL.md'), 'excluded');
+  const sources = (await createBackupSources({ get: () => undefined } as unknown as Context, f.home,
+    { workspaces: async () => [], sessions: async () => [], rename: async () => {} })())
+    .filter(source => personalFiles.some(file => source.path === path.join(f.home, file)));
+  assert.equal(sources.length, 4);
+  const manager = new BackupManager({ home: f.home, settings: () => f.state.preferences.backup,
+    state: async () => f.state, sources: async () => sources, busy: async () => false });
+  t.after(() => manager.dispose());
+  await manager.start('manual'); await manager.settled();
+  const result = await manager.status(); assert.equal(result.phase, 'completed', result.message);
+  const stage = path.join(f.root, 'personal-inspect'); await mkdir(stage);
+  const { manifest, payload } = await inspectArchive(result.path!, stage,
+    (await readFile(result.keyPath!, 'utf8')).trim(), new AbortController().signal);
+  for (const source of sources) {
+    assert.equal(await readFile(path.join(payload, 'files', source.id), 'utf8'), `synthetic-${path.basename(source.path!)}`);
+    assert.equal(result.coverage.find(row => row.id === source.id)?.status, 'observation');
+  }
+  assert.equal(manifest.files.some(file => file.path.includes('NOT-PERSONAL')), false);
+});
+test('A04 四个私人档案缺失时分别报告 absent，其他根级文件不补作备份源', async t => {
+  const f = await fixture(t);
+  const sources = (await createBackupSources({ get: () => undefined } as unknown as Context, f.home,
+    { workspaces: async () => [], sessions: async () => [], rename: async () => {} })())
+    .filter(source => source.id.startsWith('personal-'));
+  const manager = new BackupManager({ home: f.home, settings: () => f.state.preferences.backup,
+    state: async () => f.state, sources: async () => sources, busy: async () => false });
+  t.after(() => manager.dispose());
+  await manager.start('manual'); await manager.settled();
+  const result = await manager.status();
+  assert.equal(result.phase, 'completed', result.message);
+  assert.equal(result.coverage.filter(row => row.id.startsWith('personal-') && row.status === 'absent').length, 4);
+});
+test('A05 加密回读在解包前拒绝真实大小写冲突条目，与恢复共用错误边界', async t => {
+  const f = await fixture(t), key = await generateIdentity(), signal = new AbortController().signal;
+  const data = Buffer.from('synthetic'), sha256 = createHash('sha256').update(data).digest('hex');
+  const manifest = { format: 'dsh-workbase-online-backup' as const, version: 1 as const, globalConsistency: false as const,
+    startedAt: 1, completedAt: 2, coverage: [], files: ['data', 'DATA'].map(name => ({ path: name, bytes: data.length, sha256 })) };
+  const entry = (name: string, content: Buffer) => {
+    const header = new Header({ path: name, type: 'File', size: content.length, mode: 0o600 });
+    header.encode();
+    return Buffer.concat([header.block!, content, Buffer.alloc((512 - content.length % 512) % 512)]);
+  };
+  const encrypter = new Encrypter(); encrypter.addRecipient(await identityToRecipient(key));
+  const archive = path.join(f.root, 'case.age');
+  await writeFile(archive, await encrypter.encrypt(Buffer.concat([
+    entry('manifest.json', Buffer.from(JSON.stringify(manifest))), entry('data', data), entry('DATA', data), Buffer.alloc(1024),
+  ])));
+  const verify = path.join(f.root, 'case-verify'), restore = path.join(f.root, 'case-restore');
+  await mkdir(verify); await mkdir(restore);
+  await assert.rejects(verifyArchive(archive, verify, key, manifest, signal), /大小写冲突/);
+  await assert.rejects(inspectArchive(archive, restore, key, signal), /大小写冲突/);
+});
+for (const names of [['normal:posix.txt'], ['Case.txt', 'case.txt']] as const) {
+  test(`A05 无法恢复的路径 ${names.join(',')} 不发布成功归档`, async t => {
+    const f = await fixture(t);
+    await mkdir(path.join(f.home, 'sample'));
+    // API 导出可构造大小写冲突，不依赖本机文件系统是否区分大小写。
+    const manager = new BackupManager({ home: f.home, settings: () => f.state.preferences.backup,
+      state: async () => f.state, busy: async () => false, sources: async () => [{
+        id: 'sample', export: async dest => {
+          for (const name of names) await writeFile(path.join(dest, name), 'synthetic');
+          return 'sample';
+        },
+      }] });
+    t.after(() => manager.dispose());
+    if (names.length === 2) {
+      // 在不区分大小写的 macOS 上不能构造两个实际文件，另用清单故障测试覆盖冲突。
+      await writeFile(path.join(f.home, 'sample/Case.txt'), 'one');
+      await writeFile(path.join(f.home, 'sample/case.txt'), 'two');
+      if ((await readdir(path.join(f.home, 'sample'))).length !== 2) {
+        t.skip('本机文件系统不区分大小写，清单冲突由独立故障测试覆盖'); return;
+      }
+    }
+    await manager.start('manual'); await manager.settled();
+    assert.equal((await manager.status()).phase, 'failed');
+    assert.equal((await readdir(f.out)).some(name => name.endsWith('.age')), false);
+  });
+}
+test('A05 导出回读拒绝恢复清单容量上限和清单大小写冲突', async t => {
+  const f = await fixture(t), signal = new AbortController().signal;
+  await f.manager.start('manual'); await f.manager.settled();
+  const key = (await readFile((await f.manager.status()).keyPath!, 'utf8')).trim();
+  for (const kind of ['schema', 'count', 'bytes', 'case'] as const) {
+    const stage = path.join(f.root, kind); await mkdir(stage);
+    await writeFile(path.join(stage, 'data.txt'), 'synthetic');
+    const files = await inventory(stage, signal);
+    if (kind === 'bytes') files[0]!.bytes = 32 * 1024 ** 3 + 1;
+    if (kind === 'count') files.push(...Array.from({ length: 100000 }, (_, index) => ({
+      path: `entry-${index}`, bytes: 0, sha256: '0'.repeat(64),
+    })));
+    if (kind === 'case') files.push({ ...files[0]!, path: 'DATA.txt' });
+    const manifest = { format: 'dsh-workbase-online-backup' as const, version: 1 as const,
+      globalConsistency: false as const, startedAt: 1, completedAt: 2, coverage: [], files };
+    if (kind === 'schema') Object.assign(manifest, { startedAt: 'invalid' });
+    await writeFile(path.join(stage, 'manifest.json'), JSON.stringify(manifest));
+    const archive = path.join(f.root, `${kind}.age`); await encryptArchive(stage, archive, key, signal);
+    const verify = path.join(f.root, `${kind}-verify`); await mkdir(verify);
+    await assert.rejects(verifyArchive(archive, verify, key, manifest, signal));
+  }
+});
 
 test('备份加密、回读摘要、保留断链记录，重开状态可读取', async t => {
   const f = await fixture(t);

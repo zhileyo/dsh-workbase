@@ -53,11 +53,14 @@ interface Projections {
   };
 }
 export interface DeleteOptions {
+  expectedIdentity?: string;
   coldOnly?: boolean;
   /** 允许删除「已加载但空闲」的会话：先 flush 再驱逐，仍拒绝有活动的会话。 */
   evict?: boolean;
-  validate?(): Promise<boolean>;
+  validate?(stage?: { evicted: boolean; cacheRemoved?: boolean }): Promise<boolean>;
+  authorize?(target: DeleteTarget): Promise<void>;
 }
+export interface DeleteTarget { sessionId: string; path?: string; identity: string }
 export const sessionIdentity = (h: Header) => JSON.stringify([h.version, h.createdAt, h.cwd ?? null, h.isSeeded]);
 const encode = (text: string) => text.replace(/[^A-Za-z0-9._-]/g,
   ch => `~${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
@@ -168,6 +171,8 @@ export function createSessionMaintenance(ctx: Context) {
     const indexed = registry().headers.get(id);
     if (!byId.has(id) && indexed) byId.set(id, { header: indexed });
     if (!byId.has(id)) throw new WorkbaseError('not-found', '会话已不存在，请刷新列表');
+    if (options.expectedIdentity !== undefined && sessionIdentity(byId.get(id)!.header) !== options.expectedIdentity)
+      throw new WorkbaseError('conflict', '删除回执的会话生命周期已变化，请核对后重试');
     const ordered: Row[] = [], seen = new Set<string>();
     const collect = (row: Row) => {
       if (seen.has(row.header.id)) throw new WorkbaseError('invalid-lineage', '会话父子关系存在循环，已停止删除');
@@ -177,7 +182,12 @@ export function createSessionMaintenance(ctx: Context) {
       ordered.push(row);
     };
     collect(byId.get(id)!);
+    // 全集合授权先于 flush、驱逐、缓存和日志删除，不能删了一部分才发现归档后代。
+    for (const row of ordered) await options.authorize?.({
+      sessionId: row.header.id, path: row.header.cwd, identity: sessionIdentity(row.header),
+    });
     const targets = new Map<string, string>();
+    const evicted = new Set<string>();
     for (const row of ordered) {
       if (!await inactive(row.header.id, !!options.coldOnly, !!options.evict)) {
         if (options.coldOnly) return false;
@@ -205,9 +215,10 @@ export function createSessionMaintenance(ctx: Context) {
         s.detachEntered(s.liveEntryFor(live));
         await p.flush();
         if (s.get(sessionId)) throw new WorkbaseError('running', '会话未能释放，已停止删除');
+        evicted.add(sessionId);
       }
       const current = await readRow(sessionId);
-      if (!live && current && !sameRow(row, current)) return false;
+      if (current && !sameRow(row, current)) return false;
       await safeDirectory(targets.get(sessionId)!, 3);
       const spill = get<{ root?: string }>('spillStore');
       let spillDirectory: string | undefined;
@@ -216,12 +227,15 @@ export function createSessionMaintenance(ctx: Context) {
         spillDirectory = path.join(spill.root, `session-${createHash('sha256').update(sessionId).digest('hex').slice(0, 12)}`);
         await safeDirectory(spillDirectory);
       }
-      if (!await inactive(sessionId, true) || options.validate && !await options.validate()) return false;
+      if (!await inactive(sessionId, true) || options.validate && !await options.validate({ evicted: evicted.has(id) })) return false;
+      await options.authorize?.({ sessionId, path: row.header.cwd, identity: sessionIdentity(row.header) });
       // detach 的缓存写入先进入同一表队列；删除在其后持久化，避免重新生成已删除缓存。
       await cache.requireTable().delete(sessionId);
       const finalRow = await readRow(sessionId);
       // 缓存删除后只能复查日志与活动，不能再用刚删掉的空会话投影验证。
       if (finalRow && !sameRow(current ?? row, finalRow) || !await inactive(sessionId, true)) return false;
+      if (options.evict && options.validate
+          && !await options.validate({ evicted: evicted.has(id), cacheRemoved: true })) return false;
       await rm(targets.get(sessionId)!, { recursive: true, force: true });
       if (await p.stat(sessionId) !== undefined)
         throw new WorkbaseError('delete-unconfirmed', '日志删除未能确认，列表记录保留以便重试');
@@ -232,6 +246,13 @@ export function createSessionMaintenance(ctx: Context) {
   };
   return {
     capabilities, exclusive,
+    async deletionIdentity(id: string) {
+      return exclusive(async () => {
+        const row = await readRow(id);
+        const header = row?.header ?? get<Sessions>('sessions')?.get(id)?.header;
+        return header && sessionIdentity(header);
+      });
+    },
     async deleteSession(id: string, options: DeleteOptions = {}) {
       if (!supportsDelete()) throw unsupported();
       return exclusive(() => deleteCore(id, options));

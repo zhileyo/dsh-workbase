@@ -75,7 +75,7 @@ export function StatsProjectPanel({ entries, empty, emptyDetail, categories, res
         {!filtered.length && <p className="stats-group-empty">{search ? '没有匹配的项目' : '暂无相关项目'}</p>}
       </nav>
     </aside>
-    <div className={`stats-group-content${resultHeader ? ' diagnostic-group-content' : ''}`}>
+    <div className={`stats-group-content${categories && resultHeader ? ' diagnostic-group-content' : ''}`}>
     {resultHeader?.(chosen, visible.length)}
     <div className={`stats-group-results${categories && !visible.length ? ' diagnostic-results-empty' : ''}`} ref={results} role="region" aria-label={categories ? '诊断分组内容' : '统计分组内容'} tabIndex={0}>
       {visible.map(entry => entry.actions || !entry.open ? <div className="wb-stat-item stats-item diagnostic-item" key={entry.id}>

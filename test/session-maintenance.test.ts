@@ -5,6 +5,10 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createSessionMaintenance, sessionIdentity, sessionStorageDirectory } from '../src/server/session-maintenance.js';
+import { createDiagnostics } from '../src/server/diagnostics.js';
+import { WorkbaseService } from '../src/server/service.js';
+import { initialState } from '../src/shared/model.js';
+import { createHost } from '../src/server/host.js';
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wb-maintenance-'));
@@ -64,7 +68,7 @@ async function fixture() {
   const ctx = { workspaceRegistry: registry, get: (name: string) => services[name],
     waterfall: async (_name: string, { sessionId }: { sessionId: string }) => busy.has(sessionId) ? ['running'] : [],
     emit: (_name: string, id: string) => { removed.push(id); } } as unknown as Context;
-  return { root, headers, locations, rows, snapshots, busy, live, removed, table, services, persistence,
+  return { root, headers, locations, rows, snapshots, busy, live, removed, table, services, persistence, ctx,
     maintenance: createSessionMaintenance(ctx), setFailCache: () => { failCache = true; },
     setFailFlush: () => { failFlush = true; }, state: () => state };
 }
@@ -80,6 +84,152 @@ test('独立删除级联子代理、清理日志目录及官方记账，保留�
     assert.deepEqual(f.table.get('w')!.sessionIds, ['fork']);
     assert.deepEqual(f.state().archivedSessionIds, []);
     assert.deepEqual(f.state().pinnedSessionIds, []);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('A06 全部级联实体的归属校验必须发生在任何物理副作用之前', async () => {
+  const f = await fixture();
+  try {
+    const checked: string[] = [];
+    const options = { authorize: async (header: { sessionId: string }) => {
+      checked.push(header.sessionId);
+      if (header.sessionId === 'parent') throw new Error('归档项目只读');
+    } };
+    await assert.rejects(f.maintenance.deleteSession('parent', options), /归档项目只读/);
+    assert.deepEqual(checked, ['child', 'parent']);
+    assert.deepEqual(f.removed, []);
+    assert.ok(await readFile(f.locations.get('child')!, 'utf8'));
+    assert.ok(await readFile(f.locations.get('parent')!, 'utf8'));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('A15 日志生命周期与持久删除见证不符时不能清理', async () => {
+  const f = await fixture();
+  try {
+    await assert.rejects(f.maintenance.deleteSession('parent', { expectedIdentity: 'old-generation' }), /生命周期/);
+    assert.deepEqual(f.removed, []);
+    assert.ok(await readFile(f.locations.get('parent')!));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('A15 宿主删除适配必须把持久见证传递给底层维护', async () => {
+  const f = await fixture();
+  try {
+    const host = createHost(f.ctx);
+    assert.equal(typeof host.sessionDeletionIdentity, 'function');
+    assert.equal(await host.sessionDeletionIdentity!('parent'), await f.maintenance.deletionIdentity('parent'));
+    await assert.rejects(host.deleteSession!('parent', 'old-generation'), /生命周期/);
+    assert.deepEqual(f.removed, []);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('A06 真实孤儿修复拒绝跨项目归档后代，保留全部日志', async () => {
+  const f = await fixture();
+  try {
+    Object.assign(f.headers.get('parent')!, { origin: 'subagent', parentSession: 'missing-root' });
+    const stat = f.persistence.stat;
+    f.persistence.stat = async id => id === 'missing-root' ? undefined : stat(id);
+    const child = f.headers.get('child')!;
+    child.cwd = '/archived';
+    const location = path.join(f.root, '--archived--', 'child', 'session.v4.jsonl');
+    await mkdir(path.dirname(location), { recursive: true });
+    await writeFile(location, JSON.stringify(child)); f.locations.set('child', location);
+    let state = initialState();
+    state.bindings = [
+      { projectId: 'active', workspaceId: 'active-w', path: '/project', archived: false, retired: false, removed: false, agentCanChangeStatus: true },
+      { projectId: 'archived', workspaceId: 'archived-w', path: '/archived', archived: true, retired: false, removed: false, agentCanChangeStatus: true },
+    ];
+    const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, {
+      ...createDiagnostics(f.ctx), workspaces: async () => [
+        { workspaceId: 'active-w', path: '/project', title: '活跃', available: true, sessionIds: ['parent'] },
+        { workspaceId: 'archived-w', path: '/archived', title: '归档', available: true, sessionIds: ['child'] },
+      ], sessions: async () => [], rename: async () => {},
+    }, () => 'id');
+    const issue = (await service.diagnose()).issues.find(i => i.kind === 'orphan' && i.sessionId === 'parent')!;
+    assert.ok(issue);
+    const result = await service.repairDiagnostics({ kind: 'orphan',
+      items: [{ sessionId: issue.sessionId!, identity: issue.identity! }] }, new AbortController().signal);
+    assert.deepEqual(result.succeeded, []);
+    assert.match(result.failures[0]!.message, /归档/);
+    assert.deepEqual(f.removed, []);
+    assert.ok(await readFile(location));
+    assert.ok(await readFile(f.locations.get('parent')!));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+for (const change of ['nonblank', 'updated', 'parent', 'descendant', 'revision', 'flush', 'cache-descendant'] as const) {
+  test(`C02 临时日志在首次确认后 ${change} 变化时不能物理删除`, async () => {
+    const f = await fixture();
+    try {
+      const child = f.rows.get('child')!;
+      f.rows.delete('child'); f.rows.delete('fork');
+      let blank = true, updatedAt = 11;
+      f.live.set('parent', { id: 'parent', header: f.headers.get('parent') });
+      (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({
+        items: f.live.has('parent') ? [{ sessionId: 'parent', blank, running: false, updatedAt }] : [],
+      }) };
+      const diagnostics = createDiagnostics(f.ctx);
+      const candidate = (await diagnostics.diagnose(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+      assert.ok(candidate);
+      const list = f.persistence.list;
+      let lists = 0;
+      f.persistence.list = async () => {
+        // repair 第一次 list 是首次确认，第二次是 deleteCore 快照。
+        if (++lists === 2) {
+          if (change === 'nonblank') blank = false;
+          if (change === 'updated') updatedAt++;
+          if (change === 'parent') Object.assign(f.rows.get('parent')!.header, { parentSession: 'other' });
+          if (change === 'descendant') f.rows.set('child', child);
+          if (change === 'revision') f.rows.get('parent')!.revision = '2';
+        }
+        return list();
+      };
+      if (change === 'flush') (f.services.sessions as { flush(): Promise<void> }).flush = async () => {
+        f.rows.get('parent')!.revision = '2';
+      };
+      if (change === 'cache-descendant') (f.services.sessionProjectionCache as {
+        requireTable(): { delete(id: string): Promise<void> };
+      }).requireTable = () => ({ delete: async () => { f.rows.set('child', child); } });
+      const result = await diagnostics.repairDiagnostics('empty', [candidate]);
+      assert.deepEqual(result.succeeded, []);
+      assert.deepEqual(result.skipped, ['parent']);
+      await access(f.locations.get('parent')!);
+      await access(f.locations.get('child')!);
+      assert.deepEqual(f.removed, []);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  });
+}
+
+test('C02 已确认驱逐且首次日志见证一致时允许空会话收尾', async () => {
+  const f = await fixture();
+  try {
+    f.rows.delete('child'); f.rows.delete('fork');
+    f.live.set('parent', { id: 'parent', header: f.headers.get('parent') });
+    (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({
+      items: f.live.has('parent') ? [{ sessionId: 'parent', blank: true, running: false, updatedAt: 11 }] : [],
+    }) };
+    const diagnostics = createDiagnostics(f.ctx);
+    const candidate = (await diagnostics.diagnose(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+    assert.deepEqual((await diagnostics.repairDiagnostics('empty', [candidate])).succeeded, ['parent']);
+    await assert.rejects(access(f.locations.get('parent')!));
+    assert.deepEqual(f.removed, ['parent']);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('C02 已驱逐但缺少日志水位见证不能仅凭控制器消失删除', async () => {
+  const f = await fixture();
+  try {
+    f.rows.delete('child'); f.rows.delete('fork');
+    delete (f.rows.get('parent')! as { revision?: string }).revision;
+    f.live.set('parent', { id: 'parent', header: f.headers.get('parent') });
+    (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({
+      items: f.live.has('parent') ? [{ sessionId: 'parent', blank: true, running: false, updatedAt: 11 }] : [],
+    }) };
+    const diagnostics = createDiagnostics(f.ctx);
+    const candidate = (await diagnostics.diagnose(new AbortController().signal)).issues.find(i => i.kind === 'empty')!;
+    assert.deepEqual((await diagnostics.repairDiagnostics('empty', [candidate])).skipped, ['parent']);
+    await access(f.locations.get('parent')!);
+    assert.deepEqual(f.removed, []);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
 test('活动后代阻止整个级联，批量冷会话保护已加载目标', async () => {

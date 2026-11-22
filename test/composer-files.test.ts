@@ -5,6 +5,7 @@ import * as composer from '../src/client/Composer.js';
 import { build } from 'esbuild';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { webcrypto as crypto } from 'node:crypto';
 import { UiMemory } from '../src/client/api.js';
 import { initialState, emptyMark } from '../src/shared/model.js';
 
@@ -18,7 +19,7 @@ test('菜单切换effect清理保留旧引用，连续切换仅最后目标交�
   let cursor = 0;
   const module = { exports: {} as { ComposerMenu(props: any): any } };
   runInNewContext(output.outputFiles[0]!.text, {
-    module, exports: module.exports, AbortController,
+    module, exports: module.exports, AbortController, crypto,
     require: (id: string) => id === 'react' ? { ...react, useLayoutEffect() {},
       useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useRef: (current: unknown) => { const i = cursor++; return hooks[i] ??= { current }; },
@@ -103,7 +104,7 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
   let cursor = 0;
   const module = { exports: {} as { ComposerMenu(props: any): any } };
   runInNewContext(output.outputFiles[0]!.text, {
-    module, exports: module.exports, AbortController,
+    module, exports: module.exports, AbortController, crypto,
     require: (id: string) => id === 'react' ? { ...react,
       useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect: (fn: () => void) => effects.push(fn), useLayoutEffect() {},
@@ -116,7 +117,7 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
     } : require(id),
   });
   let phase = 'plain', permission = true, attachments: string[] = [], disabled = false, upload: any;
-  let bridge: any, releases = 0, subscriptions = 0;
+  let bridge: any, releases = 0, retains = 0, guardsReleased = 0, subscriptions = 0;
   const store = (getSnapshot: () => any) => ({ getSnapshot, subscribe: (listener: () => void) => {
     subscriptions++; listeners.push(listener); return () => { subscriptions--; };
   } });
@@ -124,8 +125,11 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
     state: store(() => ({ draft: '草稿', attachmentIds: attachments, phase })),
     notices: store(() => null), bindDraftPersistence: () => () => {}, bindFilePicker: () => () => {} };
   const ctx = {
-    sessions: { create: async () => 's', retain: () => ({ sessionId: 's', ready: Promise.resolve(),
-      binding: { ctx: {}, session: { projections: { faceOf: () => ({ getSnapshot: () => limits }) } } }, release() { releases++; } }) },
+    sessions: { create: async () => 's', retain: () => {
+      retains++;
+      return { sessionId: 's', ready: Promise.resolve(),
+        binding: { ctx: {}, session: { projections: { faceOf: () => ({ getSnapshot: () => limits }) } } }, release() { releases++; } };
+    } },
     get: (name: string) => name === 'remoteAccess' ? { source: () => ({ getSnapshot: () => permission }) }
       : { sessionOf: () => ({ toggleSource() {}, arbitrate: () => 'pass' }) },
     slots: { entriesOfSlot: (name: string) => {
@@ -142,6 +146,7 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
     },
   };
   const props = { ctx, memory: new UiMemory(), workspaceId: 'w', preset: 'standard', get disabled() { return disabled; },
+    access: { create: async () => 's', validate: async () => 'guard', release: async () => { guardsReleased++; } },
     onReady: (value: any) => { if (value) bridge = value; }, onState() {}, SessionProvider() {}, renderSlot() {} };
   const tree = module.exports.ComposerMenu(props);
   const disposers = effects.map(effect => effect());
@@ -162,6 +167,8 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
   await assert.rejects(bridge.submit(), /仍在上传/);
   upload = { status: 'error', message: '网络失败' };
   await assert.rejects(bridge.submit(), /网络失败/);
+  assert.equal(guardsReleased, 2, '两次未开始的提交均释放保护');
+  assert.equal(releases, 2, '提交独立引用不等待组件卸载');
   const input = tree.props.children.find((node: any) => node?.type === 'input');
   const target = { files: [file('a')], value: 'selected' };
   input.props.onChange({ target });
@@ -182,7 +189,8 @@ test('原生桥委托官方文件入口，校验拒绝不分配附件，上传�
   assert.equal((calls[2] as any[])[1], 'a');
   disposers.forEach(dispose => dispose?.());
   assert.equal(subscriptions, 0);
-  assert.equal(releases, 1);
+  assert.equal(retains, 3);
+  assert.equal(releases, retains);
   assert.match(bridge.addFiles([file('a')]), /会话已切换/);
 });
 test('剪贴板和拖入保留文件顺序、目录身份，items缺失时使用files且不重复', () => {

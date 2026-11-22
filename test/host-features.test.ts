@@ -5,6 +5,53 @@ import path from 'node:path';
 import * as hostFeatures from '../src/server/host.js';
 import { initialState } from '../src/shared/model.js';
 import { WorkbaseService, type HostPort } from '../src/server/service.js';
+import type { Context } from '@deepseek-ai/cordis';
+import { dispatch } from '../src/server/rpc.js';
+
+test('C07 公开目录打开能力优先且必须确认 opened，权限失败不降级', async () => {
+  const calls: unknown[] = [];
+  let result: unknown = { opened: true };
+  const ctx = { sessionController: {
+    canOpenWorkspacePath: () => true,
+    openWorkspacePath: async (request: unknown) => {
+      calls.push(request);
+      if (result instanceof Error) throw result;
+      return result;
+    },
+  } } as unknown as Context;
+  const host = hostFeatures.createHost(ctx, async () => { throw new Error('不应降级'); });
+  await host.reveal!('/fake/directory');
+  assert.deepEqual(calls, [{ path: '/fake/directory' }]);
+  result = { opened: false };
+  await assert.rejects(host.reveal!('/fake/directory'), /确认/);
+  result = new Error('permission denied');
+  await assert.rejects(host.reveal!('/fake/directory'), /permission denied/);
+});
+
+test('C07 本机子进程等待退出，捕获启动错误、非零退出和信号', async () => {
+  await hostFeatures.runDirectoryOpener(process.execPath, ['-e', 'process.exit(0)']);
+  await assert.rejects(hostFeatures.runDirectoryOpener('/fake/missing-opener', []), /目录打开失败/);
+  await assert.rejects(hostFeatures.runDirectoryOpener(process.execPath, ['-e', 'process.exit(7)']), /退出 7/);
+  await assert.rejects(hostFeatures.runDirectoryOpener(process.execPath,
+    ['-e', 'process.kill(process.pid, "SIGTERM")']), /目录打开失败/);
+});
+
+test('C07 本机打开失败沿真实Host适配传播为RPC失败', async () => {
+  let state = initialState();
+  let opened = 0;
+  const host = hostFeatures.createHost({ get: () => undefined,
+    sessionController: { canOpenWorkspacePath: () => false } } as unknown as Context,
+    async () => { opened++; throw new Error('opener unavailable'); });
+  host.workspaces = async () => [{ workspaceId: 'w', path: '/fake/project', title: '项目', available: true, sessionIds: [] }];
+  host.sessions = async () => [];
+  host.diagnose = undefined;
+  const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, host, () => 'p');
+  await service.snapshot();
+  const response = await dispatch(service, { op: 'reveal-directory', projectId: 'p' }, true, new AbortController().signal);
+  assert.equal(response.ok, false);
+  assert.match(JSON.stringify(response), /opener unavailable/);
+  assert.equal(opened, 1);
+});
 
 test('新建目录不覆盖已有文件，非法名称与未配置根目录被拒绝', async () => {
   assert.equal(typeof hostFeatures.createProjectDirectory, 'function');

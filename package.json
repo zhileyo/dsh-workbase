@@ -21,6 +21,9 @@
   },
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -32,7 +35,8 @@
     "dist/index.js",
     "lib/client.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
@@ -42,6 +46,8 @@
     "build": "node build.mjs",
     "host:check": "node check-host.mjs",
     "typecheck": "tsc --noEmit",
+    "secrets:check": "node secret-scan.mjs",
+    "check": "npm run secrets:check && npm run typecheck && npm test && npm run build",
     "test": "tsx --test test/*.test.ts",
     "prepublishOnly": "npm test && npm run typecheck && npm run build",
     "publish:check": "npm publish --dry-run --tag beta",
@@ -54,21 +60,22 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.1.0",
-    "@deepseek-ai/dsh-api-session-controller": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-api-workspace-controller": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-connection": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-session": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-workspace": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-home-paths": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
-    "@deepseek-ai/dsh-workspace": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-api-workspace-controller": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-connection": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-layout": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-home-paths": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-storage-domain": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.5",
+    "@deepseek-ai/dsh-workspace": "0.2.2-rc.5",
+    "@mozilla/readability": "^0.6.0",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/git": "^11.0.1",
     "@semantic-release/github": "^12.0.10",
@@ -79,13 +86,14 @@
     "@xterm/xterm": "6.0.0",
     "age-encryption": "0.3.1",
     "esbuild": "^0.25.0",
+    "linkedom": "^0.18.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "semantic-release": "^25.0.9",
     "tar": "7.5.22",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "dsh": {
     "bundle": {
@@ -103,7 +111,7 @@
       ]
     },
     "compatibility": {
-      "dsh": "0.2.2-rc.1",
+      "dsh": "0.2.2-rc.5",
       "profiles": [
         "web",
         "desktop"

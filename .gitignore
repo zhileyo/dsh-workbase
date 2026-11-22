@@ -15,6 +15,17 @@ lib/
 *.key
 *.p12
 *.pfx
+/.credentials.yaml
+/credentials.json
+id_rsa
+id_ed25519
+*.tar.age
+/session.db
+/session.db-wal
+/session.db-shm
+/coverage/
+/.cache/
+/.vscode/settings.json
 
 # 日志
 *.log

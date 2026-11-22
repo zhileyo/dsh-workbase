@@ -16,9 +16,10 @@ export interface DetailProps {
   archive(session: HostSession): void; renameSession(session: HostSession): void;
   deleteSession?(session: HostSession): void;
   removeProject(project: Project): void; notify(message: string): void;
+  migration?(project: Project, records: boolean): void;
   showSession(session: HostSession): void;
 }
-export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, navigate, rename, edit, remove, createTodo, archive, renameSession, deleteSession, removeProject, notify, showSession }: DetailProps) {
+export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, navigate, rename, edit, remove, createTodo, archive, renameSession, deleteSession, removeProject, notify, showSession, migration }: DetailProps) {
   const saved = memory.detail(p.projectId);
   const [draft, setDraft] = useState(saved.draft);
   const [todoQuery, setTodoQuery] = useState('');
@@ -109,8 +110,8 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
         { label: p.mark.favorite ? '取消收藏' : '收藏项目', action: () => void mutate({ op: 'mark', projectId: p.projectId, field: 'favorite', value: !p.mark.favorite }) },
         { label: '打开目录', action: () => { void api.revealDirectory(p.projectId).then(ok => { if (!ok) notify('暂时无法打开目录，请复制路径后手动打开'); }); } },
         { label: '复制路径', action: () => void run(() => navigator.clipboard.writeText(p.path), '完整路径已复制') },
-        { label: '项目迁移', separatorBefore: true, action: () => notify('暂不支持项目迁移，原目录与历史会话已保留') },
-        { label: '迁移记录', action: () => notify('暂无迁移记录，宿主尚未提供迁移能力') },
+        { label: '项目迁移', separatorBefore: true, action: () => migration?.(p, false) },
+        { label: '迁移记录', action: () => migration?.(p, true) },
         { label: '归档项目', action: () => void mutate({ op: 'archive-project', projectId: p.projectId, archived: true }) },
         { label: '移除项目', action: () => removeProject(p), danger: true },
       ]}/></div>
@@ -166,7 +167,7 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
         onPointerCancel={() => setRatioPreview(null)}><span/></div>
       <section className="wb-panel wb-todo-panel todos" data-layout={snapshot.preferences.layout} aria-label="待办">
         <div className="wb-panel-header section-title todos-heading"><h2>待办</h2><span className="number">{p.todos.filter(t => !t.done).length}</span><div className="todo-heading-actions">{undo && <button type="button" className="todo-undo-entry" disabled={busy} onClick={() => void mutate({ op: 'update', projectId: p.projectId, id: undo.todo.id, expectedVersion: undo.todo.version, done: undo.previousDone }).then(ok => { if (ok) setUndo(null); })}>撤销</button>}
-          <details className="agent-permission"><summary aria-label="查看当前项目 Agent 权限"><Icon name="bot"/><span>Agent 权限{!snapshot.preferences.agentManageTodos || !p.agentCanChangeStatus ? ' · 受限' : ''}</span><span className="permission-chevron"><Icon name="down"/></span></summary><div className="agent-info"><strong>{snapshot.preferences.agentManageTodos ? '允许管理待办' : '仅允许查询待办'}</strong><p>{snapshot.preferences.agentManageTodos ? `Agent 可在当前项目创建、查询、编辑和删除待办${p.agentCanChangeStatus ? '，并修改完成状态' : '；旧项目状态修改权限仍关闭，保存全局配置后统一生效'}。` : 'Agent 仅可查询当前项目待办，不能创建、编辑、删除或修改完成状态。'}权限在「工作台设置 → 项目配置 → 全局配置」中统一调整。</p></div></details>
+          <details className="agent-permission"><summary aria-label="查看当前项目 Agent 权限"><Icon name="bot"/><span>Agent 权限{!snapshot.preferences.agentManageTodos || !p.agentCanChangeStatus ? ' · 受限' : ''}</span><span className="permission-chevron"><Icon name="down"/></span></summary><div className="agent-info"><strong>{snapshot.preferences.agentManageTodos ? '允许管理待办' : '仅允许查询待办'}</strong><p>{snapshot.preferences.agentManageTodos ? `Agent 可在当前项目创建、查询、编辑和删除待办${p.agentCanChangeStatus ? '，并修改完成状态' : '；旧项目状态修改权限仍关闭，保存全局设置后统一生效'}。` : 'Agent 仅可查询当前项目待办，不能创建、编辑、删除或修改完成状态。'}权限在「工作台设置 → 项目配置 → 全局设置」中统一调整。</p></div></details>
         </div></div>
         <TodoToolbar draft={draft} query={todoQuery} priority={todoPriority} busy={busy} archived={p.archived} inputRef={input}
           onDraftChange={value => { setDraft(value); saved.draft = value; }} onQueryChange={setTodoQuery} onPriorityChange={setTodoPriority}

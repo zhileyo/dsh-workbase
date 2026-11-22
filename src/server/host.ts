@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-agent-preset-registry';
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace';
 import { SessionId } from '@deepseek-ai/dsh-session';
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller';
-import { mkdir, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rmdir, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { WorkbaseError } from '../shared/model.js';
@@ -19,6 +19,10 @@ import { createSessionMaintenance } from './session-maintenance.js';
 import { createSessionSearch } from './session-search.js';
 import { AttachmentId, type AttachmentStore, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment';
 import { todoImageSchema, todoAttachmentSchema, MAX_TODO_ATTACHMENT_BYTES } from '../shared/todo.js';
+import { defaultProjectInitialization, projectInitializationSchema, type ProjectInitializationInput } from '../shared/project-initialization.js';
+import { initializeProject, completeProjectInitialization } from './project-initialization.js';
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
+import { saveRuleFiles } from './project-rules.js';
 const titleProjection = z.object({ title: z.string() });
 const runGit = (cwd: string, args: string[]) => new Promise<{ code: number; out: string; err: string }>(resolve => {
   const child = spawn('git', args, { cwd, windowsHide: true });
@@ -28,7 +32,8 @@ const runGit = (cwd: string, args: string[]) => new Promise<{ code: number; out:
   child.on('error', () => resolve({ code: -1, out, err: 'git 命令不可用' }));
   child.on('close', code => resolve({ code: code ?? -1, out, err }));
 });
-export async function createProjectDirectory(root: string, name: string) {
+export async function createProjectDirectory(root: string, name: string, initialization?: ProjectInitializationInput) {
+  const options = projectInitializationSchema.parse(initialization ?? defaultProjectInitialization());
   if (!root || !path.isAbsolute(root)) throw new WorkbaseError('invalid-root', '请先在设置中配置绝对路径项目根目录');
   if (!name.trim() || name !== name.trim() || name === '.' || name === '..' ||
       /[\\/\u0000-\u001f]/.test(name) ||
@@ -43,10 +48,43 @@ export async function createProjectDirectory(root: string, name: string) {
       throw new WorkbaseError('directory-exists', '同名文件夹已存在，可打开该目录或修改名称');
     throw error;
   }
+  const owned = await lstat(directory);
+  try { await initializeProject(directory, name, options); }
+  catch (error) {
+    let cleaned = false;
+    try {
+      const current = await lstat(directory);
+      if (current.isDirectory() && current.ino === owned.ino && current.dev === owned.dev) {
+        await rmdir(directory); cleaned = true;
+      }
+    } catch { /* 不删除非空或已被替换的目录。 */ }
+    throw new WorkbaseError('initialization-failed',
+      `${error instanceof Error ? error.message : '项目初始化失败'}。${cleaned ? '本次创建的目录已回滚，可重试。' : `目录已保留：${directory}。请检查残留内容后重试。`}`);
+  }
   return directory;
 }
 
-export function createHost(ctx: Context): HostPort {
+export async function completeProjectDirectory(directory: string, name: string, initialization: ProjectInitializationInput) {
+  const options = projectInitializationSchema.parse(initialization);
+  if (!path.isAbsolute(directory)) throw new WorkbaseError('invalid-root', '请提供绝对路径项目目录');
+  const canonical = await realpath(directory);
+  if (!(await lstat(canonical)).isDirectory()) throw new WorkbaseError('invalid-root', '项目目录不是文件夹');
+  try { return await completeProjectInitialization(canonical, name, options); }
+  catch (error) {
+    throw new WorkbaseError('initialization-failed', `项目初始化补齐失败：${error instanceof Error ? error.message : '目录不可用'}。已有内容已保留，请检查目录后重试：${canonical}`);
+  }
+}
+
+export const runDirectoryOpener = (command: string, args: string[]) => new Promise<void>((resolve, reject) => {
+  const child = spawn(command, args, { stdio: 'ignore', windowsHide: true });
+  child.once('error', error => reject(new WorkbaseError('reveal-failed', `目录打开失败：${error.message}`)));
+  child.once('close', (code, signal) => {
+    if (code === 0) resolve();
+    else reject(new WorkbaseError('reveal-failed', `目录打开失败：${command} 退出 ${code ?? signal ?? '未知'}`));
+  });
+});
+
+export function createHost(ctx: Context, openDirectory = runDirectoryOpener): HostPort {
   // updatedAt 仅随用户消息变化；标题缓存必须同时跟踪官方投影水位。
   // 没有投影时重新折叠，避免把手工改名永久留在旧缓存中。
   const titleCache = new Map<string, { stamp: string; title: string }>();
@@ -54,6 +92,7 @@ export function createHost(ctx: Context): HostPort {
   const searchSessions = createSessionSearch(ctx);
   return {
     ...createDiagnostics(ctx, maintenance),
+    saveRules: (previous, value, targets) => saveRuleFiles(resolveDshHome(), previous, value, targets),
     async saveTodoAttachment(data, mediaType, name) {
       const store = ctx.get('attachments') as AttachmentStore | undefined;
       if (!store) throw new WorkbaseError('unsupported', '宿主未启用附件服务');
@@ -134,6 +173,7 @@ export function createHost(ctx: Context): HostPort {
         available: await workspace.status() === 'ok', sessionIds: [...workspace.sessionIds] };
     },
     createDirectory: createProjectDirectory,
+    completeInitialization: completeProjectDirectory,
     search: searchSessions,
     searchStatus: searchSessions.status,
     async catalog() {
@@ -172,8 +212,8 @@ export function createHost(ctx: Context): HostPort {
       await ctx.sessionController.rename({ sessionId: SessionId(id), title });
       titleCache.delete(id);
     },
-    async deleteSession(id) {
-      if (!await maintenance.deleteSession(id))
+    async deleteSession(id, expectedIdentity) {
+      if (!await maintenance.deleteSession(id, { expectedIdentity }))
         throw new WorkbaseError('delete-failed', '会话状态已变化，请刷新后重试');
       titleCache.delete(id);
     },
@@ -184,28 +224,16 @@ export function createHost(ctx: Context): HostPort {
       return { hasEarlier: result.hasMore, messages: extractConversation(result.records).messages };
     },
     async reveal(path) {
-      // 直接调起本机文件管理器（explorer/open/xdg-open 打开的窗口在前台）；
-      // Windows 下后台进程调起可能被压到后台，追加一次按窗口标题的前台激活；
-      // 调起失败时回退到平台「在文件夹中显示」接口（openWorkspacePath）。
-      try {
-        const command = process.platform === 'win32' ? 'explorer' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-        const child = spawn(command, [path], { detached: true, stdio: 'ignore' });
-        child.unref();
-        if (process.platform === 'win32') {
-          const folder = path.split('\\').filter(Boolean).at(-1)?.replace(/'/g, "''") ?? '';
-          if (folder) {
-            const activate = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command',
-              `Start-Sleep -Milliseconds 700; (New-Object -ComObject WScript.Shell).AppActivate('${folder}') | Out-Null`],
-              { detached: true, stdio: 'ignore' });
-            activate.unref();
-          }
-        }
+      // 已核验公开接口：省略 action 打开目录本身，reveal 在父目录中选中它。
+      const controller = ctx.sessionController;
+      if (typeof controller?.canOpenWorkspacePath === 'function'
+          && typeof controller.openWorkspacePath === 'function' && controller.canOpenWorkspacePath()) {
+        const result = await controller.openWorkspacePath({ path }, new AbortController().signal);
+        if (result?.opened !== true) throw new WorkbaseError('reveal-unconfirmed', '宿主未确认目录打开成功');
         return;
-      } catch { /* 本机调起不可用时走平台接口。 */ }
-      try {
-        if (ctx.sessionController.canOpenWorkspacePath())
-          await ctx.sessionController.openWorkspacePath({ path, action: 'reveal' }, new AbortController().signal);
-      } catch { /* 平台接口也不可用：调用方提示打开失败。 */ }
+      }
+      const command = process.platform === 'win32' ? 'explorer' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+      await openDirectory(command, [path]);
     },
     async gitBranches(projectPath, signal) {
       // 平台未公开分支接口：直接在项目目录运行 git 读取当前分支与本地分支列表。

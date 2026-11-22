@@ -4,13 +4,16 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Home, fitRecentButtons, type HomeProps } from '../src/client/Home.js';
 import { UiMemory, type ClientPort } from '../src/client/api.js';
-import { initialState, emptyMark, type Snapshot } from '../src/shared/model.js';
+import { initialState, emptyMark, homeSchema, type Snapshot } from '../src/shared/model.js';
 
 function fixture(): Snapshot {
   const now = Date.now();
+  const preferences = initialState().preferences;
+  preferences.home.statCards = { running: true, recent: true, pending: true, diagnostic: true, skills: false, mcp: false, rss: false };
+  preferences.home.statOrder = ['running', 'recent', 'pending', 'diagnostic', 'skills', 'mcp', 'rss'];
   return {
     revision: 1, syncedAt: now, conflicts: [], sessionMarks: {},
-    preferences: initialState().preferences,
+    preferences,
     projects: Array.from({ length: 4 }, (_, i) => ({
       projectId: `p${i}`, workspaceId: `w${i}`, path: `/验收/项目${i}`, title: `项目${i}`,
       available: true, sessionIds: [], agentCanChangeStatus: true, mark: emptyMark(), updatedAt: now - i, archived: false,
@@ -94,7 +97,8 @@ test('诊断卡汇总异常数量，完整检查才显示正常，旧快照明�
   html = card();
   assert.match(html, /data-state="normal"/);
   assert.match(html, /class="stat-value">0<\/strong>/);
-  assert.match(html, /class="stat-detail"[^>]*>检查正常<\/span>/);
+  assert.match(html, /title="检查正常"/);
+  assert.doesNotMatch(html, /class="stat-detail"/);
   s.projects[0]!.available = false;
   s.projects[1]!.available = false;
   s.diagnostics.issues = s.projects.filter(p => !p.available).map(p => ({
@@ -104,7 +108,7 @@ test('诊断卡汇总异常数量，完整检查才显示正常，旧快照明�
   html = card();
   assert.match(html, /data-state="error"/);
   assert.match(html, /class="stat-value">2<\/strong>/);
-  assert.match(html, /class="stat-detail"[^>]*>目录 2<\/span>/);
+  assert.match(html, /title="目录 2"/);
 });
 
 test('归档项目只出现在归档范围，活跃范围不含归档项目', t => {
@@ -126,7 +130,7 @@ test('统计卡按单卡显隐过滤，全部关闭时整个统计区域不渲�
   serverWarnings(t);
   const s = fixture();
   s.preferences.home.projects = false;
-  s.preferences.home.statCards = { running: true, recent: false, pending: true, diagnostic: false };
+  s.preferences.home.statCards = { ...s.preferences.home.statCards, running: true, recent: false, pending: true, diagnostic: false };
   let html = render(s);
   assert.equal((html.match(/class="wb-stat-card stat-card"/g) ?? []).length, 2);
   assert.match(html, /class="stats-grid" data-count="2"/);
@@ -134,13 +138,68 @@ test('统计卡按单卡显隐过滤，全部关闭时整个统计区域不渲�
   assert.ok(!html.includes('data-stat-tab="recent"'));
   assert.ok(!html.includes('data-stat-tab="diagnostic"'));
   s.preferences.home.statDays = 14;
-  s.preferences.home.statCards = { running: true, recent: true, pending: true, diagnostic: false };
+  s.preferences.home.statCards = { ...s.preferences.home.statCards, running: true, recent: true, pending: true, diagnostic: false };
   html = render(s);
   assert.match(html, /class="stats-grid" data-count="3"/);
-  assert.ok(html.includes('最近 14 天'), '统计时间范围反映到卡片小字');
-  s.preferences.home.statCards = { running: false, recent: false, pending: false, diagnostic: false };
+  assert.ok(html.includes('最近 14 天'), '统计时间范围保留在卡片悬停说明');
+  assert.doesNotMatch(html, /class="stat-detail"/);
+  s.preferences.home.statCards = { ...s.preferences.home.statCards, running: false, recent: false, pending: false, diagnostic: false };
   html = render(s);
   assert.ok(!html.includes('aria-label="工作台统计"'));
+});
+
+test('统计卡恢复旧偏好默认顺序，保存顺序包含隐藏卡且校验完整无重复', t => {
+  serverWarnings(t);
+  const s = fixture();
+  const original = ['running', 'recent', 'pending', 'diagnostic', 'skills', 'mcp', 'rss'];
+  const { statOrder: _order, ...legacy } = s.preferences.home as typeof s.preferences.home & { statOrder?: string[] };
+  assert.deepEqual(homeSchema.parse(legacy).statOrder, ['running', 'pending', 'recent', 'skills', 'rss', 'diagnostic', 'mcp']);
+  const order = ['rss', 'pending', 'running', 'recent', 'skills', 'mcp', 'diagnostic'];
+  s.preferences.home = homeSchema.parse({ ...legacy, statOrder: order });
+  assert.deepEqual([...render(s).matchAll(/data-stat-tab="([^"]+)"/g)].map(m => m[1]), ['pending', 'running', 'recent', 'diagnostic']);
+  s.preferences.home.statCards.rss = true;
+  const html = render(s);
+  assert.deepEqual([...html.matchAll(/data-stat-tab="([^"]+)"/g)].map(m => m[1]), ['rss', 'pending', 'running', 'recent', 'diagnostic']);
+  assert.match(html, /draggable="true"/);
+  assert.equal(homeSchema.safeParse({ ...legacy, statOrder: [...original.slice(0, 6), 'running'] }).success, false);
+  assert.equal(homeSchema.safeParse({ ...legacy, statOrder: ['running'] }).success, false);
+});
+
+test('首页默认五卡按运行中、待办、近期会话、技能、RSS显示', t => {
+  serverWarnings(t);
+  const s = fixture();
+  s.preferences = initialState().preferences;
+  assert.deepEqual([...render(s).matchAll(/data-stat-tab="([^"]+)"/g)].map(m => m[1]),
+    ['running', 'pending', 'recent', 'skills', 'rss']);
+  const html = render(s);
+  assert.match(html, /class="stat-label">技能</);
+  assert.match(html, /class="stat-label">订阅</);
+  assert.doesNotMatch(html, /class="stat-detail"/);
+  s.preferences.home.statCards.mcp = true;
+  assert.match(render(s), /class="stat-label">连接器</);
+});
+
+test('旧标准显隐与顺序迁移，保留自定义选择且新顺序允许重新开启诊断', () => {
+  const legacy = fixture().preferences.home;
+  const target = initialState().preferences.home;
+  for (const extensions of [false, true]) {
+    const statCards = { ...legacy.statCards, skills: extensions, rss: extensions };
+    for (const statOrder of [undefined, legacy.statOrder]) {
+      const migrated = homeSchema.parse({ ...legacy, statCards, statOrder, statDays: 14 });
+      assert.deepEqual(migrated.statCards, target.statCards);
+      assert.deepEqual(migrated.statOrder, target.statOrder);
+      assert.equal(migrated.statDays, 14);
+      assert.deepEqual(homeSchema.parse(migrated), migrated);
+    }
+  }
+  const customVisibility = { ...legacy, statCards: { ...legacy.statCards, pending: false } };
+  assert.deepEqual(homeSchema.parse(customVisibility), customVisibility);
+  const customOrder = { ...legacy, statOrder: [...legacy.statOrder].reverse() };
+  assert.deepEqual(homeSchema.parse(customOrder), customOrder);
+  const reopened = { ...target, statCards: { ...target.statCards, diagnostic: true } };
+  assert.deepEqual(homeSchema.parse(reopened), reopened);
+  const reordered = homeSchema.parse({ ...target, statOrder: legacy.statOrder });
+  assert.deepEqual(reordered.statOrder, target.statOrder);
 });
 
 test('没有会话与活动数据时隐藏可选区域，保留零值统计和项目入口', t => {

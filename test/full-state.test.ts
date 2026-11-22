@@ -70,7 +70,7 @@ test('启动工作台开关默认关闭，旧状态兼容，设置保存后可�
 
 test('首版偏好包含四模块、两套七字段与根目录，旧数据补齐不覆盖已有选择', () => {
   const state = initialState();
-  assert.deepEqual(state.preferences.home, { quick: true, recent: false, stats: true, projects: true, recentStyle: 'cards', statCards: { running: true, recent: true, pending: true, diagnostic: true }, statDays: 7 });
+  assert.deepEqual(state.preferences.home, { quick: true, recent: false, stats: true, projects: true, recentStyle: 'cards', statCards: { running: true, recent: true, pending: true, diagnostic: false, skills: true, mcp: false, rss: true }, statOrder: ['running', 'pending', 'recent', 'skills', 'rss', 'diagnostic', 'mcp'], statDays: 7 });
   assert.equal(state.preferences.fields.grid.status, false);
   assert.equal(state.preferences.fields.list.recent, false);
   assert.equal(Object.keys(state.preferences.fields.grid).length, 7);
@@ -197,8 +197,7 @@ test('存储里遗留的未知偏好键被丢弃，不会阻断插件激活，RP
   legacy.preferences.extras = { bulkUpdate: true };
   const parsed = stateSchema.parse(legacy);
   assert.equal('extras' in parsed.preferences, false);
-  assert.equal(parsed.preferences.theme, 'follow');
+  assert.equal(parsed.preferences.theme, 'violet');
   // 宽容只针对宿主读取的整份 global；客户端补丁多带键仍要被拒绝。
   assert.throws(() => commandSchema.parse({ op: 'preferences', patch: { extras: { bulkUpdate: true } } }));
 });
-

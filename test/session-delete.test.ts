@@ -13,6 +13,7 @@ test('永久删除检查归属与运行状态，失败保留标记，成功清�
     workspaces: async () => [{ workspaceId: 'w', path: '/project', title: '项目', available: true, sessionIds: ['s'] }],
     sessions: async () => [{ sessionId: 's', title: '会话', running, archived: true, updatedAt: 1 }],
     rename: async () => {},
+    sessionDeletionIdentity: async () => 'generation',
     deleteSession: async id => { if (fail) throw new Error('存储清理失败'); deleted.push(id); },
   };
   const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, host, () => 'p');

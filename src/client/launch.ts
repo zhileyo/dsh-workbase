@@ -15,13 +15,16 @@ export async function launchMessage(api: ClientPort, memory: UiMemory, input: {
   baseBranch?: string; worktree?: boolean;
 }, newId = () => crypto.randomUUID()) {
   if (!memory.composer.pending) {
-    const requestId = newId();
-    const created = await api.call({ op: 'begin-session', projectId: input.projectId, preset: input.preset }) as { sessionId: string };
+    const key = `launch:${JSON.stringify([input.projectId, input.preset, input.provider, input.model, input.text])}`;
+    const requestId = memory.composer.creationRequests[key] ??= newId();
+    memory.save();
+    const created = await api.call({ op: 'begin-session', projectId: input.projectId, preset: input.preset, requestId }) as { sessionId: string };
     if (typeof created?.sessionId !== 'string' || !created.sessionId) throw new Error('宿主没有返回有效会话，请重试');
     memory.composer.pending = {
       projectId: input.projectId, sessionId: created.sessionId, provider: input.provider,
       model: input.model, text: input.text, requestId,
     };
+    delete memory.composer.creationRequests[key];
     memory.save();
   }
   const submission = memory.composer.pending!;

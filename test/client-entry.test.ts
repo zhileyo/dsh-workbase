@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
+import { webcrypto as crypto } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
@@ -10,6 +11,9 @@ import { WorkbaseButton } from '../src/client/WorkbaseButton.js';
 import type { ClientPort } from '../src/client/api.js';
 import { initialState } from '../src/shared/model.js';
 import { todoSchema } from '../src/shared/model.js';
+import { prepareNativeComposer } from '../src/client/NativeComposer.js';
+import { UiMemory } from '../src/client/api.js';
+import type { Context } from '@deepseek-ai/cordis';
 const nativeRequire = createRequire(import.meta.url);
 // 宿主原子组件由运行时 module loader 提供；此处只验证插件接线，避免加载其浏览器依赖。
 const hostRequire = (name: string) => name.startsWith('@xterm/') ? {}
@@ -20,13 +24,94 @@ const entryExternal = ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/
 // 未提供的可选宿主服务保持不可用；终端显示层由独立组件测试负责。
 const optionalServices = { inject() {} };
 
+test('逐条重播只注册官方会话消息插槽，按会话及消息ID绑定，声明卸载时可清理', async () => {
+  const result = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: entryExternal, loader: { '.css': 'text' } });
+  const module = { exports: {} as { apply(context: unknown): void } };
+  runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire });
+  const entries = new Map<string, any>();
+  let ready!: () => (() => void);
+  let spec: { kind: string; scope: string } | undefined;
+  module.exports.apply({
+    ...optionalServices, connection: { rpc: {} }, effect() {},
+    slots: {
+      spec() { return spec; },
+      inject(name: string, callback: typeof ready) {
+        if (name === 'conversation.chat.assistant-actions') ready = callback;
+      },
+      register(options: any, component: any) {
+        entries.set(options.name, { options, component }); return () => entries.delete(options.name);
+      },
+    },
+  });
+  ready(); assert.equal(entries.has('conversation.chat.assistant-actions'), false);
+  spec = { kind: 'single', scope: 'session' };
+  ready(); assert.equal(entries.has('conversation.chat.assistant-actions'), false);
+  spec = { kind: 'list', scope: 'session' };
+  const remove = ready();
+  const action = entries.get('conversation.chat.assistant-actions');
+  assert.equal(action.options.id, 'workbase.speech-reply');
+  const props = action.component({ sessionId: 's', messageId: 'm' }).props;
+  assert.equal(props.sessionId, 's'); assert.equal(props.messageId, 'm');
+  assert.equal(props.component.getSnapshot(), false, '未启用组件时默认隐藏语音操作');
+  assert.equal(action.component({ sessionId: 's', messageId: 'next' }).props.playback, props.playback);
+  remove(); assert.equal(entries.has('conversation.chat.assistant-actions'), false);
+});
+
+test('正式main入口声明项目右栏Session席位，可选服务缺失不阻塞工作台且退出详情释放引用', async () => {
+  const result = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: entryExternal, loader: { '.css': 'text' } });
+  const module = { exports: {} as { apply(context: unknown): void } };
+  runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire });
+  const entries = new Map<string, any>(), optional: string[][] = [];
+  const source = (value: unknown) => ({ getSnapshot: () => value, subscribe: () => () => {} });
+  let connects = 0, released = 0;
+  module.exports.apply({
+    inject(names: string[]) { optional.push(names); },
+    connection: { rpc: {} }, effect() {}, on() {},
+    layout: { panelInfo: source({ activePanelId: 'dsh-workbase' }), closeRightbar() {} },
+    uiWorkspace: { async connectWorkspace(id: string) { assert.equal(id, 'w'); connects++; return 's'; } },
+    workspaces: { list: source({ items: [{ workspaceId: 'w', path: '/p', sessionIds: ['s'] }], archivedSessionIds: [] }) },
+    sessions: { list: source({ ids: ['s'], byId: { s: { cwd: '/p', updatedAt: 1 } },
+      projectionsBySession: { s: { values: { workingDirectory: '/p' }, state: 'ready' } } }), async refreshProjections() {},
+      retain() { return { sessionId: 's', ready: Promise.resolve(),
+        binding: { session: { projections: { faceOf: () => source('/p') } } }, release() { released++; } }; } },
+    slots: {
+      inject(_name: string, callback: () => void) { callback(); },
+      register(options: any, component: any) {
+        entries.set(options.name, { options, component }); return () => { entries.delete(options.name); };
+      },
+    },
+  });
+  const main = entries.get('main');
+  assert.equal(main.options.children['workbase.sidebar-expand'].kind, 'single');
+  assert.equal(main.options.children['workbase.sidebar-expand'].scope, 'session');
+  assert.ok(optional.some(names => names.length === 1 && names[0] === 'sidebarRight'), '右栏按可选服务挂载');
+  const api = main.component({ SessionProvider() {}, renderSlot() {} }).props.api;
+  assert.equal(typeof api.renderProjectSidebar, 'function');
+  api.projectSidebar.select({ projectId: 'p', workspaceId: 'w', path: '/p', available: true });
+  await Promise.resolve();
+  assert.equal(connects, 0, '右栏服务未就绪时不创建目录会话');
+  // 真实可用性由独立installer合同测试核对；这里验证main向控制器实际传递同一项目。
+  api.projectSidebar.setAvailable(true);
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(connects, 0, '进入详情及服务就绪均不自动连接');
+  api.projectSidebar.open();
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  assert.equal(connects, 0, '打开右栏只复用已有会话，从不调用connectWorkspace');
+  assert.equal(api.projectSidebar.commandTarget.getSnapshot(), 's');
+  api.projectSidebar.select(null);
+  assert.equal(released, 1);
+  api.projectSidebar.dispose();
+});
+
 test('待办会话草稿沿用原生输入，打开前不释放引用，界面接管后释放且从不提交消息', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
     jsx: 'automatic', write: false, external: entryExternal, loader: { '.css': 'text' },
   });
   const module = { exports: {} as { apply(context: unknown): void } };
-  runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error });
+  runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error, crypto });
   const entries: { name: string; component(): { props: Record<string, unknown> } }[] = [];
   const events: string[] = [], commands: any[] = [];
   let count = 1, notify = () => {}, releases = 0, draft = '';
@@ -56,8 +141,175 @@ test('待办会话草稿沿用原生输入，打开前不释放引用，界面�
   assert.deepEqual(events, ['draft', 'open', 'panel']);
   assert.equal(releases, 0);
   assert.equal(draft, '待办任务：处理附件\n待办 ID：todo\n任务描述：\n必须验证\n\n请按上述要求处理此待办，并在验证完成后更新待办状态。');
-  assert.deepEqual(commands.map(c => c.op), ['begin-session']);
+  assert.deepEqual(commands.map(c => c.op), ['begin-session', 'begin-session', 'begin-session']);
+  assert.equal(commands[0].sessionId, undefined);
+  assert.deepEqual(commands.slice(1).map(c => c.sessionId), ['session', 'session'], '交接前和导航前仅校验复用已创建身份');
   count = 2; notify(); notify(); assert.equal(releases, 1);
+});
+
+test('A02：真实待办入口ready、附件拒绝、图片额度及取消故障后都复用创建身份', async () => {
+  const output = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    write: false, external: entryExternal, loader: { '.css': 'text' } });
+  for (const fault of ['ready', 'attachment', 'limits', 'cancel', 'create-cancel', 'lost-ack']) {
+    const module = { exports: {} as { apply(ctx: unknown): void } }, entries = new Map<string, any>();
+    let failed = true, created = 0, released = 0, opened = 0, allocated = 0, disposed = 0;
+    let signal = new AbortController();
+    const commands: any[] = [];
+    const receipts = new Map<string, string>();
+    const reads: AbortSignal[] = [];
+    runInNewContext(output.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error, crypto, File, Blob, URLSearchParams,
+      fetch: async (_url: string, options: { signal: AbortSignal }) => {
+        reads.push(options.signal);
+        return { ok: true, blob: async () => new Blob(['image'], { type: 'image/png' }) };
+      } });
+    module.exports.apply({
+      ...optionalServices, effect() {},
+      connection: { rpc: { async call(_c: string, _e: string, command: any, rpcSignal?: AbortSignal) {
+        commands.push({ ...command, rpcSignal });
+        const sessionId = command.sessionId ?? receipts.get(command.requestId) ?? `s${++created}`;
+        if (!command.sessionId) receipts.set(command.requestId, sessionId);
+        if (failed && fault === 'lost-ack' && !command.sessionId) throw new Error('创建回执丢失');
+        if (failed && fault === 'create-cancel' && !command.sessionId) {
+          signal.abort();
+          if (rpcSignal?.aborted) return { ok: false, error: { message: 'RPC取消' } };
+        }
+        return { ok: true, value: { sessionId } };
+      } } },
+      layout: { beginNavigation: () => (signal = new AbortController()).signal, selectPanel() {} },
+      uiWorkspace: { openSession() { opened++; } },
+      slots: { inject(_name: string, fn: () => void) { fn(); },
+        register(options: any, component: any) { entries.set(options.name, component); } },
+      sessions: {
+        retain(id: string) { return { sessionId: id, ready: Promise.resolve().then(() => {
+          if (failed && fault === 'ready') throw new Error('加载失败');
+          if (failed && fault === 'cancel') signal.abort();
+        }), release() { released++; }, binding: { ctx: {}, session: { getSnapshot: () => ({
+          imageLimits: { maxImagesPerMessage: failed && fault === 'limits' ? 0 : 10, maxImageBytes: 100, maxMessageImageBytes: 100 },
+        }) } } }; },
+        retainInfo: () => ({ getSnapshot: () => ({ referenceCount: 2 }), subscribe: () => () => {} }),
+      },
+      conversation: {
+        input: { for: () => ({ state: { getSnapshot: () => ({ phase: 'plain' }) }, setDraft() {},
+          addAttachments: () => !(failed && fault === 'attachment') }) },
+        createDrafts: () => { allocated++; return [{ id: 'image' }]; },
+        releaseDraftAttachments: () => { disposed++; },
+      },
+    });
+    const api = entries.get('main')().props.api as ClientPort;
+    const todo = todoSchema.parse({ id: 't', projectId: 'p', title: '任务', note: '', done: false, creator: 'user',
+      createdAt: 1, updatedAt: 1, completedAt: null, version: 1, attachments: [
+        { attachmentId: 'image', name: 'image.png', mediaType: 'image/png', bytes: 5 },
+      ] });
+    await assert.rejects(api.openTodoSession!(todo, 'standard'));
+    failed = false;
+    await api.openTodoSession!(todo, 'standard');
+    assert.equal(created, 1, fault);
+    assert.equal(opened, 1, fault);
+    assert.equal(released, ['create-cancel', 'lost-ack'].includes(fault) ? 1 : 2, '仅实际持有的引用被释放');
+    assert.equal(allocated, fault === 'attachment' ? 2 : 1);
+    assert.equal(disposed, fault === 'attachment' ? 1 : 0);
+    assert.equal(commands.some(c => c.op === 'submit-message'), false);
+    assert.equal(commands[0].rpcSignal, undefined, '已开始的创建RPC不能随导航取消');
+    assert.ok(reads[0], '创建前附件读取仍使用导航signal');
+    if (fault === 'lost-ack')
+      assert.equal(commands[0].requestId, commands[1].requestId, '回执未知仍重试原创建请求');
+  }
+});
+
+test('A02/A19：原生入口创建期间取消仍取得并保留回执；重试复用，创建前校验仍可取消', async () => {
+  const output = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    write: false, external: entryExternal, loader: { '.css': 'text' } });
+  const module = { exports: {} as { apply(ctx: unknown): void } }, entries = new Map<string, any>(), commands: any[] = [];
+  const abort = new AbortController();
+  let first = true, created = 0;
+  runInNewContext(output.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error });
+  module.exports.apply({
+    ...optionalServices, effect() {}, layout: {}, uiWorkspace: {},
+    connection: { rpc: { async call(_c: string, _e: string, command: any, signal?: AbortSignal) {
+      commands.push({ ...command, signal });
+      if (command.op === 'native-session-check') return { ok: true, value: { projectId: 'p' } };
+      const sessionId = command.sessionId ?? `s${++created}`;
+      if (first) { first = false; abort.abort(); if (signal?.aborted) return { ok: false, error: { message: 'RPC取消' } }; }
+      return { ok: true, value: { sessionId } };
+    } } },
+    slots: { inject(_name: string, fn: () => void) { fn(); },
+      register(options: any, component: any) { entries.set(options.name, component); } },
+  });
+  const api = entries.get('main')({ renderSlot() {}, SessionProvider() {} }).props.api as ClientPort;
+  const access = (api.renderComposerMenu!({ workspaceId: 'w', preset: 'standard', disabled: false,
+    onReady() {}, onState() {} }) as any).props.access;
+  const ctx = { sessions: {
+    retain: (id: string) => ({ sessionId: id, ready: Promise.resolve(), binding: {}, release() {} }),
+  }, conversation: { input: { for: () => ({}), requestDraftInitialization() {} } } } as unknown as Context;
+  const memory = new UiMemory();
+  await assert.rejects(prepareNativeComposer(ctx, memory, 'w', abort.signal, 'standard', undefined, undefined, access), /abort/i);
+  await prepareNativeComposer(ctx, memory, 'w', new AbortController().signal, 'standard', undefined, undefined, access);
+  assert.equal(created, 1);
+  assert.equal(commands[0].signal, abort.signal);
+  assert.equal(commands[1].signal, undefined);
+  assert.equal(commands.filter(c => c.op === 'begin-session')[1].sessionId, 's1');
+});
+
+test('A19：原生入口使用服务端最新绑定检查，归档后旧草稿创建及复用均被拒绝', async () => {
+  const output = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    write: false, external: entryExternal, loader: { '.css': 'text' } });
+  const module = { exports: {} as { apply(ctx: unknown): void } }, entries = new Map<string, any>(), commands: any[] = [];
+  let archived = false;
+  runInNewContext(output.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error });
+  module.exports.apply({
+    ...optionalServices, effect() {}, layout: {}, uiWorkspace: {},
+    connection: { rpc: { async call(_c: string, _e: string, command: any) {
+      commands.push(command);
+      if (command.op === 'native-session-check') {
+        if (archived) return { ok: false, error: { message: '项目已归档' } };
+        return { ok: true, value: { projectId: 'p', workspaceId: 'w', sessionId: command.sessionId } };
+      }
+      assert.equal(command.op, 'begin-session');
+      return { ok: true, value: { sessionId: command.sessionId ?? 's' } };
+    } } },
+    slots: { inject(_name: string, fn: () => void) { fn(); },
+      register(options: any, component: any) { entries.set(options.name, component); } },
+  });
+  const api = entries.get('main')({ renderSlot() {}, SessionProvider() {} }).props.api as ClientPort;
+  const access = (api.renderComposerMenu!({ workspaceId: 'w', preset: 'standard', disabled: false,
+    onReady() {}, onState() {} }) as any).props.access;
+  assert.equal(await access.create('w', 'standard', '', new AbortController().signal), 's');
+  archived = true;
+  await assert.rejects(access.create('w', 'standard', '', new AbortController().signal), /归档/);
+  await assert.rejects(access.create('w', 'standard', 's', new AbortController().signal), /归档/);
+  await assert.rejects(access.validate('w', 's', new AbortController().signal), /归档/);
+  assert.equal(commands.filter(c => c.op === 'begin-session').length, 1);
+  assert.equal(commands.some(c => c.op === 'snapshot'), false);
+});
+
+test('A19：提交保护请求保留取消后的令牌回执，释放使用独立owner RPC', async () => {
+  const output = await build({ entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    write: false, external: entryExternal, loader: { '.css': 'text' } });
+  const module = { exports: {} as { apply(ctx: unknown): void } }, entries = new Map<string, any>(), commands: any[] = [];
+  const abort = new AbortController();
+  runInNewContext(output.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire, Error });
+  module.exports.apply({
+    ...optionalServices, effect() {}, layout: {}, uiWorkspace: {},
+    connection: { rpc: { async call(_c: string, _e: string, command: any, signal?: AbortSignal) {
+      commands.push({ ...command, signal });
+      if (command.op === 'native-session-check') { abort.abort(); return { ok: true, value: { projectId: 'p', token: 'guard' } }; }
+      return { ok: true, value: { released: true } };
+    } } },
+    slots: { inject(_name: string, fn: () => void) { fn(); },
+      register(options: any, component: any) { entries.set(options.name, component); } },
+  });
+  const api = entries.get('main')({ renderSlot() {}, SessionProvider() {} }).props.api as ClientPort;
+  const access = (api.renderComposerMenu!({ workspaceId: 'w', preset: 'standard', disabled: false,
+    onReady() {}, onState() {} }) as any).props.access;
+  assert.equal(await access.validate('w', 's', abort.signal), 'guard');
+  assert.equal(commands[0].hold, true);
+  assert.equal(commands[0].signal, undefined);
+  await access.release('guard');
+  assert.equal(commands[1].op, 'native-session-release');
+  assert.equal(commands[1].token, 'guard');
+  assert.equal(commands[1].signal, undefined);
+  await assert.rejects(access.validate('w', 's', abort.signal), /abort/i);
+  assert.equal(commands.length, 2);
 });
 
 test('快捷模型插槽复用官方注入、语言和标签子插槽，热替换及卸载不残留', async () => {
@@ -306,10 +558,10 @@ test('工作台导航为带说明的纯图标，网格同时处理无会话与�
   assert.doesNotMatch(html, /<span>|Workbase/);
   const css = await readFile(new URL('../src/client/styles.css', import.meta.url), 'utf8');
   assert.match(css, /header\[data-window-drag\]:has\([^}]*\{grid-template-columns:minmax\(0,1fr\) auto/);
-  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{[^}]*grid-area:1\/2[^}]*border-inline-start:0\}/);
+  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{[^}]*grid-area:1\/3[^}]*border-inline-start:0\}/);
   assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)\{[^}]*gap:8px[^}]*padding-inline-start:8px/);
-  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)::before\{[^}]*width:1px;height:16px/);
-  assert.match(css, /\[data-slot="conversation.session.header"\]>div:first-child\{grid-column:1;grid-row:1\}/);
+  assert.match(css, /\[data-conversation-header-leading\]:has\(\.wb-return\)::after\{[^}]*width:1px;height:16px/);
+  assert.match(css, /\[data-slot="conversation.session.header"\]>div:first-child\{[^}]*grid-template-columns:subgrid;grid-column:1\/-1;grid-row:1/);
 });
 
 test('导航配置即时更新真实插槽，旧快照不能恢复已隐藏入口，卸载后不重新注册', async () => {
@@ -485,7 +737,8 @@ test('桌面启动偏好只导航一次，等待主插槽且尊重后续导航�
     let registerMain: (() => void) | undefined;
     runInNewContext(result.outputFiles[0]!.text, {
       module, exports: module.exports, require: hostRequire,
-      window: {}, document: {
+      setInterval: () => 1, clearInterval() {},
+      window: { addEventListener() {}, removeEventListener() {} }, document: {
         documentElement: { getAttribute: () => platform },
         createElement: () => ({ remove() {} }), head: { append() {} },
       },
@@ -493,6 +746,9 @@ test('桌面启动偏好只导航一次，等待主插槽且尊重后续导航�
     module.exports.apply({
       ...optionalServices,
       connection: { rpc: { call: (_channel: string, _endpoint: string, command: { op: string }) => {
+        if (command.op === 'speech-status') return Promise.resolve({ ok: true, value: {
+          config: { enabled: false }, available: false, hasKey: false, version: null,
+        } });
         if (command.op === 'backup-startup') {
           backupRequests.push(command.op);
           return Promise.resolve({ ok: true, value: { phase: 'idle', message: '', coverage: [] } });

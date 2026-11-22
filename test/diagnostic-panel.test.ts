@@ -70,6 +70,70 @@ const report: Diagnosis = {
   ],
 };
 const api = {} as ClientPort;
+test('进入诊断自动检查一次，保留旧内容、阻止重复检查，关闭后取消请求', async () => {
+  const result = await build({ entryPoints: ['src/client/DiagnosticsPanel.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'] });
+  const require = createRequire(import.meta.url), react = require('react');
+  let cursor = 0;
+  const hooks: any[] = [], effects: (() => void | (() => void))[] = [];
+  const module = { exports: {} as { DiagnosticsPanel(props: any): any } };
+  runInNewContext(result.outputFiles[0]!.text, {
+    module, exports: module.exports, AbortController, TextEncoder,
+    require: (id: string) => id === 'react' ? { ...react,
+      useEffect(effect: () => void | (() => void)) { effects.push(effect); },
+      useRef: (current: unknown) => { const i = cursor++; return hooks[i] ??= { current }; },
+      useState: (initial: unknown) => { const i = cursor++; return [hooks[i] ??= initial, (v: unknown) => { hooks[i] = v; }]; },
+    } : require(id),
+  });
+  const calls: AbortSignal[] = [];
+  let resolve!: (value: Diagnosis) => void, reports = 0;
+  const props = { report, busy: false, openProject() {}, onReport() { reports++; },
+    api: { call(command: any, signal: AbortSignal) {
+      assert.equal(command.op, 'diagnose'); calls.push(signal);
+      return new Promise<Diagnosis>(done => { resolve = done; });
+    } } };
+  const render = () => { cursor = 0; effects.length = 0; return module.exports.DiagnosticsPanel(props); };
+  const nodes = (node: any): any[] => !node || typeof node !== 'object' ? []
+    : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  render();
+  // 模拟严格模式的挂载、清理、重新挂载。
+  const abandoned = effects.map(effect => effect());
+  abandoned.forEach(cleanup => cleanup?.());
+  const cleanups = effects.map(effect => effect());
+  await Promise.resolve();
+  assert.equal(calls.length, 1, '每次进入只启动一次检查');
+  const tree = render();
+  assert.equal(nodes(tree).find(n => n.props?.entries)?.props.entries.length, report.issues.length, '检查期间保留已有记录');
+  const refresh = nodes(tree).find(n => n.props?.className === 'diagnostic-refresh');
+  assert.equal(refresh.props.disabled, true);
+  refresh.props.onClick();
+  assert.equal(calls.length, 1, '检查期间手动点击不能并发请求');
+  cleanups.forEach(cleanup => cleanup?.());
+  assert.equal(calls[0]!.aborted, true);
+  resolve({ ...report, checkedAt: 99 });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(reports, 0, '关闭后的返回值不覆盖快照');
+  hooks.length = 0;
+  props.busy = true;
+  render();
+  effects.forEach(effect => effect());
+  await Promise.resolve();
+  assert.equal(calls.length, 1, '繁忙时暂缓首次检查');
+  props.busy = false;
+  render();
+  const reopened = effects.map(effect => effect());
+  await Promise.resolve();
+  assert.equal(calls.length, 2, '重新进入并恢复空闲后发起新检查');
+  resolve({ ...report, checkedAt: 99 });
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(reports, 1, '新结果回传首页更新诊断卡');
+  render();
+  effects.forEach(effect => effect());
+  await Promise.resolve();
+  assert.equal(calls.length, 2, '更新快照或重复渲染不再自动检查');
+  reopened.forEach(cleanup => cleanup?.());
+});
+
 test('空会话批量操作位于列表滚动区域外，能力缺失时禁用且无候选时隐藏', () => {
   const issue = { id: 'empty:s', kind: 'empty' as const, title: '空会话', detail: '',
     projectId: null, projectTitle: '未分组会话', path: '', sessionId: 's', identity: 'i' };

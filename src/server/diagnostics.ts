@@ -1,11 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import { WorkbaseError } from '../shared/model.js';
 import { diagnosticRepairResult, type DiagnosticCandidate, type DiagnosticRepairResult,
   type HostDiagnosis, type HostDiagnosticIssue } from '../shared/diagnostics.js';
-import { createSessionMaintenance } from './session-maintenance.js';
+import { createSessionMaintenance, type DeleteTarget } from './session-maintenance.js';
 
 // 不绑定某个 JSONL 后端或缓存插件版本；兼容边界只接受检测实际用到的能力。
 const headerSchema = z.object({
@@ -50,9 +51,12 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
     if (!service || typeof service.list !== 'function') return undefined;
     const listed = await service.list({}, signal);
     signal.throwIfAborted();
+    if (!Array.isArray(listed?.items))
+      throw new WorkbaseError('diagnostic-incomplete', '宿主空会话列表结果不完整，已停止修复');
     const index = new Map<string, BlankState>();
-    for (const item of Array.isArray(listed?.items) ? listed.items : []) {
-      if (typeof item?.sessionId !== 'string') continue;
+    for (const item of listed.items) {
+      if (typeof item?.sessionId !== 'string')
+        throw new WorkbaseError('diagnostic-incomplete', '宿主空会话列表条目无效，已停止修复');
       index.set(item.sessionId, { blank: item.blank === true, running: item.running === true,
         updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : null });
     }
@@ -91,6 +95,7 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
       path: h.cwd ?? '', ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
   };
   const diagnostics = {
+    sessionDeletionIdentity: (id: string) => maintenance.deletionIdentity(id),
     async diagnose(signal: AbortSignal): Promise<HostDiagnosis> {
       signal.throwIfAborted();
       const repair = maintenance.capabilities();
@@ -198,30 +203,41 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
       }
       return report;
     },
-    async repairDiagnostics(kind: HostDiagnosticIssue['kind'], items: DiagnosticCandidate[]): Promise<DiagnosticRepairResult> {
+    async repairDiagnostics(kind: HostDiagnosticIssue['kind'], items: DiagnosticCandidate[],
+      authorize?: (target: DeleteTarget) => Promise<void>): Promise<DiagnosticRepairResult> {
       if (!maintenance.capabilities()[kind])
         throw new WorkbaseError('unsupported', '宿主缺少诊断修复所需的底层能力，请更新宿主');
       const result = await maintenance.exclusive(async () => {
         const value: DiagnosticRepairResult = { succeeded: [], skipped: [], failures: [] };
         for (const item of [...new Map(items.map(i => [i.sessionId, i])).values()]) {
           try {
-            let confirmed = false;
-            const validate = async () => {
+            let witness: z.infer<typeof storedSchema>[number] | undefined;
+            let controllerWitness = false;
+            const validate = async (stage?: { evicted: boolean; cacheRemoved?: boolean }) => {
               if (kind === 'empty') {
                 const persistence = get<Persistence>('sessionPersistence');
                 if (!persistence) throw new WorkbaseError('unsupported', '宿主未提供会话存储检测能力');
                 const rows = storedSchema.parse(await persistence.list());
                 const row = rows.find(row => row.header.id === item.sessionId);
                 if (!row) return false;
+                const parents = new Set(rows.flatMap(row => row.header.parentSession ? [row.header.parentSession] : []));
+                if (witness && (!isDeepStrictEqual(row, witness) || parents.has(item.sessionId))) return false;
                 const inner = new AbortController().signal;
-                const issue = await emptyIssue(row,
-                  new Set(rows.flatMap(row => row.header.parentSession ? [row.header.parentSession] : [])),
-                  inner, await blankIndex(inner));
-                if (issue?.identity === item.identity) { confirmed = true; return true; }
-                // 驱逐已加载会话后宿主可能不再列出它；日志身份未变且活动为空时交给 deleteCore 收尾。
-                if (!confirmed) return false;
-                try { return identity(row.header) === String((JSON.parse(item.identity) as unknown[])[0]); }
-                catch { return false; }
+                const index = await blankIndex(inner);
+                // 控制器明确给出的变化永远不能由驱逐兜底放行；服务消失也不是驱逐见证。
+                if (controllerWitness && !index) return false;
+                if (witness && ((index && !index.has(item.sessionId)) || (!index && stage?.cacheRemoved))) {
+                  if ((index && !stage?.evicted) || (row.revision === undefined && row.eventCount === undefined)) return false;
+                  const sessions = get<Sessions>('sessions');
+                  if (!sessions || sessions.get(item.sessionId) !== undefined || typeof ctx.waterfall !== 'function') return false;
+                  const activity = await ctx.waterfall('workspace/session-activity',
+                    { sessionId: item.sessionId as never }, () => Promise.resolve([]));
+                  return activity.length === 0;
+                }
+                const issue = await emptyIssue(row, parents, inner, index);
+                if (issue?.identity !== item.identity) return false;
+                if (!witness) { witness = structuredClone(row); controllerWitness = index !== undefined; }
+                return true;
               }
               const report = await diagnostics.diagnose(new AbortController().signal);
               if (report.issues.some(issue => issue.kind === kind && issue.sessionId === item.sessionId && issue.identity === item.identity))
@@ -236,7 +252,7 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
             const succeeded = kind === 'cache'
               ? await maintenance.rebuildWithinQueue(item.sessionId, item.identity)
               // 空会话常已加载在当前工作区的内存里；`evict` 先 flush 再驱逐，活动会话仍被拒绝。
-              : await maintenance.deleteWithinQueue(item.sessionId, { coldOnly: true, evict: kind === 'empty', validate });
+              : await maintenance.deleteWithinQueue(item.sessionId, { coldOnly: true, evict: kind === 'empty', validate, authorize });
             (succeeded ? value.succeeded : value.skipped).push(item.sessionId);
           } catch (error) { value.failures.push({ sessionId: item.sessionId, message: detail(error) }); }
         }

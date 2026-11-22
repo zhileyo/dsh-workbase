@@ -15,23 +15,31 @@ import { WorkbaseButton } from './WorkbaseButton.js';
 import { PluginUpdate } from './PluginUpdate.js';
 import { TerminalSettings, officialShellFace, type TerminalPort, type TerminalTheme, type Readable } from './TerminalSettings.js';
 import { installColoredTerminal, type TerminalSlots } from './ColoredTerminal.js';
+import { ProjectSidebarController, officialProjectSidebarPort, type SidebarReadable } from './project-sidebar.js';
+import { installProjectSidebar, ProjectSidebarHeader, type ProjectSidebarSlots } from './ProjectSidebar.js';
 import { defaultTerminalPalette, type TerminalPalette, catppuccinSchema } from '../shared/terminal-palette.js';
 import type { SettingsFormScope } from '@deepseek-ai/dsh-client-ui-primitives';
 import { PluginUpdateController, pluginUpdateSession, type PluginManagerPort, type UpdateProgress } from './plugin-update.js';
-import { ComposerActivity, ComposerMenu, ComposerModelState, ComposerProjectPicker } from './NativeComposer.js';
+import { ComposerActivity, ComposerMenu, ComposerModelState, ComposerProjectPicker, type NativeComposerAccess } from './NativeComposer.js';
 import type { ComponentType } from 'react';
 import { createElement } from 'react';
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client';
-import { prepareTodoSession, releaseAfterAdoption } from './todo-session.js';
+import { prepareTodoSession, releaseAfterAdoption, type TodoSessionHandoff } from './todo-session.js';
 import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/client';
 import type { Todo } from '../shared/model.js';
 declare module '@deepseek-ai/dsh-api-session-controller/client' {
-  interface SessionReferenceSourceMap { workbaseTodo: unknown; }
+  interface SessionReferenceSourceMap { workbaseTodo: unknown; workbaseSidebar: unknown; workbaseSpeech: unknown; }
 }
 import { Icon } from './ui.js';
 import { caller, UiMemory, type ClientPort } from './api.js';
 import { defaultNavigation, type Snapshot, type LaunchCatalog } from '../shared/model.js';
+import { SpeechControl } from './SpeechControl.js';
+import { SpeechReply } from './SpeechReply.js';
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand';
+import { SpeechPlayback } from './speech-playback.js';
+import { SpeechComponent } from './speech-component.js';
+import type { SpeechStatus } from '../shared/speech.js';
 import type { Command } from '../shared/commands.js';
 import css from './styles.css';
 import prototypeCss from './prototype.css';
@@ -40,6 +48,7 @@ import { connectLocale, setLanguage, t, onWorkbaseLocaleChange, type HostLocale 
 // 按 rc.2 公开契约补充旧 SDK 未声明的扩展；运行时仍等官方插槽就绪。
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
+    'conversation.chat.assistant-actions': { kind: 'list'; scope: 'session'; owner: { messageId: MessageId } };
     'plugins.item': { kind: 'list'; scope: 'root'; owner: {
       readonly view: 'summary' | 'page'; readonly form?: unknown;
     } };
@@ -59,10 +68,62 @@ export function apply(ctx: Context) {
   let storage: Storage | undefined;
   try { storage = window.localStorage; } catch { /* 隐私模式仍可使用工作台。 */ }
   const memory = new UiMemory(storage);
+  const sidebarPort = officialProjectSidebarPort(ctx);
+  const projectSidebar = sidebarPort ? new ProjectSidebarController(sidebarPort) : undefined;
+  if (projectSidebar) {
+    ctx.effect(() => () => projectSidebar.dispose());
+    ctx.inject(['sidebarRight'], scope => {
+      const service = (scope as unknown as { get(name: string): {
+        mounted: SidebarReadable<string | undefined>;
+      } }).get('sidebarRight');
+      scope.effect(() => installProjectSidebar(scope.slots as unknown as ProjectSidebarSlots, projectSidebar, service.mounted));
+    });
+  }
   const todoHandoffs = new Set<() => void>();
+  const todoPending = new Map<string, TodoSessionHandoff>();
   ctx.effect(() => () => { for (const release of todoHandoffs) release(); todoHandoffs.clear(); });
   const connection = ctx.connection as unknown as ConnectionHandle;
   const rawCall = caller(connection.rpc);
+  const nativeAccess: NativeComposerAccess = {
+    async create(workspaceId, preset, previous, signal, requestId) {
+      const target = await rawCall({ op: 'native-session-check', workspaceId,
+        ...(previous ? { sessionId: previous } : {}) }, signal) as { projectId: string };
+      signal.throwIfAborted();
+      if (!target?.projectId) throw new Error('项目已归档或不可用，请刷新后重试');
+      // 已开始的创建必须取回身份；导航取消由调用方在保留回执后处理。
+      const result = await rawCall({ op: 'begin-session', projectId: target.projectId, preset,
+        requestId, ...(previous ? { sessionId: previous } : {}) }) as { sessionId: string };
+      return result.sessionId;
+    },
+    async validate(workspaceId, sessionId, signal) {
+      signal.throwIfAborted();
+      // 必须取回已登记的保护令牌，导航取消不能丢失回执。
+      const result = await rawCall({ op: 'native-session-check', workspaceId, sessionId, hold: true }) as { token: string };
+      if (!result?.token) throw new Error('项目已归档或不可用，请刷新后重试');
+      return result.token;
+    },
+    async release(token) {
+      await rawCall({ op: 'native-session-release', token });
+    },
+  };
+  const speechPlayback = new SpeechPlayback(rawCall);
+  const speechComponent = new SpeechComponent(speechPlayback);
+  ctx.effect(() => {
+    const disconnect = speechComponent.connect(window);
+    return () => { disconnect(); speechComponent.dispose(); };
+  });
+  ctx.effect(() => ctx.slots.register({
+    name: 'conversation.session.header.utilities', id: 'workbase.speech', order: 30,
+    inject: (sessionId: SessionId) => ({ speechSessionId: sessionId }),
+  }, props => <SpeechControl sessionId={props.speechSessionId} sessions={ctx.sessions} playback={speechPlayback} component={speechComponent}/>));
+  // 已核对官方Chat公开插槽；等待声明，不修改宿主消息DOM或覆盖内置操作。
+  ctx.slots.inject('conversation.chat.assistant-actions', () => {
+    const spec = ctx.slots.spec?.('conversation.chat.assistant-actions');
+    if (spec?.kind !== 'list' || spec.scope !== 'session') return () => {};
+    return ctx.slots.register({
+      name: 'conversation.chat.assistant-actions', id: 'workbase.speech-reply', order: 30,
+    }, props => <SpeechReply sessionId={props.sessionId} messageId={props.messageId} playback={speechPlayback} component={speechComponent}/>);
+  });
   let navigation = defaultNavigation(), revision = -1, stopped = false;
   let pluginUpdateVisible = true;
   const updateSession = pluginUpdateSession(typeof window === 'undefined' ? undefined : window);
@@ -196,6 +257,7 @@ export function apply(ctx: Context) {
   const acceptSnapshot = (snapshot: Snapshot) => {
     if (stopped || snapshot.revision < revision) return false;
     revision = snapshot.revision;
+    speechComponent.setEnabled(snapshot.preferences.speechComponentEnabled === true);
     memory.theme = snapshot.preferences.theme;
     const nextPalette = snapshot.preferences.terminalPalette ?? defaultTerminalPalette();
     if (JSON.stringify(nextPalette) !== JSON.stringify(terminalPalette)) {
@@ -251,6 +313,7 @@ export function apply(ctx: Context) {
     return null;
   };
   const api: ClientPort = {
+    projectSidebar,
     async uploadTodoAttachment(todo, file) {
       const query = new URLSearchParams({ projectId: todo.projectId, id: todo.id, expectedVersion: String(todo.version), name: file.name });
       const response = await fetch(`api/workbase/todo-attachment?${query}`, {
@@ -293,13 +356,30 @@ export function apply(ctx: Context) {
       return response.blob();
     },
     async openTodoSession(todo, preset) {
+      const key = JSON.stringify([todo.projectId, todo.id, todo.version, preset]);
+      const requestKey = `todo:${key}`;
+      const pending = todoPending.get(key) ?? {};
+      todoPending.set(key, pending);
+      if (pending.running) { await pending.running; return; }
       const navigationSignal = ctx.layout.beginNavigation();
       let prepared: SessionReference | undefined;
       try { await prepareTodoSession(todo, {
+        signal: navigationSignal,
+        validate: async sessionId => {
+          await rawCall({ op: 'begin-session', projectId: todo.projectId, preset, sessionId }, navigationSignal);
+          navigationSignal.throwIfAborted();
+          if (pending.drafted && !prepared) {
+            prepared = ctx.sessions.retain(sessionId as SessionId, { source: 'workbaseTodo' });
+            await prepared.ready;
+            navigationSignal.throwIfAborted();
+          }
+        },
         read: attachment => api.readTodoAttachment!(todo, attachment, navigationSignal),
         begin: async () => {
           navigationSignal.throwIfAborted();
-          const result = await rawCall({ op: 'begin-session', projectId: todo.projectId, preset }, navigationSignal) as { sessionId: string };
+          const requestId = memory.composer.creationRequests[requestKey] ??= crypto.randomUUID();
+          memory.save();
+          const result = await rawCall({ op: 'begin-session', projectId: todo.projectId, preset, requestId }) as { sessionId: string };
           return result.sessionId;
         },
         draft: async (sessionId, text, blobs) => {
@@ -336,7 +416,8 @@ export function apply(ctx: Context) {
           });
           if (!finished) todoHandoffs.add(release);
         },
-      }); } catch (error) { prepared?.release(); throw error; }
+      }, pending); todoPending.delete(key); delete memory.composer.creationRequests[requestKey]; memory.save();
+      } catch (error) { prepared?.release(); throw error; }
     },
     renderComposerProject: props => <ComposerProjectPicker {...props}/>,
     pluginUpdateBusy: {
@@ -346,6 +427,7 @@ export function apply(ctx: Context) {
     async call(command, signal) {
       const value = await rawCall(command, signal);
       if (command.op === 'snapshot') acceptSnapshot(value as Snapshot);
+      else if (command.op === 'speech-save' || command.op === 'speech-status') speechPlayback.configure(value as SpeechStatus);
       else if (command.op === 'launch-catalog') {
         const forms = ctx.get('configForms') as { developerTools?: { enabled: { getSnapshot(): boolean } } } | undefined;
         if (forms?.developerTools?.enabled.getSnapshot() === false) {
@@ -405,9 +487,12 @@ export function apply(ctx: Context) {
         'workbase.command-menu': { kind: 'single', scope: 'session' },
         'workbase.model-selector': { kind: 'single', scope: 'session' },
         'workbase.input-activity': { kind: 'single', scope: 'session' },
+        'workbase.sidebar-expand': { kind: 'single', scope: 'session' },
       } },
       props => {
-        if (props?.renderSlot) api.renderComposerMenu = options => <ComposerMenu ctx={ctx} memory={memory} {...options}
+        if (projectSidebar && props?.renderSlot) api.renderProjectSidebar = () =>
+          <ProjectSidebarHeader controller={projectSidebar} SessionProvider={props.SessionProvider} renderSlot={props.renderSlot}/>;
+        if (props?.renderSlot) api.renderComposerMenu = options => <ComposerMenu ctx={ctx} memory={memory} access={nativeAccess} {...options}
           SessionProvider={props.SessionProvider} renderSlot={props.renderSlot}/>;
         return <Workbase api={api} memory={memory}/>;
       },

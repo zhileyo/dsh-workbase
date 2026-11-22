@@ -8,20 +8,43 @@
 name: release
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: release-main
+  group: release-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 permissions:
-  contents: write # 提交版本变更、打 tag、建 Release
-  id-token: write # 可信发布的 OIDC
+  contents: read
 
 jobs:
+  check:
+    name: typecheck, test, build & secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+      - run: npm ci
+      - run: npm run check
+      - name: 历史秘密检测（只输出脱敏位置）
+        run: node secret-scan.mjs --history .
+
   release:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    permissions:
+      contents: write # 提交版本变更、打 tag、建 Release
+      id-token: write # 可信发布的 OIDC
     name: test & release
     runs-on: ubuntu-latest
     steps:
@@ -38,8 +61,6 @@ jobs:
         run: npm install --global npm@latest
 
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
       - run: npm run build
 
       - name: semantic-release
@@ -60,4 +81,3 @@ jobs:
             exit 0
           fi
           npx semantic-release
-
