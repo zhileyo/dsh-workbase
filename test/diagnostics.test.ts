@@ -29,13 +29,33 @@ function fixture() {
     ['fork', { values: { title: { title: '分支' } }, asOfSeq: 1 }],
   ]);
   const writes: string[] = [], reads: string[] = [];
-  const cache = { cachedSnapshot: (h: { id: string }) => snapshots.get(h.id), coldSnapshot() { writes.push('cache'); } };
+  const logEvents = new Map<string, unknown[]>();
+  const cache = {
+    cachedSnapshot: (h: { id: string }) => snapshots.get(h.id),
+    // 官方 coldSnapshot 语义：折叠完整日志、回写缓存行、返回投影快照。
+    coldSnapshot: (h: { id: string }, _inherited: number, events: unknown[]) => {
+      writes.push('cache');
+      const blank = !events.some(event => (event as { type?: string }).type === 'turn/start');
+      let lastPromptAt: number | null = null;
+      for (const event of events)
+        if ((event as { type?: string }).type === 'user/message') lastPromptAt = (event as { time?: number }).time ?? 0;
+      const metadata = { blank, lastPromptAt };
+      snapshots.set(h.id, { values: { sessionListMetadata: metadata }, asOfSeq: events.length - 1 });
+      return { asOfSeq: events.length - 1, values: { sessionListMetadata: metadata } };
+    },
+  };
   const sessions = { get: (id: string) => ['live', 'live-child'].includes(id) ? { id } : undefined, list: () => [{ id: 'live' }, { id: 'live-child' }] };
   const persistence = {
     list: async () => rows.map(h => ({ header: h, sizeBytes: 123 })),
     stat: async (id: string) => { const h = rows.find(h => h.id === id); return h ? { header: h } : undefined; },
     findLog: async (id: string) => id === 'broken-parent' || rows.some(h => h.id === id) ? { path: '/stored' } : undefined,
-    open: async (id: string) => { reads.push(id); throw new Error('检测不能读取正文'); },
+    open: async (id: string) => {
+      reads.push(id);
+      const header = rows.find(h => h.id === id);
+      if (!header) throw new Error(`存储中没有会话 ${id}`);
+      return { header, inheritedEventCount: 0,
+        read: async () => ({ events: logEvents.get(id) ?? [] }), close: async () => {} };
+    },
   };
   const workspace = { id: 'w', path: '/project', title: '项目', sessionIds: ['workspace'], status: async () => 'ok' };
   const registry: Record<string, unknown> = { list: () => [workspace], archivedSessionIds: ['archive'] };
@@ -56,7 +76,7 @@ function fixture() {
     rebuildWithinQueue: async () => true,
   };
   const host = { ...createHost(ctx), ...createDiagnostics(ctx, maintenance) };
-  return { host, rows, snapshots, services, persistence, registry, writes, reads, maintenance, supported, ctx };
+  return { host, rows, snapshots, services, persistence, registry, writes, reads, logEvents, maintenance, supported, ctx };
 }
 
 test('空会话检测使用官方blank与lastPromptAt，排除输入会话、活动、fork、子代理和有后代的会话', async () => {
@@ -147,6 +167,51 @@ test('空会话删除RPC仅所有者，禁止伪造候选与归档项目，成�
   assert.equal(state.sessionMarks.workspace, undefined);
 });
 
+test('绑定已退休或宿主不再列出工作区时，空会话清理不再报项目绑定不可用', async () => {
+  const prepare = () => {
+    const f = fixture();
+    f.snapshots.set('workspace', { values: { title: null, sessionListMetadata: { blank: true, lastPromptAt: null } }, asOfSeq: 2 });
+    f.host.sessions = async () => [];
+    return f;
+  };
+  const deleted: string[] = [];
+  const count = async (service: WorkbaseService) => (await service.diagnose()).issues
+    .filter(i => i.kind === 'empty').map(i => ({ sessionId: i.sessionId!, identity: i.identity! }));
+  // 情形一：绑定已退休，项目与工作区都还在。
+  const retired = prepare();
+  retired.maintenance.deleteWithinQueue = async (id: string, options: DeleteOptions) => {
+    await options.authorize?.({ sessionId: id, path: '/project', identity: 'generation' });
+    deleted.push(id);
+    return true;
+  };
+  let state = initialState();
+  const service = new WorkbaseService({ get: () => state, set: async s => { state = s; } }, retired.host, () => 'p');
+  await service.snapshot();
+  state.bindings[0]!.retired = true;
+  const items = await count(service);
+  assert.deepEqual(items.map(i => i.sessionId), ['workspace']);
+  const retiredCall = await dispatch(service, { op: 'repair-diagnostics', kind: 'empty', items }, true, new AbortController().signal);
+  assert.equal(retiredCall.ok, true);
+  if (retiredCall.ok) assert.deepEqual(retiredCall.value, { succeeded: ['workspace'], skipped: [], failures: [] });
+  // 情形二：绑定仍生效，但宿主已不再列出对应工作区。
+  const orphaned = prepare();
+  orphaned.maintenance.deleteWithinQueue = async (id: string, options: DeleteOptions) => {
+    await options.authorize?.({ sessionId: id, path: '/project', identity: 'generation' });
+    deleted.push(id);
+    return true;
+  };
+  let second = initialState();
+  const detached = new WorkbaseService({ get: () => second, set: async s => { second = s; } }, orphaned.host, () => 'p');
+  await detached.snapshot();
+  orphaned.host.workspaces = async () => [];
+  const detachedItems = await count(detached);
+  assert.deepEqual(detachedItems.map(i => i.sessionId), ['workspace']);
+  const detachedCall = await dispatch(detached, { op: 'repair-diagnostics', kind: 'empty', items: detachedItems }, true, new AbortController().signal);
+  assert.equal(detachedCall.ok, true);
+  if (detachedCall.ok) assert.deepEqual(detachedCall.value, { succeeded: ['workspace'], skipped: [], failures: [] });
+  assert.deepEqual(deleted, ['workspace', 'workspace']);
+});
+
 test('空会话在检测后开始对话时跳过该项，服务仍继续删除同批其他空会话', async () => {
   const f = fixture();
   for (const id of ['workspace', 'ungrouped']) f.snapshots.set(id, { values: {
@@ -165,11 +230,13 @@ test('空会话在检测后开始对话时跳过该项，服务仍继续删除�
   assert.deepEqual(deleted, ['ungrouped']);
 });
 
-test('诊断只读头部与缓存，覆盖工作区、归档和未分组冷会话，排除IM及活动会话', async () => {
+test('诊断只读头部与缓存，缓存缺失不再是异常，孤儿检测不读正文', async () => {
   const f = fixture();
   assert.equal(typeof f.host.diagnose, 'function');
   const report = await f.host.diagnose!(new AbortController().signal);
-  assert.deepEqual(report.issues.filter(i => i.kind === 'cache').map(i => i.sessionId), ['workspace', 'archive', 'ungrouped', 'partial']);
+  // 官方缓存是可丢失的派生加速数据：缺失走正常冷读，不再作为异常上报。
+  assert.deepEqual(report.issues.filter(i => i.kind === 'cache'), []);
+  assert.equal(report.issues.some(i => i.sessionId === 'partial'), false);
   assert.deepEqual(report.issues.filter(i => i.kind === 'orphan').map(i => i.sessionId), ['orphan', 'seeded']);
   assert.equal(report.issues.find(i => i.sessionId === 'orphan')?.sizeBytes, 123);
   assert.deepEqual(f.reads, []);
@@ -238,10 +305,6 @@ test('修复只使用内部维护接口，缺少底层能力时不调用外部�
     received.push(input); return true;
   };
   const report = await f.host.diagnose!(new AbortController().signal);
-  const identity = report.issues.find(i => i.kind === 'cache' && i.sessionId === 'workspace')!.identity;
-  const result = await f.host.repairDiagnostics!('cache', [{ sessionId: 'workspace', identity }]);
-  assert.deepEqual(received, [['workspace', identity]]);
-  assert.deepEqual(result.succeeded, ['workspace']);
   const deleted: unknown[] = [];
   f.maintenance.deleteWithinQueue = async (id, options) => {
     deleted.push([id, options.coldOnly, options.evict]); return id === 'orphan';
@@ -252,13 +315,27 @@ test('修复只使用内部维护接口，缺少底层能力时不调用外部�
   assert.deepEqual(f.writes, []);
 });
 
+test('缓存不再作为异常上报，伪造的缓存修复候选被复查跳过', async () => {
+  const f = fixture();
+  const received: unknown[] = [];
+  f.maintenance.rebuildWithinQueue = async (...input) => { received.push(input); return false; };
+  const result = await f.host.repairDiagnostics!('cache', [{ sessionId: 'workspace', identity: 'forged' }]);
+  assert.deepEqual(result, { succeeded: [], skipped: ['workspace'], failures: [] });
+  assert.deepEqual(received, []);
+});
+
 test('服务快照合并目录与会话异常，同一路径归项目，未登记会话单独分组', async () => {
   const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: true, running: false, updatedAt: 11 },
+    { sessionId: 'ungrouped', blank: true, running: false, updatedAt: 12 },
+  ] }) };
   let state = initialState();
   f.host.sessions = async () => [];
   const service = new WorkbaseService({ get: () => state, set: async s => { state = s; } }, f.host, () => 'p');
   const snapshot = await service.snapshot();
   assert.ok(snapshot.diagnostics);
+  assert.equal(snapshot.diagnostics.issues.find(i => i.sessionId === 'workspace')?.kind, 'empty');
   assert.equal(snapshot.diagnostics.issues.find(i => i.sessionId === 'workspace')?.projectId, 'p');
   assert.equal(snapshot.diagnostics.issues.find(i => i.sessionId === 'ungrouped')?.projectId, null);
   assert.equal(snapshot.diagnostics.issues.find(i => i.sessionId === 'ungrouped')?.path, '/other');
@@ -267,20 +344,24 @@ test('服务快照合并目录与会话异常，同一路径归项目，未登�
 
 test('修复RPC仅所有者可用，拒绝非诊断候选和过期生命周期，失败保留可重试结果', async () => {
   const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: true, running: false, updatedAt: 11 },
+  ] }) };
   f.host.sessions = async () => [];
   const called: unknown[] = [];
-  f.maintenance.rebuildWithinQueue = async (...input) => {
+  f.maintenance.deleteWithinQueue = async (...input) => {
     called.push(input); throw new Error('写入失败');
   };
   let state = initialState();
   const service = new WorkbaseService({ get: () => state, set: async s => { state = s; } }, f.host, () => 'p');
   const snapshot = await service.snapshot();
   const issue = snapshot.diagnostics!.issues.find(i => i.sessionId === 'workspace')!;
-  const call = (items: unknown, owner = true) => dispatch(service, { op: 'repair-diagnostics', kind: 'cache', items }, owner, new AbortController().signal);
+  const call = (items: unknown, owner = true) => dispatch(service, { op: 'repair-diagnostics', kind: 'empty', items }, owner, new AbortController().signal);
   const items = [{ sessionId: 'workspace', identity: issue.identity }];
   assert.equal((await call(items, false)).ok, false);
-  assert.equal((await call([{ sessionId: 'valid', identity: 'forged' }])).ok, false);
-  assert.equal((await call([{ sessionId: 'workspace', identity: 'stale' }])).ok, false);
+  const stale = await call([{ sessionId: 'workspace', identity: 'stale' }]);
+  assert.equal(stale.ok, true);
+  if (stale.ok) assert.deepEqual(stale.value, { succeeded: [], skipped: ['workspace'], failures: [] });
   assert.deepEqual(called, []);
   const result = await call(items);
   assert.equal(result.ok, true);
@@ -317,11 +398,67 @@ test('空会话以宿主会话控制器的blank与running为准，内存缓存�
     { sessionId: 'busy', blank: true, running: true, updatedAt: 13 },
     { sessionId: 'valid', blank: false, running: false, updatedAt: 14 },
   ] }) };
+  // valid 的缓存行证明其非空，检测不应为复核它而读取日志。
+  f.snapshots.set('valid', { values: { title: null, sessionListMetadata: { blank: false, lastPromptAt: 42 } } });
   const report = await f.host.diagnose!(new AbortController().signal);
   // live 在 sessions 内存缓存里有对象，但宿主说它空且未运行，仍应作为候选。
   assert.deepEqual(report.issues.filter(i => i.kind === 'empty').map(i => i.sessionId), ['workspace', 'live']);
   assert.equal(report.checks.find(c => c.kind === 'empty')?.status, 'ok');
   assert.deepEqual(f.reads, []);
+});
+
+test('宿主冷列表因缓存缺失显示非空时，检测折叠日志复核空会话并回写缓存', async () => {
+  const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: false, running: false, updatedAt: 11 },
+  ] }) };
+  const report = await f.host.diagnose!(new AbortController().signal);
+  assert.deepEqual(report.issues.filter(i => i.kind === 'cache'), []);
+  assert.deepEqual(report.issues.filter(i => i.kind === 'empty').map(i => i.sessionId), ['workspace']);
+  assert.deepEqual(f.reads, ['workspace']);
+  assert.deepEqual(f.writes, ['cache']);
+  assert.deepEqual(JSON.parse(report.issues.find(i => i.kind === 'empty')!.identity!), ['[4,42,"/project",false]', 42]);
+  // 回写缓存行后宿主列表改为空会话，身份保持一致且不再读日志。
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: true, running: false, updatedAt: 42 },
+  ] }) };
+  const again = await f.host.diagnose!(new AbortController().signal);
+  assert.equal(again.issues.find(i => i.kind === 'empty')!.identity, report.issues.find(i => i.kind === 'empty')!.identity);
+  assert.deepEqual(f.reads, ['workspace']);
+});
+
+test('折叠日志发现已开始对话的会话不作为空会话，缓存证明非空时不读日志', async () => {
+  const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: false, running: false, updatedAt: 11 },
+    { sessionId: 'ungrouped', blank: false, running: false, updatedAt: 12 },
+  ] }) };
+  f.logEvents.set('workspace', [
+    { type: 'turn/start', seq: 0 },
+    { type: 'user/message', time: 5, seq: 1, data: { source: { kind: 'user' } } },
+  ]);
+  f.snapshots.set('ungrouped', { values: { title: null, sessionListMetadata: { blank: false, lastPromptAt: 42 } }, asOfSeq: 2 });
+  const report = await f.host.diagnose!(new AbortController().signal);
+  assert.deepEqual(report.issues.filter(i => i.kind === 'empty'), []);
+  assert.equal(report.checks.find(c => c.kind === 'empty')?.status, 'ok');
+  assert.deepEqual(f.reads, ['workspace']);
+});
+
+test('缓存缺失的空会话候选可删除，删除中复查身份保持一致', async () => {
+  const f = fixture();
+  (f.ctx as unknown as { sessionController: unknown }).sessionController = { list: async () => ({ items: [
+    { sessionId: 'workspace', blank: false, running: false, updatedAt: 11 },
+  ] }) };
+  const report = await f.host.diagnose!(new AbortController().signal);
+  const item = { sessionId: 'workspace', identity: report.issues.find(i => i.kind === 'empty')!.identity! };
+  const options: DeleteOptions[] = [];
+  f.maintenance.deleteWithinQueue = async (_id: string, value: DeleteOptions) => {
+    options.push(value);
+    return await value.validate!();
+  };
+  assert.deepEqual(await f.host.repairDiagnostics!('empty', [item]), { succeeded: ['workspace'], skipped: [], failures: [] });
+  assert.equal(options.length, 1);
+  assert.equal(options[0]!.evict, true);
 });
 
 test('空会话候选身份带上宿主更新时间，修复时声明驱逐已加载会话', async () => {

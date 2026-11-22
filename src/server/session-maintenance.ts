@@ -144,6 +144,20 @@ export function createSessionMaintenance(ctx: Context) {
     const activity = await ctx.waterfall('workspace/session-activity', { sessionId: id as never }, () => Promise.resolve([]));
     return activity.length === 0 && (!coldOnly || evict || s.get(id) === undefined);
   };
+  // 已加载但没在跑的会话可以先 flush 再驱逐，重建缓存才能读到日志；
+  // 真正在跑的会话仍由水位判断拒绝，不在这里放行。
+  const release = async (id: string) => {
+    const s = get<Sessions>('sessions')!, p = get<Persistence>('sessionPersistence')!;
+    const live = s.get(id);
+    if (!live) return true;
+    if (!s.flush || !s.liveEntryFor || !s.detachEntered || !p.flush) throw unsupported();
+    if (!await inactive(id, false)) return false;
+    await s.flush(live);
+    if (!await inactive(id, false) || s.get(id) !== live) return false;
+    s.detachEntered(s.liveEntryFor(live));
+    await p.flush();
+    return s.get(id) === undefined;
+  };
   const sameRow = (a: Row, b: Row) => sessionIdentity(a.header) === sessionIdentity(b.header)
     && a.revision === b.revision && a.header.origin === b.header.origin && a.header.parentSession === b.header.parentSession;
   const removeAccounts = async (id: string) => {
@@ -266,7 +280,12 @@ export function createSessionMaintenance(ctx: Context) {
       const p = get<Persistence>('sessionPersistence')!, c = get<Cache>('sessionProjectionCache')!;
       const row = await readRow(id);
       if (!row || sessionIdentity(row.header) !== identity || row.header.origin !== undefined
-          || id.startsWith('im:') || !await inactive(id, true)) return false;
+          || id.startsWith('im:')) return false;
+      // 列表里点开过的会话都在内存里，但没在跑；直接判冷态会让重建永远返回失败。
+      if (!await inactive(id, true)) {
+        if (!await release(id)) return false;
+        if (!await inactive(id, true)) return false;
+      }
       if (Object.hasOwn(c.cachedSnapshot(row.header)?.values ?? {}, 'title')) return false;
       const handle = await p.open(id, 'read');
       let events: unknown[];
@@ -280,7 +299,8 @@ export function createSessionMaintenance(ctx: Context) {
         ...(handle.header.cwd === undefined ? {} : { cwd: handle.header.cwd }),
         isSeeded: handle.header.isSeeded, inheritedEventCount: handle.inheritedEventCount }, restored.checkpoint);
       const snapshot = c.cachedSnapshot(handle.header);
-      if (!snapshot || !Object.hasOwn(snapshot.values, 'title') || !isDeepStrictEqual(snapshot, restored.snapshot))
+      // 有些会话本来就没有标题行（例如只有系统事件），不能把缺少 title 当成重建失败。
+      if (!snapshot || !snapshot.values || !isDeepStrictEqual(snapshot, restored.snapshot))
         throw new WorkbaseError('cache-unconfirmed', '列表缓存持久化未能确认，请重新检测后重试');
       const finalRow = await readRow(id);
       if (!finalRow || !sameRow(row, finalRow) || !await inactive(id, true)) return false;

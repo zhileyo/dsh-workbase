@@ -21,9 +21,17 @@ interface Persistence {
   list(): Promise<unknown>;
   stat?(id: string): Promise<unknown>;
   findLog?(id: string): Promise<unknown>;
+  open?(id: string, access: 'read'): Promise<{
+    header: Header; inheritedEventCount: number;
+    read(start: number): Promise<{ events: unknown[] }>; close(): Promise<void>;
+  }>;
   root?: string; config?: { root?: string };
 }
-interface Cache { cachedSnapshot(header: Header): { values: object } | undefined }
+interface Cache {
+  cachedSnapshot(header: Header): { values: object } | undefined;
+  /** 官方冷读：用完整日志折叠投影并把缓存行回写（fail-soft），返回投影快照。 */
+  coldSnapshot?(header: Header, inheritedEventCount: number, events: unknown[]): { values: object };
+}
 interface Sessions { get(id: string): unknown; list(): { id: string }[] }
 /** 宿主 `sessionController.list()` 的条目；官方用它同时给出空会话与运行状态。 */
 interface ControllerItem { sessionId?: unknown; blank?: unknown; running?: unknown; updatedAt?: unknown }
@@ -41,7 +49,7 @@ async function exists(target: string) {
   }
 }
 
-/** 检测不读正文；修复在工作台自己的维护模块中复查候选并持久化。 */
+/** 检测只读头部与官方缓存；缓存缺失的冷会话为复核空会话状态按官方冷读折叠完整日志。修复在工作台自己的维护模块中复查候选并持久化。 */
 export function createDiagnostics(ctx: Context, maintenance = createSessionMaintenance(ctx)) {
   const get = <T>(name: string) => (ctx as unknown as { get(name: string): T | undefined }).get(name);
   // 旧 `sessions` 服务是「已加载会话的内存缓存」，含当前打开工作区的全部会话；
@@ -62,6 +70,20 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
     }
     return index;
   };
+  /** 缓存缺失时按官方投影折叠完整日志复核空会话状态；返回空会话元数据，能力缺失时返回 undefined。 */
+  const foldEmptyMetadata = async (h: Header, signal: AbortSignal): Promise<unknown> => {
+    const cache = get<Cache>('sessionProjectionCache'), persistence = get<Persistence>('sessionPersistence');
+    if (!cache || typeof cache.coldSnapshot !== 'function'
+        || !persistence || typeof persistence.open !== 'function') return undefined;
+    signal.throwIfAborted();
+    const handle = await persistence.open(h.id, 'read');
+    let events: unknown[];
+    try { events = (await handle.read(0)).events; }
+    finally { await handle.close(); }
+    signal.throwIfAborted();
+    return (cache.coldSnapshot(handle.header, handle.inheritedEventCount, events).values as
+      { sessionListMetadata?: unknown } | undefined)?.sessionListMetadata;
+  };
   const emptyIssue = async (row: z.infer<typeof storedSchema>[number], parents: ReadonlySet<string>,
     signal: AbortSignal, index?: Map<string, BlankState>): Promise<HostDiagnosticIssue | undefined> => {
     signal.throwIfAborted();
@@ -70,9 +92,24 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
     if (index) {
       // 宿主不认识的会话宁可不报；blank 来自宿主投影，running 才是「正在使用」。
       const state = index.get(h.id);
-      if (!state || !state.blank || state.running) return;
-      return { kind: 'empty', sessionId: h.id,
+      if (!state || state.running) return;
+      if (state.blank) return { kind: 'empty', sessionId: h.id,
         identity: JSON.stringify([identity(h), state.updatedAt]), path: h.cwd ?? '',
+        ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
+      // 宿主冷列表在缓存缺失时保守显示非空；缓存已证明非空的会话直接跳过，
+      // 其余按官方冷读折叠完整日志复核，折叠结果由官方回写缓存行。
+      // 空会话的 updatedAt 即 createdAt，这里与索引路径的身份保持一致。
+      const cached = emptyMetadata.safeParse((get<Cache>('sessionProjectionCache')?.cachedSnapshot(h)?.values as
+        { sessionListMetadata?: unknown } | undefined)?.sessionListMetadata);
+      if (cached.success && (!cached.data.blank || cached.data.lastPromptAt !== null)) return;
+      const folded = await foldEmptyMetadata(h, signal);
+      if (folded === undefined) return;
+      const metadata = emptyMetadata.safeParse(folded);
+      if (!metadata.success)
+        throw new WorkbaseError('unknown-empty', `会话 ${h.id} 缺少可用的官方空会话投影`);
+      if (!metadata.data.blank || metadata.data.lastPromptAt !== null) return;
+      return { kind: 'empty', sessionId: h.id,
+        identity: JSON.stringify([identity(h), h.createdAt]), path: h.cwd ?? '',
         ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
     }
     const sessions = get<Sessions>('sessions'), cache = get<Cache>('sessionProjectionCache');
@@ -124,24 +161,19 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
       }
       signal.throwIfAborted();
       // 各检查独立失败，不抹去已经发现的问题，也不把失败伪装成零异常。
-      if (cache && typeof cache.cachedSnapshot === 'function' && sessions
-          && typeof sessions.get === 'function' && typeof ctx.waterfall === 'function') {
+      // 官方列表缓存是可丢失、可重建的派生加速数据：缺失或版本不兼容都走正常冷读，
+      // 不构成会话异常。这里只确认读取接口可用，避免把正常缓存未命中变成永久修不掉的修复项。
+      if (cache && typeof cache.cachedSnapshot === 'function') {
         let errorMessage = '';
-        for (const { header: h } of stored) {
-          signal.throwIfAborted();
-          if (h.origin !== undefined || h.id.startsWith('im:') || sessions.get(h.id) !== undefined) continue;
-          try {
-            const activity = await ctx.waterfall('workspace/session-activity', { sessionId: h.id as never }, () => Promise.resolve([]));
+        try {
+          for (const { header: h } of stored) {
             signal.throwIfAborted();
-            if (activity.length || sessions.get(h.id) !== undefined) continue;
-            const snapshot = cache.cachedSnapshot(h);
-            if (!snapshot || !snapshot.values || !Object.hasOwn(snapshot.values, 'title'))
-              report.issues.push({ kind: 'cache', sessionId: h.id, identity: identity(h), path: h.cwd ?? '' });
-          } catch (error) { signal.throwIfAborted(); errorMessage = detail(error); }
-        }
+            cache.cachedSnapshot(h);
+          }
+        } catch (error) { signal.throwIfAborted(); errorMessage = detail(error); }
         report.checks.push({ kind: 'cache', status: errorMessage ? 'error' : 'ok',
           ...(errorMessage ? { message: `部分缓存未能检查：${errorMessage}` } : {}) });
-      } else report.checks.push({ kind: 'cache', status: 'unsupported', message: '宿主未提供官方缓存或活动会话检测能力' });
+      } else report.checks.push({ kind: 'cache', status: 'unsupported', message: '宿主未提供官方会话缓存读取能力' });
 
       const emptyFallback = !!cache && typeof cache.cachedSnapshot === 'function' && !!sessions
         && typeof sessions.get === 'function' && typeof ctx.waterfall === 'function';
@@ -227,7 +259,8 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
                 // 控制器明确给出的变化永远不能由驱逐兜底放行；服务消失也不是驱逐见证。
                 if (controllerWitness && !index) return false;
                 if (witness && ((index && !index.has(item.sessionId)) || (!index && stage?.cacheRemoved))) {
-                  if ((index && !stage?.evicted) || (row.revision === undefined && row.eventCount === undefined)) return false;
+                  // 缓存行是本次删除亲手移除的，宿主空会话列表因此少掉这一条属预期；空结论已由 witness 见证。
+                  if ((index && !stage?.evicted && !stage?.cacheRemoved) || (row.revision === undefined && row.eventCount === undefined)) return false;
                   const sessions = get<Sessions>('sessions');
                   if (!sessions || sessions.get(item.sessionId) !== undefined || typeof ctx.waterfall !== 'function') return false;
                   const activity = await ctx.waterfall('workspace/session-activity',
@@ -253,7 +286,8 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
               ? await maintenance.rebuildWithinQueue(item.sessionId, item.identity)
               // 空会话常已加载在当前工作区的内存里；`evict` 先 flush 再驱逐，活动会话仍被拒绝。
               : await maintenance.deleteWithinQueue(item.sessionId, { coldOnly: true, evict: kind === 'empty', validate, authorize });
-            (succeeded ? value.succeeded : value.skipped).push(item.sessionId);
+            if (succeeded) value.succeeded.push(item.sessionId);
+            else value.skipped.push(item.sessionId);
           } catch (error) { value.failures.push({ sessionId: item.sessionId, message: detail(error) }); }
         }
         return value;

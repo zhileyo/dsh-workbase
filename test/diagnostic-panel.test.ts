@@ -188,7 +188,7 @@ test('诊断移除状态卡后，空状态区分正常、缺失检查和失败�
     report: normal, api, busy: false, onReport() {}, openProject() {},
   }));
   assert.doesNotMatch(html, /diagnostic-summary|最近检查/);
-  assert.match(html, /检查不读取正文/);
+  assert.match(html, /按需读取日志复核空会话状态/);
   assert.match(html, /diagnostic-results-empty/);
   assert.match(html, /<strong>未发现异常<\/strong><p>目录、列表缓存、孤儿子代理及空会话检查均已完成<\/p>/);
   const partial: Diagnosis = { ...normal, checks: [{ kind: 'directory', status: 'ok' },

@@ -1642,6 +1642,7 @@ npm 官方源|Official npm registry
 未发现可清理的空会话|No empty sessions to clean up
 未发现异常|No issues found
 未发现普通冷会话列表缓存异常|No issues in inactive session list caches
+缓存缺失会自动冷读重建，不作为异常|Missing cache rows are rebuilt by cold reads automatically and are not treated as issues
 未发现母会话已缺失的子代理残留|No orphaned subagent leftovers
 未归档|Unarchived
 未能读取插件，请重新检查|Could not read plugins. Check again.
@@ -1682,6 +1683,7 @@ Agent 使用终端和图片读取工具，并支持上下文压缩，适合测�
 {p0}：成功 {p1} · 跳过 {p2} · 失败 {p3}|{p0}: succeeded {p1} · skipped {p2} · failed {p3}
 无法读取项目分支，请重新读取后再发送。|Unable to read project branches. Reload before sending.
 检查目录、普通冷会话列表缓存、孤儿子代理及空会话；检查不读取正文。|Check directories, inactive session list caches, orphaned subagents and empty sessions without reading message bodies.
+检查目录、列表缓存、孤儿子代理及空会话；缓存缺失的会话按需读取日志复核空会话状态。|Check directories, session list caches, orphaned subagents and empty sessions; sessions without a cache row have their logs read on demand to verify empty status.
 检查目标版本|Check target version
 正在上传 {p0} 个附件…|Uploading {p0} attachments…
 正在启动…|Starting…

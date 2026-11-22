@@ -305,6 +305,22 @@ test('仅官方专属JSONL目录可清理，拒绝外部路径和未知后端', 
     { kind: 'jsonl', path: '/sessions/--project--/..~002Fforeign/session.v4.jsonl' }), undefined);
 });
 
+test('已加载但空闲的会话先驱逐再重建缓存，活动会话仍跳过', async () => {
+  const f = await fixture();
+  try {
+    const identity = sessionIdentity(f.headers.get('parent')!);
+    f.snapshots.delete('parent');
+    f.live.set('parent', { id: 'parent', header: f.headers.get('parent') });
+    f.busy.add('parent');
+    assert.equal(await f.maintenance.rebuildWithinQueue('parent', identity), false);
+    assert.equal(f.live.has('parent'), true);
+    f.busy.delete('parent');
+    assert.equal(await f.maintenance.rebuildWithinQueue('parent', identity), true);
+    // 列表里点开过的会话都在内存里，重建前必须先释放，否则永远判成非冷态。
+    assert.equal(f.live.has('parent'), false);
+    assert.ok(f.snapshots.has('parent'));
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
 test('驱逐已加载的空闲会话需要显式evict，活动会话即使evict也拒绝', async () => {
   const f = await fixture();
   try {

@@ -17,6 +17,7 @@ import { MIGRATION_UNAVAILABLE, MIGRATION_UNDO_MS, type MigrationPreview, type M
 import { projectWorkspaces, migrationTarget } from './migration-ownership.js';
 import type { DeleteTarget } from './session-maintenance.js';
 import { isDeepStrictEqual } from 'node:util';
+import { stat } from 'node:fs/promises';
 
 export interface Persistence { get(): State; set(next: State): Promise<void> }
 export interface HostPort {
@@ -136,13 +137,26 @@ export class WorkbaseService {
       ])];
       const todos = [...new Map(before.todos.filter(todo => todo.projectId === sourceId).map(todo => [todo.id, todo])).values()];
       const completedAt = this.now();
+      // 实体状态取迁移确认时刻的宿主快照；记录是迁移前内容的唯一留存，
+      // 撤销截止后目标侧仍可据此核对迁入了什么。
+      const entities = [
+        ...sessionIds.map(id => {
+          const session = sessions.find(s => s.sessionId === id);
+          return { kind: 'session' as const, id, sourceProjectId: sourceId, targetProjectId: targetId,
+            title: session?.title, archived: session?.archived, running: session?.running };
+        }),
+        ...todos.map(todo => ({ kind: 'todo' as const, id: todo.id, sourceProjectId: sourceId, targetProjectId: targetId,
+          title: todo.title, done: todo.done })),
+      ];
+      const sourceWorkspace = workspaces.find(w => w.workspaceId === source.workspaceId)!;
       const record: MigrationRecord = {
         id: token, kind: 'merge', source: fresh.source, target: fresh.target,
         status: 'completed', completedAt, undoUntil: completedAt + MIGRATION_UNDO_MS, revertedAt: null,
-        entities: [
-          ...sessionIds.map(id => ({ kind: 'session' as const, id, sourceProjectId: sourceId, targetProjectId: targetId })),
-          ...todos.map(todo => ({ kind: 'todo' as const, id: todo.id, sourceProjectId: sourceId, targetProjectId: targetId })),
-        ],
+        entities,
+        sourceState: {
+          available: sourceWorkspace.available, archived: source.archived,
+          agentCanChangeStatus: source.agentCanChangeStatus, counts: fresh.source.counts,
+        },
         undo: {
           version: 1,
           sessions: sessionIds.map(sessionId => ({ sessionId,
@@ -341,6 +355,11 @@ export class WorkbaseService {
         if (!restored) {
           if (!this.host.register || !this.host.remove)
             throw new WorkbaseError('unsupported', '宿主未提供工作区恢复登记能力');
+          // 源目录缺失时官方登记必抛 realpath ENOENT；撤销仍要求先恢复目录，这里只把裸错误转成可读提示。
+          try { await stat(record.source.path); } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            throw new WorkbaseError('directory-unavailable', '源项目目录已不存在，请恢复原目录后再撤销迁移');
+          }
           // create 异常时不猜测是否已成功，不再次登记或删除未知结果；下次按路径复用。
           restored = await this.host.register(record.source.path, record.source.title);
           if (!native.some(w => w.workspaceId === restored!.workspaceId)) created = restored;
@@ -713,7 +732,10 @@ export class WorkbaseService {
           if (input.kind === 'empty') { skipped.push(item.sessionId); continue; }
           throw new WorkbaseError('stale-diagnostic', '诊断结果已变化，请重新检测后操作');
         }
-        const binding = this.persistence.get().bindings.find(b => b.projectId === issue.projectId);
+        // 已退休或已移除的绑定不再代表可写项目：残留会话往往正属于这批绑定，
+        // 用归档/绑定校验把它们挡回去会让诊断清理永久失败。
+        const binding = this.persistence.get().bindings
+          .find(b => b.projectId === issue.projectId && !b.retired && !b.removed);
         if (binding) assertWritable(binding);
         eligible.push(item);
       }
@@ -727,15 +749,14 @@ export class WorkbaseService {
         const state = this.persistence.get(), workspaces = await this.host.workspaces();
         const owner = state.sessionOwnership.find(s => s.sessionId === target.sessionId)
           ?? state.worktreeSessions.find(s => s.sessionId === target.sessionId);
-        const bindings = state.bindings.filter(b => owner ? b.projectId === owner.projectId
+        // 只按仍然生效的绑定核验归属：项目或工作区已经消失的残留会话正是清理对象，
+        // 用 binding-unavailable 拦住它们等于让这批会话永远删不掉。
+        const bindings = state.bindings.filter(b => !b.retired && !b.removed && (owner ? b.projectId === owner.projectId
           : workspaces.some(w => w.workspaceId === b.workspaceId && w.sessionIds.includes(target.sessionId))
-            || target.path !== undefined && b.path === target.path);
+            || target.path !== undefined && b.path === target.path));
         if (bindings.length > 1) throw new WorkbaseError('binding-conflict', '级联会话项目归属存在冲突');
         const binding = bindings[0];
-        if (binding) {
-          assertWritable(binding);
-          this.writable(state, await this.workspaces(), binding.projectId);
-        }
+        if (binding) assertWritable(binding);
       });
       result.skipped.push(...skipped);
       if (input.kind !== 'cache' && result.succeeded.length) {

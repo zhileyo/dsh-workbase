@@ -82,7 +82,8 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 | 工作目录切换 | `workingDirectory.get/set` | 原始目录回退、`working-directory/access` 与刷盘 |
 | 工作树创建 | 官方 `forgePanel.requestWorktree(sessionId, from)`；启用时显示、禁用时隐藏，不自建降级 | 套件异步挂载与卸载、请求登记、首消息阻塞、失败重试和归档清理 |
 | 会话永久删除、空会话／孤儿清理 | 当前没有已确认的公开等价 API；`session-maintenance.ts` 适配官方 JSONL、工作区队列和缓存 | 新增公开维护 API、活动及 revision 复查、级联与文件归属 |
-| 列表缓存重建 | 当前没有已确认的公开重建 API；官方 `sessionProjections.restore` 与 `sessionProjectionCache.put` 组合 | checkpoint 与 snapshot 契约、持久化回读、水位 |
+| 空会话状态复核（缓存缺失时） | 官方 `sessionProjectionCache.coldSnapshot`（折叠完整日志并回写缓存行）+ `sessionPersistence.open` | checkpoint 与 snapshot 契约、回写时机、日志读取布局 |
+| 列表缓存健康检查 | 官方 `sessionProjectionCache.cachedSnapshot`（只读，缺失不算异常） | lifecycle identity 匹配、viewRecord 版本过滤 |
 | 终端显示与默认Shell | 公开侧栏显示插槽、官方`TerminalView.mount/connect`和`webTerminals.selectShell`；跟随／停用渲染原官方组件，已结束终端重新挂载时补取完整快照；Shell保存后只读核对官方浏览器偏好键`dsh.terminal.shell` | `attach`首帧完整screen与已结束终端保留、挂载／卸载、不可用反馈、官方偏好键及读写失败语义；官方`selectShell`返回void、`launchShells`可兜底首项，二者都不能单独证明持久化成功 |
 | 备份与事务恢复 | 工作台自实现归档；替换业务状态仍经官方存储 | 新增官方快照／事务接口是否满足校验、加密回滚和并发保护 |
 | 技能安装、编辑与恢复 | 官方FileSystem仍无目录提交API。受限同宿主映射通过已加载的官方`sandbox.confine(argv, policy)`约束目录变更；每次限定父目录，缺失目录逐级临时授权现有父目录，完整约束才执行，数据经stdin传递。既有事务保留摘要、独占日志、反向回滚及初始化恢复，状态通过官方`fs.writeText`提交；写后抛错读回完整新旧状态确认，未知结果保留文件和日志 | `processPathFromHostPath`必须映射同宿主路径；`confine`的argv及full enforcement、workspaceRoot必须存在、Node／Electron子进程、目录移动和二进制保留、状态写后检查抛错和读取失败。拒绝、只读、partial、不可映射和回滚失败无无约束降级；不把单文件moveFile当成目录事务 |
@@ -98,7 +99,7 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 - `rc.3` 新增实验性 DeepSeek 会话导入、`sidebar.session.action` 与 `workspace.picker` Factory，原工作台侧栏与目录流程接点保留。新增 Factory 可作为后续复用候选，不能直接替代工作台自己的项目归属与草稿交接逻辑。
 - 2026-11-13 的 rc.3 检查没有发现新增阻断性接线问题，但检查仍退出 1：最新工作台构建的 `dist/index.js`／`lib/client.js` 尚未安装。旧基线缺少声明指纹，21 个声明待复核不等于新版破坏；插件管理器与此前实际副本哈希一致，终端、语音、侧栏等本次人工补核。详细证据见 `docs/ui/verification/host/assessment.md`（被忽略的本机证据），未覆盖真实运行验收。
 - `rc.2` 删除了 Agent 的 `isOwnedBy` 与 `roots`，工作台没有调用它们。
-- 会话支持批量追加，JSONL 格式仍为 V4；工作台不包装 `Session.append`，但重建缓存需要继续核对投影兼容。
+- 会话支持批量追加，JSONL 格式仍为 V4；工作台不包装 `Session.append`。官方列表缓存是可丢失的派生数据，缺失走冷读；空会话复核直接使用 `coldSnapshot`，不再维护单独的重建入口。
 - 官方工作树创建会发布 `plugin:worktree/created`，符合条件的目录可在归档后自动清理，分支与提交保留。旧工作台自建目录没有该记录，不自动交给官方清理；不能伪造该记录来接管旧目录。
 - 官方工作树创建失败可能保留分支或目录，不能再无条件启动独立 Git 创建。成功后刷盘失败也不能当作“没有创建”。
 - 模型菜单改用 CSS 锚点。现有 `NativeComposer.tsx` 的 JavaScript `top/max-height` 覆盖需要适配，不能仅凭方法名存在判为完全兼容。检查报告应持续注明这项边界，直到源码适配并完成对应验证。

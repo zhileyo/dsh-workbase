@@ -71,7 +71,7 @@ export function diagnosticEmptyState(report: Diagnosis, kind?: keyof typeof chec
   if (incomplete.length) return { title: '检查未完成', detail: incomplete.join('；') };
   return kind ? {
     directory: { title: '目录正常', detail: '所有项目目录均可访问' },
-    cache: { title: '列表缓存正常', detail: '未发现普通冷会话列表缓存异常' },
+    cache: { title: '列表缓存正常', detail: '缓存缺失会自动冷读重建，不作为异常' },
     orphan: { title: '无孤儿子代理', detail: '未发现母会话已缺失的子代理残留' },
     empty: { title: '无空会话', detail: '未发现可清理的空会话' },
   }[kind] : { title: '未发现异常', detail: '目录、列表缓存、孤儿子代理及空会话检查均已完成' };
@@ -178,7 +178,7 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
         <Icon name="refresh"/>{working ? progress ? '处理中…' : '检查中…' : '重新检查'}
       </button>
     </div>
-    <p className="dialog-description stats-page-description">检查目录、普通冷会话列表缓存、孤儿子代理及空会话；检查不读取正文。</p>
+    <p className="dialog-description stats-page-description">检查目录、列表缓存、孤儿子代理及空会话；缓存缺失的会话按需读取日志复核空会话状态。</p>
     {incomplete && <p className="diagnostic-message">{emptyState.detail}</p>}
     {(!!caches.length || !!orphans.length) && <div className="diagnostic-toolbar">
       {!!caches.length && <button type="button" disabled={working || busy || !report.repair.cache}

@@ -162,6 +162,48 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · 诊断判据修正：缓存缺失不再是异常，空会话按官方冷读折叠复核
+
+**背景**：用户复测仍报「删除后还是会显示重建缓存，无法删除」，9 个会话在诊断里反复出现「列表缓存异常」，重建与删除都消不掉。取证（官方 `dsh-session-projection-cache` 0.2.2-rc.5 源码 + 本机 `~/.dsh` 磁盘核查）确认根因链：①工作台把「无缓存行」当异常，而官方缓存是可丢失、可重建的派生加速数据，缺失走正常冷读——这成了永久修不掉的假异常；②宿主冷列表（`api-session-controller` 的 `summarizeCold`）在缓存缺失时保守返回 `blank=false`，工作台空会话检查因此跳过这些会话，它们又不属于任何工作区、侧栏不可见，唯一入口只剩「重建缓存」，形成死循环。9 个会话日志全部无 `turn/start`、无 `user/message`（只有 permission/preset、sandbox/mode、approval/policy、command/run×123、command/done×123、session/end-seed），按官方投影语义全部是空会话。
+
+**决策**：两处判据一起修。①缓存检查改为纯接口健康检查：只对每个 stored 头部调 `cachedSnapshot` 确认接口可用，不再产「列表缓存异常」修复项（`repairDiagnostics` 的 cache 重建分支保留但不再有真实候选，重建失败消息改为统一 skipped）；②空会话检查在索引说 `blank=false` 时先查缓存行 `sessionListMetadata`——缓存证明非空的直接跳过，否则用官方 `sessionProjectionCache.coldSnapshot` + `sessionPersistence.open` 读完整日志折叠复核（折叠结果由官方 fail-soft 回写缓存行，后续检测回到快速路径），blank 且 lastPromptAt=null 才发候选，身份用 `[identity(h), h.createdAt]`（空会话 updatedAt=createdAt，与索引快速路径身份一致，复查不误跳过）。诊断面板空状态与说明文案、i18n、PRD、HOST-COMPATIBILITY 同步新语义。
+
+**证据**：`src/server/diagnostics.ts` 缓存检查不再要求 sessions/waterfall；`test/diagnostics.test.ts` 32/32 通过——夹具 `coldSnapshot` 改为语义 mock（按 events 算 blank/lastPromptAt 并回写 snapshots）、`persistence.open` 改为功能性；重写「诊断只读头部与缓存」（cache 期望改 []）、「修复只使用内部维护接口」（删缓存重建段）、「服务快照合并」（补 controller 断言 empty issue 归属）、「修复RPC仅所有者」（改 empty kind）；新增 3 例：折叠复核+回写+身份一致+二次不读日志、turn/start 后不判空+缓存证明非空不读日志、折叠候选可删除。`npm run typecheck` 通过；`npm test` 749 项中 724 通过／18 失败（全部 `EPERM: symlink`，与本轮无关）／7 跳过；`test/diagnostic-panel.test.ts` 说明文案断言同步更新后 42/42。两次构建摘要一致：`dist/index.js` 2713370 字节 SHA-256 `6625f40a…fc0f`，`lib/client.js` 1763793 字节 SHA-256 `30389be7…ed8b`；`node secret-scan.mjs` 0 命中；包 `dsh-workbase-1.0.4-0cfafbf8.tgz`（1009187 字节）已装 profile `desktop`（added 1，Done in 713ms）。
+
+**遗留**：宿主未重启，界面仍跑旧代码；重启后 9 个会话应显示为「空会话」而非「列表缓存异常」，可直接单删或一键删除，预期首次检测会为无缓存行的会话做一次性日志折叠（含一个 13MB 解码日志，秒级）。若删除仍有失败项，需按 failure 明细继续排查（本机无法旁路 GUI 的 401 认证做在线验证）。24 个文件未提交。
+
+### 2026-11-22 · 重建缓存先驱逐再重建、缓存判据改看行本身、覆盖块必须带!important
+
+**背景**：上一轮改动在重启后的宿主里仍被用户判为无效：诊断面板还剩九个「列表缓存异常」会话，点重建缓存不消失；待办详情两列依旧错开。需要查清楚是「没生效」还是「判据本身不可能满足」。
+
+**决策**：1）九个会话都不在任何 workspace 的 `sessionIds` 里，侧栏永远看不到，唯一入口就是诊断面板的重建缓存，所以必须让重建对「在宿主内存里但没在跑」的会话也能成立：新增 `release` 先 flush 再 detach 进日志，驱逐后重新判冷态，活动会话仍然拒绝；2）重建的收尾校验不再要求投影里有 `title` 行：只有系统事件的会话本来就没有标题行，按标题判会永远修不掉，改为只要求快照与日志恢复结果一致；3）检测判据同步改成「缓存行缺失或不含 values」才算异常，与 2 保持同一口径；4）两列对齐失败的原因是特异性而不是规则内容：`src/client/styles.css:113` 那条共享的 `.wb .wb-dialog label:not(…)×7` 是 (0,9,0)，`.todo-title-field` 本身就是 `<label>` 会吃到 23px 上边距，而优先级列是 `<div>` 不吃，`align-items:flex-end` 于是把优先级列顶高约 21px；上一轮的覆盖块 (0,5,0) 压不过它，因此整块改写为 `!important` 版本，不再比特异性。
+
+**证据**：核查脚本 `C:\Users\yolo\AppData\Local\Temp\wb-devdoc\probe-sessions.mjs` 对九个 id 全部输出 `NOT-IN-WORKSPACE`，日志仍在 `~/.dsh/sessions/<项目目录>/session-<id>/session.v4.jsonl.zstd`（320B–2179725B），`~/.dsh/storages/session_projcache` 里对应行缺失；截图 1364×164 按像素测：标题标签 y=54-66、输入框边框 y=79/128，优先级标签 y=33-46、下拉边框 y=58/107，两控件都是 50px 高、整列差 21px，说明上一轮的 `height:40px` 根本没命中；改动见 `src/server/session-maintenance.ts`（`release` 与 `rebuildWithinQueue` 的驱逐分支、收尾改用 `isDeepStrictEqual`）、`src/server/diagnostics.ts:137-141`、`src/client/styles.css:312-324`；`npm run typecheck` 通过，`npm test` 745 项／720 通过／18 失败／7 跳过（18 项仍全是 `EPERM: symlink`），新增用例见 `test/diagnostics.test.ts` 与 `test/session-maintenance.test.ts`；`node secret-scan.mjs` 为 `findings: []`；两次构建一致：`lib/client.js` 1762846 字节、`dist/index.js` 2712869 字节。
+
+**遗留**：仍要重启宿主才能看到界面效果；驱逐只在会话未活动时成立，正在跑的会话仍需先停止；两列对齐这次只从规则上钉死，最终像素待重启后目视确认。
+
+### 2026-11-22 · 冷会话才能删、缓存重建静默跳过与两列错位
+
+**背景**：用户复测后仍有两条问题：待办详情的标题列与优先级列错开，以及诊断面板里六个「列表缓存异常」会话删不掉、点重建缓存也不消失。
+
+**决策**：1）永久删除在用户确认后允许驱逐宿主内存里的会话（`evict`），因为预览或读取过的会话在宿主里不算冷态，此前一律走冷会话判定而静默返回失败；2）缓存重建仍要求冷态，失败时不再计入「已跳过」而是显式列出原因，避免按钮看起来无效；3）空会话清理的复核阶段，缓存行是本次删除自己移除的，宿主空会话列表少掉这一条属预期，不再因此中止删除；4）两列对齐不再依赖原型作用域在真实弹窗里是否生效，统一在 `src/client/styles.css` 里按列首对齐并把两侧控件钉到 40px 高。
+
+**证据**：`src/server/host.ts:216-218` 传 `evict: true` 并把失败文案改成「会话仍有活动或状态已变化，请停止后刷新重试」；`src/server/diagnostics.ts:229-231` 的复核条件增加 `!stage?.cacheRemoved`；`src/server/diagnostics.ts:252-261` 把缓存重建失败写入 `failures`；`src/client/styles.css:312-323` 新增 `.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields` 覆盖（选择器压到 dialog＋form 两级，才压得过同分且后加载的原型 `:scope` 规则）；`npm test` 744 项／719 通过／18 失败／7 跳过（新增一条缓存重建失败用例），失败项仍全部是 `EPERM: symlink`；`node secret-scan.mjs` 为 `findings: []`，退出 0；`dist/index.js` 2712316 字节、`lib/client.js` 1762495 字节。
+
+**遗留**：仍未在重启后的真实宿主里看到效果，两列只按规则保证同列首、同控件高，最终像素需重启后目视确认；目标会话仍在宿主内存时，重建缓存仍要求重启宿主，未实现重建时驱逐。
+
+### 2026-11-22 · 诊断清理不再因失效绑定失败
+
+**背景**：用户报告两点——诊断里删除会话时提示「项目绑定不可用，请刷新或处理绑定冲突」（示例 `session-6f5c95fa-b8e0-4558-a868-d40aa5c83723`）；另有「重建缓存后，删除全部空会话还是会回到缓存异常」。
+
+**决策**：
+1）诊断清理的绑定核验只认仍生效的绑定。残留会话往往正是绑定已退休（`retired`）、已移除（`removed`）或宿主工作区已消失的那批，原实现先按 owner／工作区成员／`target.path` 找到旧绑定，再调 `this.writable(...)` 要项目与工作区都还在，于是这批会话永远删不掉。现在两处查询都排除 `retired`／`removed`，找到绑定才做归档只读校验，找不到就照常清理。
+2）第二点先按「持久层有没有残留」排查：本机 `storages/workspace.json` 的 20 个 sessionIds 与磁盘会话目录一一对应，`storages/session_projcache` 的 23 条记录都带 `title` 行（3 个空会话的 `title` 为 `null`、`sessionListMetadata.blank` 为真），没有「索引有、磁盘无」的孤儿，因此本机复现不出删除后的缓存异常；不在无证据的情况下改缓存判定。
+
+**证据**：`src/server/service.ts:716` 改成 `find(b => b.projectId === issue.projectId && !b.retired && !b.removed)`；授权回调的 `filter` 前置 `!b.retired && !b.removed`，并去掉回调里的 `this.writable(…)`（`assertWritable` 的归档校验保留）。`test/diagnostics.test.ts` 新增「绑定已退休或宿主不再列出工作区时，空会话清理不再报项目绑定不可用」，两种情形都断言删除成功。`npm test` 743 项／718 通过／18 失败（全为 `EPERM: symlink`）／7 跳过；`dist/index.js` 2711839 字节 `af4345a4…`、`lib/client.js` 1759983 字节 `2e4f7e81…`，连续两次构建一致；`node secret-scan.mjs` 为 `{"findings": []}`；打包 `dsh-workbase-1.0.4-3165f3f0.tgz`（1008306 字节）装到 profile `desktop`，两端摘要与包一致。
+
+**遗留**：宿主未重启，改动未生效；第二点未在本机复现，需要用户重启后复测，若仍复现需提供删除后的诊断明细（哪几条、什么类别）。改动未提交、未发版。
+
 ### 2026-11-22 · 放行本机代理 fake-ip 段，修待办详情对齐与失效会话
 
 **背景**：用户报告三处问题——技能市场数据源提示「拒绝内网、回环或保留地址」；待办详情的标题与优先级没有对齐；快捷输入框报 `sessions.retain: unknown session`。

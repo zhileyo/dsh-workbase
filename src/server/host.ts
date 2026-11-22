@@ -213,8 +213,9 @@ export function createHost(ctx: Context, openDirectory = runDirectoryOpener): Ho
       titleCache.delete(id);
     },
     async deleteSession(id, expectedIdentity) {
-      if (!await maintenance.deleteSession(id, { expectedIdentity }))
-        throw new WorkbaseError('delete-failed', '会话状态已变化，请刷新后重试');
+      // 用户已确认永久删除：允许驱逐宿主内存中的会话，否则被预览或读取过的会话始终不算冷会话、永远删不掉。
+      if (!await maintenance.deleteSession(id, { expectedIdentity, evict: true }))
+        throw new WorkbaseError('delete-failed', '会话仍有活动或状态已变化，请停止后刷新重试');
       titleCache.delete(id);
     },
     async readSession(sessionId, signal) {
