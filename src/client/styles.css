@@ -309,3 +309,16 @@ header:has(>[data-conversation-header-leading] .wb-return) [data-conversation-he
 [data-workbase-terminal-settings] .wb-terminal-command-heading{padding-top:16px;border-top:1px solid var(--dsw-alias-border-l3)}
 .wb-terminal-row .wb-terminal-error{color:var(--dsw-alias-state-error-primary)}
 @container workbase-terminal (max-width:650px){.wb-terminal-row{flex-direction:column;gap:8px}.wb-terminal-control{width:100%}.wb-terminal-value-field>div{display:flex;flex-direction:column;gap:6px}}
+/* 待办详情两列：标题与优先级同起点、控件同高。宿主会把输入框撑到 50px，
+   而 `.wb-dialog label:not(…)×7` 那条共享规则给标题标签留着 16px 上边距、优先级是 div 没有，
+   两列因此在垂直方向错开；这里的声明必须带 !important，否则被那条更高特异性的共享规则盖掉。 */
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields{display:flex!important;align-items:flex-start!important;gap:16px!important}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>:is(.todo-title-field,.todo-priority-field){display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:6px!important;margin:0!important;min-width:0}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-title-field{flex:1 1 auto}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field{flex:none;width:160px}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>:is(.todo-title-field,.todo-priority-field)>span{display:block!important;margin:0!important;font-size:12px!important;line-height:16px!important}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-title-field>input{height:40px!important;min-height:40px!important;box-sizing:border-box!important;padding:0 12px!important;font-size:16px!important;line-height:22px!important;margin:0!important}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field .theme-select{padding:0!important;border:0!important;background:none!important}
+.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field .theme-select-trigger{height:40px!important;min-height:40px!important;box-sizing:border-box!important;padding:0 12px!important;font-size:13px!important;line-height:18px!important;align-items:center!important}
+@container workbase (max-width:650px){.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field{width:140px}}
+@container workbase (max-width:480px){.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields{flex-wrap:wrap}.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-title-field{flex:1 1 100%}.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field{width:100%}.wb .wb-dialog.todo-detail-dialog .todo-detail-form .todo-compact-fields>.todo-priority-field>span{display:none!important}}

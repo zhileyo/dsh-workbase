@@ -1482,10 +1482,11 @@ body:has(:scope[data-height-mode="scroll"] .detail-main){overflow-y:auto}
 :scope .todo-detail-section+.todo-detail-section{padding-top:0}
 :scope .todo-compact-fields{display:flex;align-items:flex-end;gap:16px}
 :scope .todo-detail-form .todo-title-field{display:flex;flex:1;min-width:0;flex-direction:column;gap:6px;margin:0}
-:scope .todo-title-field>span,:scope .todo-priority-field>span{font-size:12px;color:var(--muted)}
+:scope .todo-title-field>span,:scope .todo-priority-field>span{display:block;font-size:12px;line-height:16px;color:var(--muted)}
 :scope .todo-title-field input{height:40px;font-size:16px;font-weight:500}
 :scope .todo-priority-field{display:flex;flex:none;flex-direction:column;gap:6px;width:160px}
-:scope :is(.theme-select-todo-priority,.theme-select-edit-priority) .theme-select-trigger{height:40px;width:100%;font-size:13px}
+:scope .todo-priority-field .theme-select{display:flex;width:100%;min-width:0}
+:scope :is(.theme-select-todo-priority,.theme-select-edit-priority) .theme-select-trigger{height:40px;min-height:40px;width:100%;padding:0 12px;align-items:center;font-size:13px}
 :scope .theme-select-todo-priority .theme-select-value,:scope .composer-options-todo-priority .composer-option-copy>span{display:flex;align-items:center;gap:8px}
 :scope .todo-priority-dot{display:inline-block;flex:none;width:6px;height:6px;border-radius:50%;background:var(--muted)}
 :scope .todo-priority-dot.high{background:var(--danger)}
