@@ -162,6 +162,16 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · lockfile 镜像直链导致 CI npm ci 失败，改写回官方源
+
+**背景**：拆分提交推送后 GitHub Actions 门禁失败：npm 11.6+ 默认禁止 fetch remote 类型包，`package-lock.json` 里 linkedom 及其传递依赖共 21 条 `resolved` 指向 `registry.npmmirror.com` 直链（4c5ea32 引入 linkedom 时在镜像源环境下生成），CI 报 `EALLOWREMOTE: Refusing to fetch "uhyphen@https://registry.npmmirror.com/…"`。
+
+**决策**：把 21 条 npmmirror `resolved` 改写为 `registry.npmjs.org`（URL 路径一致、integrity 不变）。不用 `--allow-remote` 或在 CI 配镜像——门禁环境不可控，官方源是唯一稳定基线；今后在镜像源环境生成 lockfile 后需检查 resolved 是否被改写。
+
+**证据**：本地 `npm ci` exit 0（integrity 全部通过，证明镜像与官方 tarball 字节一致）；失败日志见 gh run 45026343752。
+
+**遗留**：无。`PluginUpdate.tsx` 的 npmmirror 引用是镜像源 UI 标签判断，与依赖安装无关，保留。
+
 ### 2026-11-22 · 迁移记录补源项目状态快照与实体清单视图
 
 **背景**：迁移记录此前只有数量对照与确认／撤销动作，回看批次时看不出源项目当时有哪些会话与待办、各自什么状态；源项目确认迁移后登记可能被移除，记录是唯一留存却缺源侧上下文。确认与撤销失败只在面板内联提示。本轮按约定先补日志条目再提交。
