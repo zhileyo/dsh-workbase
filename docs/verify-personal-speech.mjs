@@ -136,14 +136,14 @@ try {
     assert.equal(await panel.locator('input[type=password]').inputValue(), '');
     assert.equal(await panel.getByRole('button', { name: en ? 'Voice' : '音色', exact: true }).textContent(), 'tide');
     await openPicker(provider);
-    await page.getByRole('option', { name: en ? 'OpenAI-compatible TTS' : 'OpenAI 兼容 TTS', exact: true }).click();
+    await page.getByRole('option', { name: 'OpenAI TTS', exact: true }).click();
     assert.equal(await panel.locator('input[type=number]').count(), 1);
     await panel.locator('input[type=text]').nth(0).fill('https://example.com/v1/audio/speech');
     await page.locator('button[type=submit]').click();
     assert.equal(await page.evaluate(() => window.speech.config.provider), 'compatible');
     await page.locator('#open').click(); await openSpeech();
     await openPicker(provider);
-    await page.getByRole('option', { name: en ? 'DeepSeek TTS' : 'DeepSeek 官方 TTS', exact: true }).click();
+    await page.getByRole('option', { name: 'DeepSeek TTS', exact: true }).click();
     await page.getByRole('button', { name: en ? 'Cancel' : '取消', exact: true }).click();
     assert.equal(await page.evaluate(() => window.speech.config.provider), 'compatible');
     // 停用组件不被隐藏页的未完成配置阻塞，不覆盖已保存的服务配置。

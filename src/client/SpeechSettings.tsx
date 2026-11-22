@@ -19,7 +19,7 @@ export function SpeechSettings({ draft, disabled }: { draft: SpeechSave; disable
         draft.config = { ...draft.config, provider, endpoint: provider === 'deepseek' ? DEEPSEEK_TTS_ENDPOINT
           : 'https://api.openai.com/v1/audio/speech', voice: provider === 'deepseek' ? 'stella' : 'alloy', model: 'tts-1', speed: 1 };
         draft.changed();
-      }} options={[{ value: 'deepseek', label: 'DeepSeek 官方 TTS' }, { value: 'compatible', label: 'OpenAI 兼容 TTS' }]}/></label>
+      }} options={[{ value: 'deepseek', label: 'DeepSeek TTS' }, { value: 'compatible', label: 'OpenAI TTS' }]}/></label>
     {official ? <>
       <label className="wb-setting-row setting-row"><div><strong>音色</strong></div>
         <Picker label="音色" value={draft.config.voice} disabled={locked}
