@@ -162,6 +162,16 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · 半完成发版回滚：删除 v1.1.0 标签与发版提交，修复后干净重发
+
+**背景**：lockfile 修复推送后，发布 job 的 semantic-release 走到 publish 阶段才失败——prepare 阶段的发版提交与 v1.1.0 标签已推回 GitHub，但 `npm publish` 触发 `prepublishOnly`（npm test）因缺 uv 失败，npm 仍是 1.0.4、GitHub Release 未建。若保留标签，下次推送会按 patch 发 1.1.1，与提交 subject 的 1.1.0 永久错位。
+
+**决策**：经用户确认，删远程 v1.1.0 标签、force-with-lease 去掉 CI 生成的发版提交（机器提交，生成几分钟且无人依赖），把 setup-uv 修复 rebase 后干净重发 1.1.0。教训：semantic-release 的 git prepare（提交+标签）先于 npm publish 执行，publish 失败会留下半完成状态；恢复时优先清理标签重做，不让版本号错位固化。
+
+**证据**：gh run 45026758185 日志（Found 11 commits since last release → prepare 完成 → publish 阶段 `prepublishOnly` 失败）；`npm view dsh-workbase version` = 1.0.4 佐证未发布；262e6bf 与 v1.1.0 已删除。
+
+**遗留**：无。
+
 ### 2026-11-22 · 发布 job 缺 setup-uv 导致 npm test 失败，与门禁 job 对齐
 
 **背景**：lockfile 修复推送后门禁 job 通过，发布 job（semantic-release 的 npm prepare 触发 `npm test && npm run typecheck && npm run build`）在 `test/build-compliance.test.ts` 的 WebP 编码器测试失败。该测试（4c5ea32 新增）探测 `cwebp→magick→python(uv+Pillow)`，发布 job 只装了 node，没有 `astral-sh/setup-uv`；1.0.4 时代该测试不存在，故此前未暴露。
