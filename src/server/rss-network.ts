@@ -8,10 +8,12 @@ import { RSS_LIMITS, safeRssUrl } from '../shared/rss.js';
 export function isPublicRssAddress(address: string): boolean {
   if (isIP(address) === 4) {
     const [a = 0, b = 0, c = 0] = address.split('.').map(Number);
+    // 198.18.0.0/15 留给本机代理的 fake-ip 段：这类代理把公网域名解析到该段再由本地转发，
+    // 因此放行它不构成对内网的访问，其余私网、回环与保留段仍然拒绝。
     return !(a === 0 || a === 10 || a === 127 || a >= 224 || a === 169 && b === 254
       || a === 172 && b >= 16 && b <= 31 || a === 192 && b === 168
       || a === 100 && b >= 64 && b <= 127 || a === 192 && b === 0
-      || a === 192 && b === 88 && c === 99 || a === 198 && (b === 18 || b === 19)
+      || a === 192 && b === 88 && c === 99
       || a === 198 && b === 51 && c === 100 || a === 203 && b === 0 && c === 113);
   }
   if (isIP(address) !== 6) return false;

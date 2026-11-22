@@ -5,8 +5,9 @@ import { gzipSync } from 'node:zlib';
 import { fetchRss, isPublicRssAddress } from '../src/server/rss-network.js';
 
 test('public-address policy blocks IPv4, mapped IPv6, private and reserved destinations', () => {
-  for (const ip of ['127.0.0.1', '10.0.0.1', '172.16.1.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '192.0.2.1', '198.18.0.1', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1', '2001:db8::1', '2002:7f00:1::']) assert.equal(isPublicRssAddress(ip), false, ip);
-  for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111']) assert.equal(isPublicRssAddress(ip), true, ip);
+  for (const ip of ['127.0.0.1', '10.0.0.1', '172.16.1.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '192.0.2.1', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1', '2001:db8::1', '2002:7f00:1::']) assert.equal(isPublicRssAddress(ip), false, ip);
+  // 198.18.0.0/15 是本机代理的 fake-ip 段，必须放行，否则走 TUN 代理的机器无法抓取任何订阅。
+  for (const ip of ['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '198.18.0.1', '198.19.255.254']) assert.equal(isPublicRssAddress(ip), true, ip);
 });
 
 test('controlled HTTP: explicit trusted origin, redirects, response cap, timeout and cancellation', async () => {

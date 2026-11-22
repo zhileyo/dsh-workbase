@@ -42,6 +42,8 @@ test('市场和仓库网络共同拒绝回环、私网及IPv6本地地址', () =
   for (const address of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.0.1', '169.254.1.1', '::1', 'fc00::1', '::ffff:127.0.0.1'])
     assert.equal(publicSkillAddress(address), false, address);
   assert.equal(publicSkillAddress('8.8.8.8'), true);
+  // 198.18.0.0/15 是本机代理的 fake-ip 段：放行后走 TUN 代理的机器才能访问公开市场。
+  assert.equal(publicSkillAddress('198.18.2.51'), true);
 });
 test('固定DNS lookup同时遵循Node单地址与all地址回调契约', () => {
   const address = { address: '8.8.8.8', family: 4 }, lookup = pinnedSkillLookup(address);

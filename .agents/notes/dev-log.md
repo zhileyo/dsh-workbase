@@ -162,6 +162,19 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 
 ## 日志
 
+### 2026-11-22 · 放行本机代理 fake-ip 段，修待办详情对齐与失效会话
+
+**背景**：用户报告三处问题——技能市场数据源提示「拒绝内网、回环或保留地址」；待办详情的标题与优先级没有对齐；快捷输入框报 `sessions.retain: unknown session`。
+
+**决策**：
+1）把 `198.18.0.0/15` 从「保留地址」里放行。该段是 TUN／fake-ip 模式代理给公网域名分配的占位地址（本机实测 skillhub.cn、api.skillhub.cn、clawhub.ai、skills.sh 全部解析到 198.18.x），封掉它等于封掉所有市场数据源；真实主机不使用该段，放行不会让请求落到内网。RSS 侧同一策略同步修改，`198.51.100.0/24`、`192.0.0.0/24` 等仍拒绝。
+2）待办详情不再依赖「控件高度碰巧相等」：标签 `display:block` 加固定 16px 行高，优先级列 `.theme-select` 填满 160px 列宽，触发器显式 `height:40px;min-height:40px;padding:0 12px;align-items:center`，与标题输入框同高同基线。
+3）会话失效改成可恢复：`ctx.sessions.retain` 抛 `unknown session` 时清掉页面记忆里的死会话身份并重建会话，不把宿主错误抛进输入框；提交路径仍失败时给出「当前会话已失效，请刷新页面后重试」。理由是宿主重启、切 profile 或删会话都会让记忆身份失效，而输入框是常驻组件，报错会一直挂着。
+
+**证据**：`src/server/skills-network.ts` 判定改为 `!(a === 198 && b === 51 && c === 100)`；`src/server/rss-network.ts` 去掉 `b === 18 || b === 19`；`test/rss-network.test.ts` 把 `198.18.0.1`／`198.19.255.254` 移入放行断言，`test/skills-repository.test.ts` 新增 `publicSkillAddress('198.18.2.51') === true`。`src/client/NativeComposer.tsx` 新增 `staleSessionError` 与重建分支，`test/native-composer.test.ts` 新增恢复用例并通过。样式改真源 `docs/ui/ui-directions.html` 后重新生成 `src/client/prototype.css`（`sync-ui.mjs` 只导出 `syncPrototypeUi`，直接 `node sync-ui.mjs` 不会执行）。`npm test` 742 项／717 通过／18 失败／7 跳过，18 项全是 `EPERM: symlink`（本机未开符号链接权限）；`lib/client.js` 1759983 字节 `2e4f7e81…`、`dist/index.js` 2711875 字节 `dc39a15e…`，两次构建一致；`node secret-scan.mjs` 为 `{"findings": []}`；打包 `dsh-workbase-1.0.4-6b7d4146.tgz`（1008321 字节）并装到 profile `desktop`。
+
+**遗留**：宿主未重启，界面仍是旧代码；对齐是否到位需要目视确认（未在不触达用户会话的前提下截图验证）。18 项符号链接失败要在开启权限或非 Windows 环境复跑后才能算全绿。改动未提交、未发版。
+
 ### 2026-11-22 · 本地包改用内容摘要名并安装到 desktop profile
 
 **背景**：用户要求用本地构建安装一次，并问本地包能否换个名字，避免与线上安装的同版本包重复。profile `desktop` 原来的 `dsh-workbase` 依赖是 registry 的 `1.0.4`，而本地工作区多出 198 项改动，两者版本号相同、内容不同。
