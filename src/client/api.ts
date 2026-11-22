@@ -19,6 +19,8 @@ export interface ComposerBridge {
 }
 export interface ComposerMenuProps {
   workspaceId: string; preset: string; disabled: boolean;
+  /** 延迟创建的首次激活：输入框本地文字以替换语义写入会话草稿（附件保留）；仅在本次挂载内有效。 */
+  activationDraft?: string;
   modelTarget?: HTMLElement | null;
   activityTarget?: HTMLElement | null;
   activityLocked?: boolean;
@@ -99,7 +101,7 @@ export class UiMemory {
   private savedTheme: Preferences['theme'] | null = null;
   composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
     creationRequests: {} as Record<string, string>,
-    nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeDraft: null as DraftSnapshot | null, pending: null as null | {
+    nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeArmed: false, nativeDraft: null as DraftSnapshot | null, pending: null as null | {
     projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string;
   } };
   targetTodo?: string;

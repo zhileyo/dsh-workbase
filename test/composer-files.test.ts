@@ -227,6 +227,7 @@ test('输入卡真实事件回调接入导入桥：普通粘贴放行，混合�
   for (const blocked of [false, true]) {
     const memory = new UiMemory(); memory.composer.preset = 'standard';
     if (blocked) memory.composer.pending = { projectId: 'p', sessionId: 's', provider: 'p', model: 'm', text: 'x', requestId: 'r' };
+    else memory.composer.nativeArmed = true;
     const calls: unknown[] = [];
     const api = { renderComposerMenu: (props: any) => {
       props.onReady({ change: (text: string) => calls.push(text), addFiles: (...args: unknown[]) => { calls.push(args); return null; } });
@@ -258,4 +259,36 @@ test('输入卡真实事件回调接入导入桥：普通粘贴放行，混合�
     assert.equal(prevented, 3);
     body.props.onDragLeave({ currentTarget: { contains: () => false }, relatedTarget: null });
   }
+});
+
+test('延迟创建：未激活时输入与拖入只置位 armed 并暂存文件，不触碰会话桥', async () => {
+  const output = await build({ entryPoints: ['src/client/Composer.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'] });
+  const require = createRequire(import.meta.url), react = require('react');
+  const module = { exports: {} as { Composer(props: any): any } };
+  runInNewContext(output.outputFiles[0]!.text, {
+    module, exports: module.exports,
+    require: (id: string) => id === 'react' ? { ...react,
+      useId: () => 'composer-error', useEffect() {}, useLayoutEffect() {}, useCallback: (fn: unknown) => fn,
+      useRef: (current: unknown) => ({ current }),
+      useState: (initial: unknown) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    } : require(id),
+  });
+  const memory = new UiMemory(); memory.composer.preset = 'standard';
+  const calls: unknown[] = [];
+  const api = { renderComposerMenu: (props: any) => {
+    props.onReady({ change: (text: string) => calls.push(text), addFiles: (...args: unknown[]) => { calls.push(args); return null; } });
+    return null;
+  } };
+  const tree = module.exports.Composer({ api, memory, snapshot: { preferences: initialState().preferences,
+    projects: [{ projectId: 'p', workspaceId: 'w', title: 'p', available: true, archived: false, mark: emptyMark() }] } });
+  const body = tree.props.children[0], textarea = body.props.children[0];
+  assert.equal(textarea.props.disabled, false, '未激活时输入框可编辑');
+  const target = { value: '', selectionStart: 0, selectionEnd: 0 };
+  textarea.props.onChange({ target: { value: '你好' } });
+  assert.equal(memory.composer.nativeArmed, true, '首次输入置位 armed');
+  assert.equal(calls.length, 0, '未激活不触碰会话桥');
+  const image = file('拖入图片');
+  body.props.onDrop({ dataTransfer: { items: [], files: [image], types: ['Files'], getData: () => '' }, preventDefault() {} });
+  assert.equal(calls.length, 0, '未激活拖入只暂存不桥接');
 });

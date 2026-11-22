@@ -38,6 +38,7 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   const [attachments, setAttachments] = useState(false);
   const [nativeBusy, setNativeBusy] = useState(false);
   const [nativeReady, setNativeReady] = useState(false);
+  const [nativeActive, setNativeActive] = useState(() => !!saved.nativeArmed);
   const [fileDrag, setFileDrag] = useState(false);
   const [modelTarget, setModelTarget] = useState<HTMLDivElement | null>(null);
   const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(null);
@@ -47,6 +48,14 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
     setNativeModel(previous => previous.ready === state.ready && previous.busy === state.busy ? previous : state), []);
   const bridge = useRef<ComposerBridge | null>(null);
   const locked = useRef(false);
+  // 延迟创建：首次输入/粘贴/附件/添加上下文才创建原生空会话；armed 持久化，激活一次后本次挂载保持。
+  const pendingActivation = useRef<string | undefined>(undefined);
+  const stash = useRef<{ files: File[]; directories: Set<File> } | null>(null);
+  const armNative = (activationDraft?: string) => {
+    if (!api.renderComposerMenu || saved.nativeArmed || saved.pending) return;
+    pendingActivation.current = activationDraft;
+    saved.nativeArmed = true; memory.save(); setNativeActive(true);
+  };
   const [attempt, setAttempt] = useState(0);
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -98,6 +107,14 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   const importFiles = (files: readonly File[], directories: ReadonlySet<File>) => {
     if (editingLocked || locked.current) return;
     if (!project?.available || project.archived) { setError('请先选择可用项目'); return; }
+    if (api.renderComposerMenu && !nativeActive) {
+      // 延迟创建：会话绑定前先暂存文件，激活就绪后再入队上传。
+      const batch = stash.current ??= { files: [], directories: new Set() };
+      batch.files.push(...files);
+      for (const directory of directories) batch.directories.add(directory);
+      armNative(draft);
+      return;
+    }
     try {
       const rejection = bridge.current ? bridge.current.addFiles(files, directories) : '输入服务正在加载，暂时无法添加文件';
       setError(rejection ?? '');
@@ -160,7 +177,7 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
         e.preventDefault();
         if (batch.files.length) importFiles(batch.files, batch.directories);
       }}>
-    <textarea id="quick-input" ref={input} aria-label="新会话首条消息" aria-describedby={error ? errorId : undefined} placeholder={fileDrag ? '松开以添加文件或图片' : '有什么我能帮你的吗？'} title="Enter 换行，⌘ / Ctrl + Enter 发送；支持拖入文件和粘贴图片" maxLength={20000} value={draft} disabled={editingLocked || (!!api.renderComposerMenu && !nativeReady)}
+    <textarea id="quick-input" ref={input} aria-label="新会话首条消息" aria-describedby={error ? errorId : undefined} placeholder={fileDrag ? '松开以添加文件或图片' : '有什么我能帮你的吗？'} title="Enter 换行，⌘ / Ctrl + Enter 发送；支持拖入文件和粘贴图片" maxLength={20000} value={draft} disabled={editingLocked || (nativeActive && !nativeReady)}
       onPaste={e => {
         const batch = composerTransferFiles(e.clipboardData);
         if (!batch.files.length) return;
@@ -171,22 +188,29 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
           const el = e.currentTarget;
           const room = Math.max(0, 20000 - el.value.length + el.selectionEnd - el.selectionStart);
           const next = el.value.slice(0, el.selectionStart) + text.slice(0, room) + el.value.slice(el.selectionEnd);
-          setDraft(next); bridge.current?.change(next);
+          setDraft(next); bridge.current?.change(next); armNative(next);
         }
         importFiles(batch.files, batch.directories);
       }}
-      onChange={e => { setDraft(e.target.value); bridge.current?.change(e.target.value); }} onKeyDown={e => {
+      onChange={e => { setDraft(e.target.value); bridge.current?.change(e.target.value); armNative(e.target.value); }} onKeyDown={e => {
         if (!e.metaKey && !e.ctrlKey && bridge.current?.key(e.key === 'Tab' && e.shiftKey ? 'ShiftTab' : e.key, e.nativeEvent.isComposing)) { e.preventDefault(); return; }
         if (e.key === 'Enter' && !e.nativeEvent.isComposing && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
       }}/>
     <div className="wb-composer-actions composer-actions" data-voice-active={voiceActive || undefined}>
       <div className="wb-composer-leading composer-leading">
-        {api.renderComposerMenu && project?.available && preset && !pending
+        {api.renderComposerMenu && nativeActive && project?.available && preset && !pending
           ? api.renderComposerMenu({ workspaceId: project.workspaceId, preset, disabled: busy || nativeBusy,
+            activationDraft: pendingActivation.current,
             modelTarget, onModelState, activityTarget, activityLocked: editingLocked, onActivityChange: setVoiceActive,
-            onReady: value => { bridge.current = value; setNativeReady(!!value); if (!value) onModelState({ ready: false, busy: false }); },
+            onReady: value => { bridge.current = value; setNativeReady(!!value);
+              if (value && stash.current) {
+                const batch = stash.current; stash.current = null;
+                setError(value.addFiles(batch.files, batch.directories) ?? '');
+              }
+              if (!value) onModelState({ ready: false, busy: false }); },
             onState: (text, hasAttachments, sending) => { setDraft(text); setAttachments(hasAttachments); setNativeBusy(sending); } })
-          : api.renderComposerMenu ? <button className="wb-icon field-settings" type="button" aria-label="添加上下文" disabled><Icon name="plus"/></button>
+          : api.renderComposerMenu ? <button className="wb-icon field-settings" type="button" aria-label="添加上下文" title="添加上下文"
+              disabled={busy || nativeBusy || nativeActive || !!pending} onClick={() => armNative(draft)}><Icon name="plus"/></button>
           : <Menu icon="plus" label="添加上下文" disabled={busy || !!pending} items={[
           { label: '插入 @ 上下文引用', action: insertAt },
           { label: '清空输入', action: () => { setDraft(''); input.current?.focus(); } },

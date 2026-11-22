@@ -4,7 +4,7 @@ import type { ClientPort, ComposerBridge, UiMemory } from './api.js';
 export async function submitNativeMessage(api: ClientPort, memory: UiMemory, bridge: Pick<ComposerBridge, 'sessionId' | 'submit'>, baseBranch?: string) {
   if (baseBranch && !await api.requestWorktree(bridge.sessionId, baseBranch)) throw new Error('工作树请求失败，请重试');
   if (!await bridge.submit()) return false;
-  Object.assign(memory.composer, { nativeSessionId: '', nativeDraft: null, draft: '' });
+  Object.assign(memory.composer, { nativeSessionId: '', nativeArmed: false, nativeDraft: null, draft: '' });
   memory.save();
   return true;
 }

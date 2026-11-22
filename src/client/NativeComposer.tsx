@@ -235,8 +235,16 @@ export function composerFileRejection(files: readonly File[], attachments: reado
     return `图片总大小不能超过 ${limits.maxMessageImageBytes} 字节`;
   return null;
 }
+/** 宿主重启、换 profile 或会话被删除后，页面记忆里的身份不再存在；这类失败可以换新会话恢复。 */
+export function staleSessionError(error: unknown) {
+  const text = error instanceof Error ? error.message : String(error ?? '');
+  // 「不属于当前项目」来自工作台自身的绑定检查：记忆里的会话已被清理
+  // （如诊断删除空会话）或宿主列表已不含它，复用必然失败，同样换新会话恢复。
+  return /unknown session|会话不存在|会话已被删除|no such session|不属于当前项目/i.test(text);
+}
 export async function prepareNativeComposer(ctx: Context, memory: UiMemory, workspaceId: string, signal: AbortSignal, preset = '',
-  from?: SessionReference, commit?: (reference: SessionReference) => void, access?: NativeComposerAccess): Promise<SessionReference> {
+  from?: SessionReference, commit?: (reference: SessionReference) => void, access?: NativeComposerAccess,
+  activationDraft?: string): Promise<SessionReference> {
   signal.throwIfAborted();
   const saved = memory.composer;
   const pending = (saved as typeof saved & { nativeHandoffs?: Record<string, string> }).nativeHandoffs ??= {};
@@ -249,10 +257,22 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
     // 请求身份先保存；未知网络错误不换身份重建。
     const requestId = access ? saved.creationRequests[requestKey] ??= crypto.randomUUID() : '';
     if (access) memory.save();
-    const id = access ? await access.create(workspaceId, preset, previous, signal, requestId) : await ctx.sessions.create({
-      workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}),
-      ...(previous ? { sessionId: previous as SessionId } : {}),
-    });
+    let id: string;
+    try {
+      id = access ? await access.create(workspaceId, preset, previous, signal, requestId) : await ctx.sessions.create({
+        workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}),
+        ...(previous ? { sessionId: previous as SessionId } : {}),
+      });
+    } catch (error) {
+      // 记忆里的上一会话可能已被清理（如诊断删除空会话）；换新会话而不是让重试一直失败。
+      if (!previous || !staleSessionError(error)) throw error;
+      delete pending[key];
+      delete saved.creationRequests[requestKey];
+      if (saved.nativeSessionId === previous) { saved.nativeSessionId = ''; saved.nativeWorkspaceId = ''; }
+      memory.save();
+      id = access ? await access.create(workspaceId, preset, '', signal, crypto.randomUUID())
+        : await ctx.sessions.create({ workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}) });
+    }
     // 创建回执立即持久化；加载、交接或取消失败不能丢失已创建的身份。
     pending[key] = id;
     memory.save();
@@ -264,7 +284,24 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
   finally { if (creations.get(key) === creation) creations.delete(key); }
   signal.throwIfAborted();
   // 加载请求可取消；成功后的引用独立持有，不能随旧 effect 的 abort 释放附件。
-  const reference = ctx.sessions.retain(sessionId as SessionId, { source: 'workbaseComposer' });
+  let reference: SessionReference;
+  try {
+    reference = ctx.sessions.retain(sessionId as SessionId, { source: 'workbaseComposer' });
+  } catch (error) {
+    // 记忆里的会话可能已经不存在（宿主重启、会话被删除或换过 profile）；换一个新会话，
+    // 而不是把 unknown session 抛进输入框，让快捷键一直失败。
+    if (!staleSessionError(error)) throw error;
+    delete pending[key];
+    delete saved.creationRequests[`native:${key}`];
+    if (saved.nativeSessionId === sessionId) { saved.nativeSessionId = ''; saved.nativeWorkspaceId = ''; }
+    memory.save();
+    sessionId = access
+      ? await access.create(workspaceId, preset, '', signal, crypto.randomUUID())
+      : await ctx.sessions.create({ workspaceId: workspaceId as WorkspaceId, ...(preset ? { agentPreset: preset } : {}) });
+    pending[key] = sessionId;
+    memory.save();
+    reference = ctx.sessions.retain(sessionId as SessionId, { source: 'workbaseComposer' });
+  }
   let released = false;
   const release = () => { if (!released) { released = true; reference.release(); } };
   signal.addEventListener('abort', release, { once: true });
@@ -289,11 +326,18 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
       }
       for (const id of ids) source.removeAttachment(id);
     } else if (!from) {
-      const sameDraft = !saved.nativeWorkspaceId || (saved.nativeWorkspaceId === workspaceId && saved.nativePreset === preset);
-      if (sameDraft && saved.nativeDraft) shell.setDraft(saved.nativeDraft);
-      else ctx.conversation.input.requestDraftInitialization(reference.binding, {
-        prompt: sameDraft ? saved.draft : '', whenDraftExists: 'keep',
-      });
+      if (activationDraft !== undefined) {
+        // 延迟创建的首次激活：输入框本地文字是权威草稿；替换宿主侧旧稿，附件保留。
+        ctx.conversation.input.requestDraftInitialization(reference.binding, {
+          prompt: activationDraft, whenDraftExists: 'replace',
+        });
+      } else {
+        const sameDraft = !saved.nativeWorkspaceId || (saved.nativeWorkspaceId === workspaceId && saved.nativePreset === preset);
+        if (sameDraft && saved.nativeDraft) shell.setDraft(saved.nativeDraft);
+        else ctx.conversation.input.requestDraftInitialization(reference.binding, {
+          prompt: sameDraft ? saved.draft : '', whenDraftExists: 'keep',
+        });
+      }
     }
     Object.assign(saved, { nativeWorkspaceId: workspaceId, nativeSessionId: sessionId, nativePreset: preset });
     delete pending[key];
@@ -309,7 +353,7 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
 
 type MenuRender = PropsRenderSlots<'workbase.command-menu' | 'workbase.model-selector' | 'workbase.input-activity'>;
 /** 只挂菜单及输入服务桥接，不渲染官方输入栏或会话布局。 */
-export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, activityTarget, activityLocked, access,
+export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, modelTarget, activityTarget, activityLocked, access, activationDraft,
   onActivityChange, onModelState, onReady, onState, SessionProvider, renderSlot }:
   ComposerMenuProps & MenuRender & { ctx: Context; memory: UiMemory; access: NativeComposerAccess }) {
   useWorkbaseLocale();
@@ -367,7 +411,7 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
       const previous = active.current;
       active.current = next;
       previous?.release();
-    }, access).then(next => {
+    }, access, activationDraft).then(next => {
       if (abort.signal.aborted) return;
       const shell = ctx.conversation.input.for(next.binding.ctx) as Shell;
       const service = ctx.get('inputTriggers') as { sessionOf(ctx: Context): {
@@ -431,7 +475,11 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
           if (submitting) throw new Error('正在提交，请稍后添加文件');
           let token: string | undefined;
           // 终态监听独立于组件生命周期，导航取消后也需要保持宿主会话服务存活。
-          const submissionReference = ctx.sessions.retain(next.sessionId, { source: 'workbaseComposer' });
+          let submissionReference: SessionReference;
+          try { submissionReference = ctx.sessions.retain(next.sessionId, { source: 'workbaseComposer' }); }
+          catch (error) {
+            throw staleSessionError(error) ? new Error('当前会话已失效，请刷新页面后重试') : error;
+          }
           submitting = true;
           const release = async () => {
             try { if (token) await access.release(token); }

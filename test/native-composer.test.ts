@@ -65,6 +65,44 @@ test('A02 原生创建回执完全丢失后重新加载UI仍使用原请求身�
   assert.deepEqual(memory.composer.creationRequests, {});
 });
 
+test('记忆里的会话已不存在时换新会话恢复，输入框不再报 unknown session', async () => {
+  const f = handoffFixture();
+  const sessions = f.ctx.sessions as unknown as {
+    create(argument: { workspaceId: string; sessionId?: string }): Promise<string>;
+    retain(id: string): unknown;
+  };
+  let created = 0;
+  sessions.create = async () => (created += 1) === 1 ? 'a' : 'b';
+  sessions.retain = (id: string) => {
+    if (id === 'a') throw new Error('sessions.retain: unknown session a');
+    return f.references[id];
+  };
+  f.memory.composer.nativeSessionId = 'a'; f.memory.composer.nativeWorkspaceId = 'b';
+  const reference = await f.prepare(f.ctx, f.memory, 'b', new AbortController().signal);
+  assert.equal(created, 2);
+  assert.equal(reference.sessionId, 'b');
+  assert.equal(f.memory.composer.nativeSessionId, 'b');
+});
+
+test('记忆里的会话被清理（如诊断删除空会话）后换新会话恢复，不再报不属于当前项目', async () => {
+  const f = handoffFixture();
+  const previous: string[] = [];
+  const access = {
+    async create(_workspace: string, _preset: string, last: string) {
+      previous.push(last);
+      if (last) throw new Error('原生会话不属于当前项目');
+      return 'b';
+    }, async validate() { return 'guard'; }, async release() {},
+  };
+  f.memory.composer.nativeSessionId = 'a'; f.memory.composer.nativeWorkspaceId = 'b';
+  const reference = await prepareNativeComposer(f.ctx, f.memory, 'b', new AbortController().signal,
+    '', undefined, undefined, access);
+  assert.equal(reference.sessionId, 'b');
+  assert.deepEqual(previous, ['a', ''], '失效身份只尝试一次，重试直接换新会话');
+  assert.equal(f.memory.composer.nativeSessionId, 'b');
+  assert.equal(f.memory.composer.nativeWorkspaceId, 'b');
+  assert.deepEqual(f.memory.composer.creationRequests, {}, '已确认失效的请求身份一并丢弃');
+});
 test('切换项目先接收附件并重新绑定上传，再清空原草稿；原引用释放时不再持有附件', async () => {
   const f = handoffFixture();
   await f.prepare(f.ctx, f.memory, 'b', new AbortController().signal, '', f.references.a);
@@ -190,9 +228,25 @@ test('原生输入复用未发送会话，迁移草稿不覆盖官方草稿，�
   assert.equal(releases, 1);
 });
 
+test('延迟创建首次激活时以输入框文字替换宿主草稿；常规挂载仍保留官方草稿', async () => {
+  const memory = new UiMemory();
+  memory.composer.draft = '本地输入';
+  const seeds: unknown[] = [];
+  const reference = { sessionId: 's', binding: {}, ready: Promise.resolve({}), release() {} };
+  const ctx = {
+    sessions: { create: async () => 's', retain: () => reference },
+    conversation: { input: { for: () => ({}), requestDraftInitialization(_binding: unknown, options: unknown) { seeds.push(options); } } },
+  } as unknown as Context;
+  await prepareNativeComposer(ctx, memory, 'w', new AbortController().signal, '', undefined, undefined, undefined, '本地输入');
+  assert.deepEqual(seeds, [{ prompt: '本地输入', whenDraftExists: 'replace' }], '激活草稿以替换语义写入，附件保留');
+  await prepareNativeComposer(ctx, memory, 'w', new AbortController().signal);
+  assert.deepEqual(seeds[1], { prompt: '本地输入', whenDraftExists: 'keep' }, '常规挂载不覆盖官方草稿');
+});
+
 test('官方添加菜单接入后保留原 textarea、左右按钮与分支条布局', t => {
   t.mock.method(console, 'error', () => {});
   const memory = new UiMemory(); memory.composer.preset = 'standard';
+  memory.composer.nativeArmed = true;
   const snapshot: Snapshot = { revision: 0, syncedAt: 0, conflicts: [], sessionMarks: {}, preferences: initialState().preferences,
     projects: [{ projectId: 'p', workspaceId: 'w', path: '/project', title: '项目', available: true, archived: false, sessionIds: [], sessions: [], todos: [], mark: emptyMark(), updatedAt: 0, agentCanChangeStatus: true }] };
   const api = { renderComposerMenu: () => createElement('button', { 'aria-label': '官方添加菜单' }) } as unknown as ClientPort;
