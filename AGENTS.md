@@ -11,13 +11,14 @@ DeepSeek Harness（DSH）的工作台插件：管理项目、会话与待办，�
 | 包名 / 版本 | `dsh-workbase`，版本以 `package.json` 为准（版本号即发布单元） |
 | 技术栈 | TypeScript + React 18、esbuild、Cordis 插件、zod |
 | 模块形态 | `type: "module"`；tsconfig 为 `strict` + `noUncheckedIndexedAccess` |
-| 运行要求 | Node 22+（`build.mjs` 客户端 target `node22`／`es2022`）；`package.json` 未声明 `engines` |
-| 宿主兼容 | `@deepseek-ai/cordis ~4.1.0`、DSH `0.2.2-rc.1` |
+| 运行要求 | Node 22+（`build.mjs` 服务端／客户端 target `node22`／`es2022`）；`package.json` 声明 `engines.node >=22` |
+| 宿主兼容 | `@deepseek-ai/cordis ~4.1.0`，DSH SDK 声明 `0.2.2-rc.5`；适配与检查范围见 `README.md` |
 
 ## 常用命令
 
 ```sh
 npm ci                 # 安装依赖
+npm run check          # 提交前入口：秘密扫描、类型、测试及构建
 npm run typecheck      # tsc --noEmit（src + test，无 lint 配置，别找 .eslintrc）
 npm test               # tsx --test test/*.test.ts
 npm run build          # node build.mjs：先同步原型资产，再打包两端
@@ -31,7 +32,7 @@ npx semantic-release --dry-run  # 看这次会发哪个版本（版本号由提�
 
 ```
 docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收基线）
-        │  sync-ui.mjs（build.mjs 第 4 行自动调用）
+        │  sync-ui.mjs（build.mjs 自动调用）
         ├→ src/client/prototype.css        生成物，已跟踪；包 @scope (.wb)
         └→ src/client/prototype-icons.ts   生成物，已跟踪
                 │  build.mjs（esbuild）
@@ -42,8 +43,9 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 
 `sync-ui.mjs` 做的是**语义改写**而不是格式搬运，四件事：
 
-1. `.app` → `:scope`（约 700 处），让原型样式只在插件根内生效。
+1. `.app` → `:scope`，让原型样式只在插件根内生效。
 2. 宽度断点 `@media (max-width|min-width: Npx)` → `@container workbase <条件>`。纯宽度直接换；宽度 + 其他条件（如 `(pointer:coarse)`）嵌套为 `@media <其余>{@container workbase <宽度>{…}}`。**容器查询不支持 `pointer`／`hover`／`prefers-reduced-motion`，把这类特征塞进 `@container` 会让条件恒假、样式静默失效。**
+   原型原生的 `@container workbase` 及对应容器声明映射为 `workbase-dialog`，与上述媒体宽度转换分开；根节点同时提供两个名称，抽屉仅提供 `workbase-dialog`。前者保留原型的弹窗内容宽度语义，转换后的媒体宽度查询仍读取外层工作台面板，不能让窄抽屉提前触发外层断点。
 3. 关键帧名加 `wb-` 前缀（`pulse`、`settings-slide-up`、`settings-mask-in`）。
 4. `pruneRules` 剪掉原型专用死选择器：`:scope.b`、`.review`／`.review-tools`／`.review-label`／`.review-note`、`.design-intro`、`.directions`、`.chat-preview`。
 
@@ -58,13 +60,13 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 - **界面改动先读 [UI 规范第0节](docs/UI-DESIGN.md#0-共用一致性规则)。** 输入、选择器、按钮、弹窗、主题与焦点按用途复用现有组件和共享样式；同排控件等高，不自行新增字号、圆角或密度变体。共用规则只在该文档维护，调整时同步视觉真源及全部同类使用处，新增例外必须在同节说明场景与理由。`DirectoryInput`、`Picker`、`Menu`、`TodoToolbar`及宿主输入组件分别沿用已定义交互，不复制另一套控件。文档里的现行差异不代表全部视觉已验收，完成前核对最终样式与验收边界。
 - **不要手改 `src/client/prototype.css` 或 `prototype-icons.ts`。** 每次构建都会重新生成，手改内容会被抹掉。改样式请改 `docs/ui/ui-directions.html`。
 - **`:scope.c` 是活代码。** 它对应「温暖阅读」主题（`Workbase.tsx` 里 `chosenTheme === 'warm' ? 'c' : 'a'`），不在死选择器清单里；`:scope.b` 没有任何主题产出，已被剪除。
-- **`src/client/styles.css` 是唯一手写样式**，只做宿主容器适配与必要覆盖。145 个规则块里有 32 个用了 `!important`（共 144 次），分两类，都不要「顺手清理」：
+- **`src/client/styles.css` 是唯一手写样式**，只做宿主容器适配与必要覆盖。`!important` 分两类，都不要「顺手清理」：
   - 抗外部皮肤插件（guizang-design、maid-atelier 会用同位选择器覆盖卡片与动作行）；
   - 抗内部基础层（`.composer-shell .composer-leading button` 归零左外边距——基础规则 `.composer-actions button{margin-left:auto}` 在 1100／850 两个容器断点内还有副本，删掉这一行不能等价替换）。
 - **响应式一律按面板宽度**，不按浏览器视口。新增断点时写成容器查询，能力查询留在 `@media`。
 - **改类名前先搜动态拼接。** 大量类名由模板字符串生成（`state-${state(p)}`、`wb-recent-${recentStyle}`、`wb-todo-${t.id}`），只做字面 grep 会把活代码误判为死代码。
 - **不要在 `src/` 里随手加运行时依赖。** 客户端是单文件产物，体积变化记录在提交与文档中；引入新依赖前先确认必要性。
-- **`docs/` 不进入 npm 包。** 包的 `files` 白名单只有 `dist/index.js`、`lib/client.js`、`cordis.patch.yml`、`README.md`（外加 npm 自动包含的 `package.json` 与 `LICENSE`）。
+- **`docs/` 不进入 npm 包。** 包的 `files` 白名单只有 `dist/index.js`、`lib/client.js`、`cordis.patch.yml`、`README.md`、`THIRD_PARTY_NOTICES.md`（外加 npm 自动包含的 `package.json` 与 `LICENSE`）。第三方许可清单由两端 esbuild 输入生成，缺少内嵌包许可正文时构建失败。
 - **不发布源码映射，不等于源码保密。** 客户端产物是可读的 JavaScript，不要把秘密、内部域名或本机绝对路径写进 `src/`。
 
 ## 布局
@@ -73,12 +75,15 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | --- | --- |
 | `src/server/index.ts` | 插件入口：注册存储域 `dsh_workbase`（含旧标识 `dsh_workbench` 迁移）、RPC、HTTP 与工具 |
 | `src/server/service.ts` | 项目／会话／待办的业务规则 |
-| `src/server/host.ts` | 宿主能力适配（能力探测与降级都集中在此） |
+| `src/server/host.ts` | 项目／会话等宿主能力适配；扩展能力在对应管理器中探测 |
 | `src/server/rpc.ts`、`http.ts`、`tools.ts` | RPC 分发、HTTP 端、Agent 工具定义 |
+| `src/server/extensions.ts`、`skills*.ts`、`mcp*.ts`、`rss*.ts` | 技能／连接器／RSS管理、市场、传输与缓存；RSS工具在`extension-tools.ts`注册 |
+| `src/server/project-rules.ts`、`project-initialization.ts`、`backup*.ts` | 规则文件事务、项目初始化及备份恢复 |
 | `src/client/entry.tsx` | 客户端入口：注入宿主 slots 与页面记忆 |
 | `src/client/Workbase.tsx` | 根组件与主题容器（`a`／`c` 两套作用域） |
 | `src/client/{Home,Detail,Search,Settings}.tsx` | 四个视图 |
 | `src/client/{Composer,BranchBar,DirectoryInput}.tsx` | 输入卡、分支条、目录输入 |
+| `src/client/{SkillsPanel,McpPanel,RssPanel,ProjectSidebar,TerminalSettings,ColoredTerminal}.tsx` | 扩展管理、项目右栏与官方终端页扩展 |
 | `src/client/api.ts`、`launch.ts`、`theme.ts`、`ui.tsx` | 前端请求层、发起会话、主题令牌、图标集 |
 | `src/shared/` | 前后端共享的 zod 模型、RPC 频道名、会话类型 |
 | `test/` | `node:test` 用例，与实现一一对应（`*-render`、`rpc`、`store`、`theme`、`prototype-css` 等） |
@@ -86,14 +91,15 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 | `.agents/notes/` | 开发日志：当前状态 + 按日期的决策记录（随仓库提交） |
 | `sync-ui.mjs`、`build.mjs` | 原型同步、构建 |
 | `release.config.mjs`、`release-sync-docs.mjs` | 发版配置（中文 type 解析 + 版本级别映射）与发版时的文档版本同步 |
-| `.github/workflows/release.yml` | GitHub Actions：push `main` 后跑 typecheck／test／build 门禁，交由 semantic-release 发版并建 Release |
-| `.cnb.yml` | CNB 定时任务：每 10 分钟从 GitHub 拉取 `main` 与标签并强推对齐，不做构建 |
+| `.github/workflows/release.yml` | PR 与 `main` 执行检查及历史秘密扫描；`main` 门禁通过后由 semantic-release 发版 |
+| `.cnb.yml` | 每 10 分钟同步 GitHub 全部分支与标签，清理多余 refs；不做构建 |
 
 ## 验收脚本与证据
 
 - `docs/verify-ui.mjs` 生成 `docs/ui/verification/index.html` 与逐视口「设计稿 vs 实际组件」对照截图；证据目录被 git 忽略，不进仓库。
 - 截图统一 WebP（`quality: 82`，编码器经 `docs/evidence-image.mjs` 探测 `cwebp`→`magick`→`python`）；批量转换用 `docs/compress-evidence.mjs`。几何走 `getBoundingClientRect`、颜色走 `getComputedStyle`，都不从像素取值，所以有损压缩不损证据效力。
-- 已知环境问题：`verify-ui.mjs`、`verify-host-ui.mjs`、`verify-host-details.mjs` 硬编码 `/tmp/dsh-ui-visual-checks/...` 与 macOS 的 Chrome 路径；只有 `verify-header-motion.mjs` 支持 `DSH_UI_PLAYWRIGHT`／`DSH_UI_CHROME` 覆盖。仓库 `node_modules` 内没有 playwright，这些脚本默认跑不起来，改它们属于单独的任务。
+- `docs/verify-{ui,header-motion,host-ui,host-details}.mjs` 共用 `docs/visual-env.mjs`：`DSH_UI_PLAYWRIGHT` 指定隔离 Playwright 的 `index.mjs`，未设置时尝试标准包解析；`DSH_UI_CHROME` 指定浏览器，未设置时使用 Playwright 自带浏览器；`DSH_UI_EVIDENCE_DIR` 指定证据目录（默认 `docs/ui/verification`）。真实隔离宿主脚本还必须显式设置 `DSH_UI_HOST_LOG`，不自动连接正式 profile。依赖可在仓库外 `npm install --prefix <临时目录> playwright`；Pillow 回退使用 `uv run --no-project --with pillow`，不向源码添加运行时依赖。
+- `npm run check` 是提交前检查入口（秘密扫描、类型、测试、构建），会重新生成构建产物；PR 与 main 的 CI 都先执行此入口及完整 refs 秘密扫描，发布权限只授予 main 的发布 job。扫描输出只有类别、位置与摘要，不输出原始秘密；该扫描不替代托管平台的 Secret Scanning／Push Protection 配置。
 
 ## 测试与验证习惯
 
@@ -123,7 +129,7 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 
 | 提交 type | 版本号 |
 | --- | --- |
-| 代码重构 | major（0.x 期间会直接升到 1.0.0） |
+| 代码重构 | major |
 | 新增文件 | minor（只加能力，不动既有契约） |
 | 问题修复／编译代码／文档修改 | patch |
 | 样式修改／其他提交 | 不发版 |
@@ -136,15 +142,17 @@ docs/ui/ui-directions.html   ← 视觉单一真源（原型，同时是验收�
 npx semantic-release --dry-run   # 本地预演：看这次会发哪个版本，不写文件、不发布
 ```
 
-发版由 GitHub Actions 执行（`.github/workflows/release.yml`），不需要在本地跑 `semantic-release`：push `main` 后先跑 `npm ci`／`typecheck`／`test`／`build` 门禁，再依次做：算版本 → 生成 `CHANGELOG.md` → 由本地插件 `release-sync-docs.mjs` 改写开发日志的**当前状态**（README 不参与同步，历史条目不动）→ `npm publish` → 打 tag `v<版本>` → 提交这些文档改动并推回 GitHub → 由 `@semantic-release/github` 建 Release。发布凭据缺失时该步骤打印提示并跳过，门禁照常。
+发版由 GitHub Actions 执行（`.github/workflows/release.yml`）：PR 与 `main` 先执行 `npm ci`／`npm run check` 及完整 refs 秘密扫描，只有 `main` 进入发布 job，重新构建后由 semantic-release 算版本 → 生成 `CHANGELOG.md` → 同步开发日志当前状态 → `npm publish` → 打 tag → 提交发版文件并推回 GitHub → 创建 Release。README 不参与版本同步，历史日志不改；发布凭据缺失时跳过发版，门禁照常。
 
-发布凭据二选一：仓库变量 `NPM_TRUSTED_PUBLISHING=true`（npm 可信发布，OIDC，带 provenance，推荐）或仓库 secret `NPM_TOKEN`（只用于首次自举）。`NPM_TOKEN` 必须是 **granular access token**（classic／Automation token 已于 2025-11 撤销）：勾 **Bypass two-factor authentication**、权限 **Read and write (publish and stage)**、范围限 `dsh-workbase`、设到期日；不勾 Bypass 2FA 时 CI 里的 `npm publish` 会卡在交互式 2FA。
+发布凭据二选一：仓库变量 `NPM_TRUSTED_PUBLISHING=true`（npm 可信发布，OIDC，带 provenance，推荐）或仓库 secret `NPM_TOKEN`。`NPM_TOKEN` 必须是 **granular access token**：勾 **Bypass two-factor authentication**、权限 **Read and write (publish and stage)**、范围限 `dsh-workbase`、设到期日；不勾 Bypass 2FA 时 CI 里的 `npm publish` 会卡在交互式 2FA。
 
-首次发布要先自举：`npm trust` 要求包已存在于 registry，所以 0.3.0 用一次 `NPM_TOKEN` 发出去；随后在本地执行 `npm trust github --allow-publish ...`（交互 2FA，参数见 `npm trust github --help`），在仓库设变量 `NPM_TRUSTED_PUBLISHING=true`，再删掉 `NPM_TOKEN` secret。可信发布要求 npm CLI ≥ 11.5.1（workflow 里已 `npm install -g npm@latest`）与 `id-token: write`，且 npmjs 上登记的 workflow 文件名要与 `.github/workflows/release.yml` 逐字符一致。CNB 不在 npm 支持的 CI 名单（GitHub Actions／GitLab CI／CircleCI，自托管 runner 亦不支持）里，镜像侧无法发布；npm 已宣布 **2027-01** 起移除粒度 token 的直接发布能力，届时同样走可信发布。
+配置可信发布时执行 `npm trust github --allow-publish ...`（交互 2FA，参数见 `npm trust github --help`），在仓库设变量 `NPM_TRUSTED_PUBLISHING=true`，确认可用后删除 `NPM_TOKEN` secret。可信发布要求 npm CLI ≥ 11.5.1（workflow 里已 `npm install -g npm@latest`）与 `id-token: write`，且 npmjs 上登记的 workflow 文件名要与 `.github/workflows/release.yml` 逐字符一致。CNB 镜像侧不发布。**待更新**：发布前复核 npm 平台支持与 token 政策。
 
-CNB 侧不接收 GitHub 推送：仓库根的 `.cnb.yml` 每 10 分钟（crontab `*/10 * * * *`）跑一次，从 GitHub 拉取 `main` 与标签后强推对齐，手动触发用 CNB 界面上的 `web_trigger` 按钮。凭据用 CNB 内置的 `CNB_TOKEN`／`CNB_TOKEN_USER_NAME`，不需要在 GitHub 配 secret；因此镜像最多滞后一个周期。改动请提到 GitHub，不要在镜像侧直接推。
+CNB 侧不接收 GitHub 推送：`.cnb.yml` 每 10 分钟（`*/10 * * * *`）拉取 GitHub 全部分支与标签后强推对齐，并删除主库已不存在的 refs；手动触发用 `web_trigger`。凭据用 CNB 内置的 `CNB_TOKEN`／`CNB_TOKEN_USER_NAME`，不需要在 GitHub 配 secret。改动请提到 GitHub，不要在镜像侧直接推。
 
-出包用 `npm pack`（先 `npm run build`）。此前的 `release.mjs` 已删除——它会改版本号，与 semantic-release 的推断重复。
+出包用 `npm pack`（先 `npm run build`）。**在仓库根目录直接执行**，产物就落在仓库根的 `dsh-workbase-<版本>.tgz`；不要再加 `--pack-destination` 另建目录——历史上用过 `out/` 和 `/tmp` 两种临时目录，结果日志记的包名与本地产物对不上，`out/` 还在清理时被删过一次。
+
+装到 profile 前把包改名成 `dsh-workbase-<版本>-<包 SHA-256 前 8 位>.tgz` 再 `dsh plugin --profile <名字> add file:<绝对路径>`。原因不是洁癖：profile 用 pnpm `hoisted`，同版本同路径的 tarball 会复用上一次的安装内容，而本地 1.0.4 与 registry 上的 1.0.4 内容并不相同，按版本号安装会装回线上旧包。也不要用改版本号绕开这件事——版本号归 semantic-release。
 
 注意：`npm pack` 本身**不触发** `prepublishOnly`，手工 pack 有可能把上一次的 `dist`／`lib` 打进新版本。
 
@@ -169,7 +177,7 @@ tar -tzf dsh-workbase-<版本>.tgz     # 用实际产出的文件名，别照抄
 
 格式以 [`.agents/rules/git-commit-message.md`](.agents/rules/git-commit-message.md) 为准：`<type>：<subject>` 单行标题 + 「原因分析／修改方法」两段 body，子项用 `1）2）` 编号。type 取「新增文件／代码重构／文档修改／样式修改／问题修复／编译代码／其他提交」，混合变更按主体内容归类，无法归类用「其他提交」。
 
-本仓库的补充约定：**版本号写进 subject**，便于和发版对齐（0.2.38 之前的提交是「版本号：说明」，已留在旧历史里，不再追溯）。
+本仓库的补充约定：**版本号写进 subject**，便于和发版对齐。
 
 ```text
 问题修复：0.2.39 修复窄屏下统计卡溢出
