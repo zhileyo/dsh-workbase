@@ -262,8 +262,6 @@ RSS 更新|RSS updates
 已确认生效且无异常的全局技能，按调用名去重。|Verified global skills without issues, deduplicated by invocation name.
 启用订阅源在所选时间范围内发布的已缓存文章。|Cached articles published by enabled feeds within the selected time range.
 同时影响会话统计、RSS 更新与项目「近期活跃」数量。|Applies to session statistics, RSS updates, and recent project activity.
-所选时间范围内暂无更新|No updates within the selected time range
-可刷新订阅，或在外观布局中调整统计时间范围。|Refresh feeds or adjust the statistics time range in Appearance.
 连接器|Connectors
 市场来源 {p0}：{p1}|Marketplace source {p0}: {p1}
 市场刷新失败：{p0}；当前显示上次成功加载的目录。|Marketplace refresh failed: {p0}. Showing the last successfully loaded catalog.

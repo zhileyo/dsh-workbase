@@ -24,7 +24,7 @@ const snapshot: RssSnapshot = {
   feeds: [{ id: 'f', name: '源', url: 'https://news.org/rss', groupId: 'g', enabled: false, trusted: false, revision: 1, installedAt: 1 }],
   articles: [{ id: 'a', feedId: 'f', key: 'k', title: '<script>title</script>', summary: '', body: '<img src=x>', url: 'javascript:evil()', publishedAt: 0, fetchedAt: 1, sequence: 1 }],
 };
-test('RSS近期列表与卡片口径一致，切回全部文章保留停用源和历史文章', () => {
+test('订阅列表不受统计时间范围影响，早于窗口、停用源与未知发布时间都照常显示', () => {
   const now = Date.now(), day = 86400000;
   const data = structuredClone(snapshot);
   data.feeds.push({ ...data.feeds[0]!, id: 'enabled', enabled: true });
@@ -34,14 +34,8 @@ test('RSS近期列表与卡片口径一致，切回全部文章保留停用源�
     { ...data.articles[0]!, id: 'paused', title: '暂停源文章', publishedAt: now - day },
     { ...data.articles[0]!, id: 'unknown', title: '未知时间文章', feedId: 'enabled', publishedAt: 0 },
   ];
-  const render = (recentDays?: number) => renderToStaticMarkup(createElement(RssArticleList, {
-    snapshot: data, query: {}, recentDays, onRead() {}, onFeed() {},
-  }));
-  assert.match(render(7), /近期文章/);
-  assert.doesNotMatch(render(7), /十天前文章|暂停源文章|未知时间文章/);
-  assert.match(render(14), /十天前文章/);
-  assert.match(render(), /暂停源文章/);
-  assert.match(render(), /未知时间文章/);
+  const html = renderToStaticMarkup(createElement(RssArticleList, { snapshot: data, query: {}, onRead() {}, onFeed() {} }));
+  for (const title of ['近期文章', '十天前文章', '暂停源文章', '未知时间文章']) assert.match(html, new RegExp(title));
 });
 test('RSS article rendering uses prototype cards, plain text and safe independent links', () => {
   const html = renderToStaticMarkup(createElement(RssArticleList, { snapshot, query: {}, onRead() {}, onFeed() {} }));

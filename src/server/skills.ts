@@ -129,6 +129,8 @@ export class SkillsManager {
     await safePath(this.directory);
     try { this.state = stateSchema.parse(JSON.parse(await readFile(join(this.directory, 'state.json'), 'utf8'))) as SkillsState; }
     catch (error) { if (!absent(error)) throw new Error(`技能状态读取失败，未覆盖原文件：${message(error)}`); }
+    // 市场来源的失败提示只描述最近一次读取，每次读取都会重新判定；旧文件里的记录不跨重启继续显示。
+    for (const source of this.state.marketSources) delete source.issue;
     await recoverTransaction(this.directory, this.state.committedTransaction, paths => this.fileOperations(paths));
     for (const row of this.state.skills.filter(row => row.owner === 'workbase' && !row.deletedAt && !row.invocation)) {
       try {
@@ -158,7 +160,9 @@ export class SkillsManager {
     const path = join(this.directory, 'state.json');
     await this.options.authorize?.([path], 'write');
     await safePath(path);
-    const persisted = { ...value, skills: value.skills.filter(row => row.owner === 'workbase') };
+    const persisted = { ...value, skills: value.skills.filter(row => row.owner === 'workbase'),
+      // 市场读取失败是瞬时结果，只留在内存里给这次请求的界面用，不写进配置。
+      marketSources: value.marketSources.map(source => ({ ...source, issue: undefined })) };
     const fs = this.options.ctx?.get('fs');
     const text = JSON.stringify(persisted);
     const readState = async () => {
@@ -535,6 +539,8 @@ export class SkillsManager {
     let rows = append ? [...this.market] : [];
     const cursors = new Map(paging.cursors), visited = new Map([...paging.visited].map(([id, entries]) => [id, new Set(entries)]));
     const issues = new Map<string, string | undefined>();
+    // 开始新一轮读取时先撤下上一轮的失败提示，界面不会把历史错误当成当前状态。
+    for (const source of this.marketSources().filter(row => row.enabled)) source.issue = undefined;
     for (const source of this.marketSources().filter(row => row.enabled)) {
       if (append && !cursors.has(source.id)) continue;
       try {

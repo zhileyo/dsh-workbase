@@ -359,6 +359,45 @@ test('快捷模型插槽复用官方注入、语言和标签子插槽，热替�
   assert.equal(entries.has('workbase.model-selector'), false);
 });
 
+test('宿主已声明同名子插槽时只镜像空位子插槽，不因重复声明中断插件激活', async () => {
+  const result = await build({
+    entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',
+    jsx: 'automatic', write: false, external: entryExternal,
+    loader: { '.css': 'text' },
+  });
+  const module = { exports: {} as { apply(context: unknown): void } };
+  runInNewContext(result.outputFiles[0]!.text, { module, exports: module.exports, require: hostRequire });
+  const entries = new Map<string, any>();
+  // web 壳把 label 子插槽声明在 conversation.input.model 上；镜像条目不能再声明一次。
+  const declared = new Set(['conversation.input.model.label']);
+  const official = {
+    options: {}, locale: 'model',
+    children: {
+      'conversation.input.model.label': { kind: 'single', scope: 'session', inline: true },
+      'conversation.input.model.hint': { kind: 'single', scope: 'session' },
+    },
+    inject: () => ({}), component: () => createElement('button', null),
+  };
+  module.exports.apply({
+    ...optionalServices,
+    connection: { rpc: {} }, effect() {}, layout: {}, uiWorkspace: {},
+    on() { return () => {}; },
+    slots: {
+      entriesOfSlot(name: string) { return name === 'conversation.input.model' ? [official] : []; },
+      spec(name: string) { return declared.has(name) ? { kind: 'single', scope: 'session' } : undefined; },
+      inject(_name: string, register: () => () => void) { register(); },
+      register(options: any, component: any) {
+        entries.set(options.name, { options, component });
+        return () => { entries.delete(options.name); };
+      },
+    },
+  });
+  const model = entries.get('workbase.model-selector');
+  assert.ok(model, '已声明的同名子插槽不能阻断镜像注册');
+  assert.deepEqual(Object.keys(model.options.children ?? {}), ['conversation.input.model.hint'],
+    '只镜像仍是空位的子插槽');
+});
+
 test('启动自动更新等待配置与控制器，后台忙状态可订阅，重连和保存不重复触发', async () => {
   const result = await build({
     entryPoints: ['src/client/entry.tsx'], bundle: true, platform: 'node', format: 'cjs',

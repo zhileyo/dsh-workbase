@@ -6,7 +6,7 @@ import { RssMenu, type RssMenuItem } from './rss-menu.js';
 import { rssReadingMarkdown } from './rss-reading.js';
 import { errorText, languageTag, statusText, t } from './i18n.js';
 import type { Project } from '../shared/model.js';
-import { RSS_LIMITS, rssContentTags, safeRssUrl, rssOriginalUrl, rssRecentArticles, rssNavigationGroups as orderedRssGroups, type RssContentNode, type RssArticle, type RssArticleQuery, type RssFeed, type RssSnapshot, type RssOpmlPreview, type RssRecommendation, type RssRefreshResult } from '../shared/rss.js';
+import { RSS_LIMITS, rssContentTags, safeRssUrl, rssOriginalUrl, rssNavigationGroups as orderedRssGroups, type RssContentNode, type RssArticle, type RssArticleQuery, type RssFeed, type RssSnapshot, type RssOpmlPreview, type RssRecommendation, type RssRefreshResult } from '../shared/rss.js';
 
 type GroupDraft = { id: string; value: string; error: string };
 type MoveInput = { kind: 'feed' | 'group'; id: string; targetId?: string; groupId?: string; position?: 'before' | 'after' };
@@ -79,15 +79,15 @@ export function RssReading({ article, feed, api }: { article: RssArticle; feed?:
     </>}
     </div></>;
 }
-export function RssArticleList({ snapshot, query, recentDays, onRead, onFeed }: {
-  snapshot: RssSnapshot; query: RssArticleQuery; recentDays?: number; onRead(article: RssArticle): void; onFeed(id: string): void;
+export function RssArticleList({ snapshot, query, onRead, onFeed }: {
+  snapshot: RssSnapshot; query: RssArticleQuery; onRead(article: RssArticle): void; onFeed(id: string): void;
 }) {
   const feeds = new Map(snapshot.feeds.filter(f => (!query.feedId || f.id === query.feedId) && (query.groupId === undefined || f.groupId === query.groupId)).map(f => [f.id, f]));
   const terms = (query.query ?? '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const candidates = recentDays === undefined ? snapshot.articles : rssRecentArticles(snapshot, recentDays);
-  const articles = candidates.filter(a => feeds.has(a.feedId) && terms.every(term => (a.title + ' ' + a.summary + ' ' + feeds.get(a.feedId)!.name).toLocaleLowerCase().includes(term)))
+  // 统计时间范围只作用于首页统计卡的数字，订阅列表始终显示缓存文章（含停用源与更早的文章）。
+  const articles = snapshot.articles.filter(a => feeds.has(a.feedId) && terms.every(term => (a.title + ' ' + a.summary + ' ' + feeds.get(a.feedId)!.name).toLocaleLowerCase().includes(term)))
     .sort((a, b) => b.publishedAt - a.publishedAt || b.sequence - a.sequence);
-  if (!articles.length) return <div className="integration-empty" role="status"><Icon name="rss"/><strong>{terms.length ? '没有匹配的文章' : feeds.size ? recentDays === undefined ? '暂无缓存文章' : '所选时间范围内暂无更新' : '暂无订阅'}</strong><p>{terms.length ? '试试其他关键词，或清空搜索。' : recentDays === undefined ? '添加订阅后可刷新文章，暂停更新的来源保留缓存。' : '可刷新订阅，或在外观布局中调整统计时间范围。'}</p></div>;
+  if (!articles.length) return <div className="integration-empty" role="status"><Icon name="rss"/><strong>{terms.length ? '没有匹配的文章' : feeds.size ? '暂无缓存文章' : '暂无订阅'}</strong><p>{terms.length ? '试试其他关键词，或清空搜索。' : '添加订阅后可刷新文章，暂停更新的来源保留缓存。'}</p></div>;
   return <>{articles.map(a => <article className="rss-article-row" key={a.id} data-i-row={a.id}>
     <button type="button" className="rss-article-open" aria-label={`阅读 ${a.title}`} onClick={() => onRead(a)}><strong className="rss-article-title">{a.title}</strong><span className="rss-article-summary">{a.summary || '此来源未提供摘要'}</span></button>
     <div className="rss-article-meta"><button type="button" title={`仅查看 ${feeds.get(a.feedId)!.name}`} onClick={() => onFeed(a.feedId)}>{feeds.get(a.feedId)!.name}</button><span>{time(a.publishedAt)}</span>{!feeds.get(a.feedId)!.enabled && <span>已暂停更新</span>}<Original article={a} feed={feeds.get(a.feedId)}/></div>
@@ -242,7 +242,7 @@ export function RssNavigation(props: NavigationProps) {
 }
 
 export interface RssPanelProps { api: ClientPort; projects?: Project[]; onClose(): void; memory?: UiMemory; navigation?: React.ReactNode; notify?: Notify; embedded?: boolean; recentDays?: number; onModalState?(state: ModalState): void; onSettings?(): void }
-/** 列表、编辑与阅读通过ModalFlow共用外层，支持嵌入工作台概览。 */
+/** 列表、编辑与阅读通过ModalFlow共用外层，支持嵌入工作台概览。`recentDays` 只标记「从统计卡进入」，用于重置筛选与滚动位置，不裁剪文章列表。 */
 export function RssPanel({ api, onClose, memory, navigation: overviewNavigation, notify, embedded, recentDays, onModalState, onSettings }: RssPanelProps) {
   const remembered = panelMemory(memory ?? api, memory);
   const [snapshot, setSnapshot] = usePanelSnapshot<RssSnapshot>(api, 'rss');
@@ -487,14 +487,13 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
         {undo.map(item => <div className="integration-status-line" role="status" key={item.token}>已取消订阅「{item.name}」，30 秒内可撤销。<button type="button" disabled={busy} onClick={() => void perform('feed.undo', { token: item.token }).catch(() => {})}>撤销</button></div>)}
         {loading ? <div className="integration-empty" role="status">正在读取订阅…</div> : <div className="integration-workspace" data-grouped={tab === 'subscriptions' ? 'true' : 'false'}>
           {tab === 'subscriptions' && <div ref={navigation} style={{ display: 'contents' }}><RssNavigation snapshot={{ ...snapshot,
-            articles: recentDays !== undefined ? rssRecentArticles(snapshot, recentDays) : snapshot.articles,
             groups: snapshot.groups.map(group => ({ ...group, collapsed: foldValues[group.id] ?? group.collapsed })),
             ungroupedCollapsed: foldValues[''] ?? snapshot.ungroupedCollapsed }} groupId={groupId} feedId={feedId} draft={draft} onGroup={selectGroup} onFeed={selectFeed} onEdit={editGroup}
             onDraft={value => { if (draft) { const next = { ...draft, value, error: '' }; remembered.groupDraft = next; setDraft(next); } }} onFinish={cancel => void finishGroup(cancel)} onAdd={() => void addGroup()} onAction={action} onMove={input => action('move', input)}
             onRenameFeed={(feed, name) => perform('feed.update', { id: feed.id, revision: feed.revision, name })}/></div>}
           <div className="integration-main"><div className={tab === 'subscriptions' ? 'rss-toolbar' : 'integration-toolbar'}><label className="stats-group-search"><Icon name="search"/><input type="search" aria-label={`搜索${scope}的标题、摘要和来源`} placeholder={tab === 'subscriptions' ? '搜索标题、摘要、来源' : '搜索推荐来源'} value={query} onChange={e => setQuery(e.target.value)}/></label>{tab === 'subscriptions' && <><button type="button" aria-busy={refreshing} disabled={refreshing} title="刷新当前范围文章" aria-label="刷新当前范围文章" onClick={() => void refresh({ ...(groupId !== undefined ? { groupId } : {}), ...(feedId ? { feedId } : {}) })}><Icon name="refresh"/></button>{scoped && <RssMenu label={`${scoped.name}的订阅操作`} className="" items={feedItems(scoped, snapshot, action, input => action('move', input))}/>}</>}</div>
             <div className="integration-records" tabIndex={0} ref={records} aria-label="订阅文章列表" onScroll={rememberScroll}>
-              {tab === 'subscriptions' ? <RssArticleList snapshot={snapshot} query={{ groupId, feedId, query }} recentDays={recentDays} onRead={a => open({ kind: 'read', id: a.id })} onFeed={selectFeed}/> : snapshot.recommendations.filter(r => (r.name + ' ' + t(r.description)).toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(r => <Recommendation key={r.id} value={r} subscribed={snapshot.feeds.some(f => f.url === r.url)} onAdd={() => { remembered.drafts.create = { ...blankDraft(), name: r.name, url: r.url }; open({ kind: 'create', recommendation: true }); }}/>)}
+              {tab === 'subscriptions' ? <RssArticleList snapshot={snapshot} query={{ groupId, feedId, query }} onRead={a => open({ kind: 'read', id: a.id })} onFeed={selectFeed}/> : snapshot.recommendations.filter(r => (r.name + ' ' + t(r.description)).toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(r => <Recommendation key={r.id} value={r} subscribed={snapshot.feeds.some(f => f.url === r.url)} onAdd={() => { remembered.drafts.create = { ...blankDraft(), name: r.name, url: r.url }; open({ kind: 'create', recommendation: true }); }}/>)}
             </div>
           </div>
         </div>}
@@ -520,7 +519,10 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
             remembered.scroll = 0; remembered.tabViews.subscriptions = { query: '', scroll: 0 };
             if (records.current) records.current.scrollTop = 0;
             closeDetail(); void refresh({ feedId: feed.id });
-          } else setDetail({ kind: 'detail', id: feed.id });
+          } else {
+            // 保存设置后回到订阅列表：用户是从列表里点「编辑订阅」进来的，不该被带到该来源的文章详情。
+            switchTab('subscriptions'); setFeedId(''); closeDetail();
+          }
         }
       }} onCancel={detail.kind === 'edit' ? () => setDetail({ kind: 'detail', id: source?.id }) : closeDetail} onRead={id => { readingReturn.current = detail; setDetail({ kind: 'read', id }); }} onAction={action}/>}
       </section></div>

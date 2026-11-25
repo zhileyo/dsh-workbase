@@ -8,10 +8,12 @@
 
 当前源码与本地包为 `1.1.0`。最新源码构建是2026-11-22的整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销，并加入市场／RSS 地址策略、待办详情两列对齐、失效会话恢复、诊断清理绑定核验与冷会话删除放行，以及诊断判据修正（缓存缺失不再报异常、空会话按官方冷读折叠复核）、快捷会话失效身份自动换新与延迟创建（首次输入才建空会话），并补迁移记录源状态快照与实体清单视图、语音播报服务标签改名。2026-11-23在其上叠加两轮未提交改动：迁移撤销期阻断详情移至抽屉固定页脚（m00102），及提示通道路由整改——操作回执走Toast、弹窗打开期间失败回归内联告警（m00377）。**本机 `npm run typecheck` 通过，受影响组件定向测试88项全过，`npm run build` 通过且双构建幂等；全量 `npm test` 本轮未重跑，最近一次全量为11-22整改版（755项中730通过、7跳过，18项失败全部为环境限制：符号链接权限、Git初始化、子进程ENOENT，另有backup／market两条在HEAD基线同样失败的断言）；7文件安装包扫描0命中，已装到 profile `desktop`，宿主重启后生效——11-23两轮改动未打包安装，需重新打包才能进宿主。**
 
+2026-11-25又在未提交状态下叠加六处修复：首页技能数字未确认时按短退避重试（m00001）、订阅列表与统计时间范围解耦（m00306／m00346）、web壳下镜像子插槽不再重复声明（m00572）、技能市场失败提示只保留当前一轮读取（m00792）、统计卡用上次确认的数字填满首帧（m00931）、编辑订阅保存后回到订阅列表（m01073）。本机`tsc --noEmit`通过；`npm test`762项中737通过／18失败／7跳过（18项失败仍全为环境限制：符号链接`EPERM`、Git初始化、`spawn sqlite3 ENOENT`）；`node build.mjs`连跑两次`lib/client.js`均为1768841字节、SHA-256 `61B55C7983435433F355475D777C1A16329FCBF431DEACFE80F6870A82FD6730`（幂等）；最新预览包`dsh-workbase-1.1.1-pre.20261125.5-cb65f19c.tgz`（1011138字节，SHA-256 `CB65F19C6D88A4460B33B19C6DB4A7CA60FBF623C26EF3BE56F8A6E99CDE91B8`；`package.json`临时改为`1.1.1-pre.20261125.5`，打包后即还原`1.1.0`），装在独立profile`workbase-pre`（`bundles`为`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`dsh-workbase`，依赖指向`file:D:/Projects/dsh-workbase/<该tgz>`），`desktop`profile仍是registry的`1.1.0`不受影响。本批六处修复已提交，尚未发版。之所以要另起profile：`cordis.patch.yml`的插件id固定为`dsh-workbase`、存储域固定为`dsh_workbase`，同一profile装两份必然撞id。
+
 | 项目 | 最近一次已记录状态 |
 | --- | --- |
 | 本机构建 | 2026-11-23迁移页脚与提示通道两轮：`npm run typecheck` 通过；定向测试（diagnostic-panel／diagnostics-feedback／ui-interaction／migration-render）88项全过，migration.test 12项中10过（2项 Windows symlink EPERM 与 HEAD 基线一致）；`npm run build` 通过且双构建幂等。全量 `npm test` 本轮未重跑，最近全量为11-22整改版（755项中730通过／18失败／7跳过，失败均为环境限制）。依赖已就位，本轮未重跑 `npm ci`。 |
-| 客户端 | `node build.mjs` 通过且连续两次产物一致；2026-11-23两轮叠加：迁移抽屉固定页脚左侧新增 `.wb-migration-footer-note` 呈现撤销期阻断详情（源／目标标题与本地化截止时间，可换行、窄屏不隐藏）；`run()` 回执（含写入已落盘后的刷新失败场景）拆分走根节点Toast，横幅前缀改「刷新失败：」；DiagnosticsPanel 修复回执走Toast「操作结果已保留」、重新检查失败持续内联；MigrationPanel 移除 notify prop，确认／撤销失败回归弹窗内联告警。 |
+| 客户端 | 1768841字节，SHA-256 `61B55C7983435433F355475D777C1A16329FCBF431DEACFE80F6870A82FD6730`；2026-11-25未提交的六处修复：技能数字未确认时短退避重试、订阅列表不再按统计时间范围裁剪、镜像宿主子插槽前先剔除已声明的 key、统计卡首帧用上次确认的数字（模块级 `WeakMap` 按连接缓存）、编辑订阅保存后回订阅列表；11-23两轮叠加：迁移抽屉固定页脚左侧新增 `.wb-migration-footer-note` 呈现撤销期阻断详情（源／目标标题与本地化截止时间，可换行、窄屏不隐藏）；`run()` 回执（含写入已落盘后的刷新失败场景）拆分走根节点Toast，横幅前缀改「刷新失败：」；DiagnosticsPanel 修复回执走Toast「操作结果已保留」、重新检查失败持续内联；MigrationPanel 移除 notify prop，确认／撤销失败回归弹窗内联告警。 |
 | 服务端 | 2715935字节，SHA-256 `84BB38CBD6F6D1178ABF7CD98295EB04053889D71539A859EDCC12FEAC6AAA46`；11-23叠加：`src/server/migration.ts` 撤销期阻断由布尔改为结构化 `undoBlockers`（id、源／目标标题、undoUntil），阻断判定条件不变。其余为11-22整改版内容：纯接口健康检查、空会话冷列表折叠复核、迁移记录源状态快照与实体清单、project-rules 可读错误、fake-ip 198.18.0.0/15 放行。 |
 | 最新安装包 | 仓库根`dsh-workbase-1.0.4-2238b2cd.tgz`，1009431字节，SHA-256 `2238b2cd5a7aaeda4d2342fdb510081047cb0f1a075785f81b49c5683de896c0`；文件名后8位即包摘要前8位，用于绕开profile pnpm `hoisted`的同版本同路径缓存。7文件白名单（LICENSE、README.md、THIRD_PARTY_NOTICES.md、cordis.patch.yml、dist/index.js、lib/client.js、package.json），两端产物为该包构建时的摘要，此后的迁移记录、语音标签等改动未再打包（当前源码构建摘要见客户端／服务端行）。此前几轮的`0cfafbf8`（1009187字节）、`de585100`（1008930字节）、`6b1a3218`（1008992字节）、`93eece16`（1008834字节）、`3165f3f0`（1008306字节）、`6b7d4146`（1008321字节）与`7fff3360`（1008130字节）已从仓库根删除，只留本轮这一个。 |
 | 原型与生成物 | 11-23轮改原型迁移页脚（`.wb-migration-footer-note` 换行布局、无目标清空并禁用确认、正文移除 plan.error），生成 `src/client/prototype.css` 含对应规则；原型CSS不变量测试全过，双构建幂等。组件模拟验证迁移确认／撤销失败内联、诊断回执拆分及保存故障；未重跑浏览器视觉或真实宿主双窗口。 |
@@ -162,6 +164,67 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 维护本节时保留`当前源码与本地包为`、`当前版本`、版本化tgz名、完整性校验提示及唯一的`## 日志`分界，供`release-sync-docs.mjs`匹配；该脚本只更新分界之前，不改历史。过程日志保持原文，不把旧安装记录重新解释为当前状态。
 
 ## 日志
+
+### 2026-11-25 · 编辑订阅保存后回到订阅列表
+
+**背景**：用户报「编辑订阅，保存后为什么跳到这个页面，应该跳到订阅列表吧？」（m01073），配图是 Hugging Face 的来源详情页（最近文章 20 条，底部「编辑订阅」「取消订阅」）。保存 `feed.update` 成功后 `src/client/RssPanel.tsx` 走 `setDetail({ kind: 'detail', id: feed.id })`，把面板切到该来源的详情视图。
+
+**决策**：保存成功后 `switchTab('subscriptions'); setFeedId(''); closeDetail();`，即回到订阅列表并清掉来源筛选，但保留用户原来的分组范围。理由：用户是从列表的「编辑订阅」进来的，编辑完应该看到列表；`kind: 'detail'` 属于「只看这一来源最近文章」的另一个入口，不该是保存的落点。放弃的两个做法：留在详情页但加「返回列表」按钮（仍然多一步跳转）；保存后关闭整个面板（用户往往想接着改下一个来源）。
+
+**证据**：`test/ui-interaction.test.ts` 新增 `编辑订阅保存后回到订阅列表，不进入该来源的文章详情`（断言写入参数、编辑器消失、`RssArticleList.props.query.feedId === ''`、无「最近文章」）；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/ui-interaction.test.ts` 79 passed；全量 `node --import tsx --test test/*.test.ts` 762 项中 737 通过／18 失败／7 跳过（18 项仍为既有环境基线）；`node build.mjs` 连跑两次 `lib/client.js` 均 1768841 字节、SHA-256 `61B55C7983435433F355475D777C1A16329FCBF431DEACFE80F6870A82FD6730`（幂等）；重打 pre 包 `dsh-workbase-1.1.1-pre.20261125.5-cb65f19c.tgz`（SHA-256 `CB65F19C6D88A4460B33B19C6DB4A7CA60FBF623C26EF3BE56F8A6E99CDE91B8`，1011138 字节）装到 `workbase-pre` 重启后用 headless Edge 实测（`%TEMP%\dsh-pw\probe9.mjs`）：点「Hugging Face的订阅操作」→「编辑订阅」→「保存订阅」后「最近文章」「取消订阅」「保存订阅」三处计数均为 0、Toast「订阅设置已保存」出现、文章列表照常显示，console 无错误。探针踩坑：来源行的菜单按钮被 `data-rss-drag="feed"` 的可拖拽行拦截 pointer 事件，`locator.click` 会超时，要用 `dispatchEvent('click')`。
+
+**遗留**：编辑器里点「取消」仍会进入该来源的详情页（`onCancel` 的 `kind === 'edit'` 分支未改），本轮没动——没人报过，但它和这次修的是同一处体验，若觉得突兀可一并改成回列表；`feed.remove` 后的撤销 Toast 行为未复核。
+
+### 2026-11-25 · 统计卡首帧改用上次确认的数字，切回首页不再等一轮
+
+**背景**：用户问技能统计卡为什么「进一次，数字跳动一次」，预期只有第一次慢（m00931）。实测（headless Edge + `playwright-core`，`%TEMP%\dsh-pw\probe5b.mjs`、`probe6.mjs`）三次进出「项目概览」，`[data-stat-tab="skills"] .stat-value` 的采样是 `—`→`130`，分别为 347ms、**3166ms**、240ms，即每次挂载都从「—」重新等；而在页面内重放真实 `skills.summary` 请求 6 次耗时 216／182／211／200／211／180ms，数字始终 130，说明服务端热路径只有约 200ms，慢在「每次挂载都清空再等」，其中 3166ms 那次是和其他请求争 `SkillsManager.serial` 队列。根因在 `src/client/extension-summary.ts`：状态放在组件内，重新挂载即归零，`src/client/Home.tsx:204` 对非 ready 一律渲染 `—`，没有任何跨挂载缓存。
+
+**决策**：把「已确认的读数」缓存在模块级 `WeakMap<ClientPort, Map<string, ExtensionSummary>>`（键为 `skills`／`mcp`／`rss:<days>`），挂载时用缓存做 `useState` 初值、后台照旧每 15 秒与 `api.subscribe` 刷新并覆盖缓存，首帧不再出现 `—`。用 `WeakMap` 按连接而不是全局单例：换连接（换宿主／换登录）自然失效，测试也不会互相污染。同一轮读数返回 `count === null`（宿主尚未确认生效）或请求失败时，若已有确认过的数字就保持原值、不退回「—」，短退避重试与 15 秒轮询继续跑——「保留上一次确认过的数字」不等于把未确认技能算进去。放弃的方案：服务端把 `checkedAt` 置空的行为改掉（那会让数字在目录变更后继续显示旧值且无法区分 pending）；服务端在 `checkedAt` 新鲜时跳过 `scan()`（能省约 200ms 后台耗时，但首帧由客户端缓存解决，暂时不动确认语义）。
+
+**证据**：`test/ui-interaction.test.ts` 新增 `重新进入首页先用上次确认的数字填满统计卡，不等新一轮读取`（首帧 ready 且数字来自缓存、不发新请求，轮询后刷新到新值）与 `宿主未确认的新读数不撤下已经确认的数字`；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/ui-interaction.test.ts` 78 passed；全量 `node --import tsx --test test/*.test.ts` 761 项中 736 通过／18 失败／7 跳过，18 项仍是既有环境基线；`node build.mjs` 连跑两次 `lib/client.js` 均 1768838 字节、SHA-256 `A9E21EEAF20F7014F13DA40E58C7E9996EAD21212934BC2F37058AB76F85C285`（幂等）；重打 pre 包 `dsh-workbase-1.1.1-pre.20261125.4-0ee74d74.tgz`（SHA-256 `0EE74D74B2A2393137A23CDA66283FCC4D3E0540E71A727EAC8A84C72556AF22`，1011125 字节）装到 `workbase-pre` 重启后，`probe7.mjs` 三次进出首页第一次采样（0–1ms）就已是 `130`，全程没有 `—`，console 无错误。
+
+**遗留**：缓存只在同一页面生命周期内有效，整页刷新或重启宿主后首帧仍要等约 200ms 的真实读数（这是「宿主确认才算数」的代价，未再压）；服务端 `skills.summary` 每次仍整轮 `scan()`，若后续要让首帧更快可考虑在 `checkedAt` 新鲜且未 `invalidateDiscovery` 时跳过扫描；数字长期不变时用户看不到刷新过程，本轮未加任何「上次更新于」提示。
+
+### 2026-11-25 · 技能市场的失败提示只保留当前一轮读取
+
+**背景**：用户反馈进入「技能市场」就有红字「数据源加载失败：ClawHub」（m00792 截图）。红字来自 `src/client/SkillsPanel.tsx:436-438`：它把快照里 `enabled` 且带 `issue` 的市场来源列出来。`issue` 由 `src/server/skills.ts` 的 `loadMarket()` 失败分支写入，并且是 state 的字段，会随 `store()` 整份写进 `~/.dsh/workbase/skills/state.json`。真实文件里 ClawHub 与 SkillHub 都还留着 2026-11-22 17:33 写入的 `技能市场拒绝内网、回环或保留地址`（1.0.4 时代还没放行 198.18 fake-ip 网段的旧结果），同文件 `market` 为空。用插件自己的 `fetchSkillCatalog('https://clawhub.ai/api/v1/skills?limit=10&sort=downloads')` 现在返回成功（9047 字节），`publicSkillAddress('198.18.0.251') === true`，说明当前读取没问题，界面上的红字是历史结果：成功读取只在内存里清 `issue`，而 `issue` 又会随任意配置保存写回磁盘，于是每次重启先读到旧提示，首轮读取完成前一直显示红字——截图里「红字 + 正在搜索技能」正是这个瞬间。
+
+**决策**：把 `issue` 定义为「最近一轮读取的瞬时结果」，不跨重启、不进配置。`initializeOnce()` 解析 state 后清空所有 `marketSources` 的 `issue`；`store()` 持久化时把 `issue` 置 `undefined`；`loadMarket()` 每轮开始先撤下启用来源的旧提示，本轮失败再写回内存。放弃的两个方案：改 `publicSkillAddress`（该网段上一版已放行，与本次无关）；给红字加时间戳或「上次失败」措辞（仍然显示过期错误，只是更啰嗦）。客户端未改——快照里没有旧 `issue` 就没有可渲染的红字。
+
+**证据**：`test/market.test.ts` 新增 `市场来源失败提示只属于本次读取，不跨重启显示也不写回配置`（旧文件带 `issue` 启动后快照无 `issue`；读取抛错后快照带 `/网络不可达/`；保存配置后磁盘上没有任何 `issue` 字段）；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/market.test.ts` 26 项 25 通过，唯一失败是既有基线「连接器市场本地缓存重启可直接读取…」；重打 pre 包 `dsh-workbase-1.1.1-pre.20261125.3-5308fbfe.tgz`（SHA-256 `5308FBFE42F3E2F2AB8C6977C19803B7E0659A328915B4C75C0081D74EAAF42C`，1010899 字节）装到 `workbase-pre` 后，headless Edge 在进入「技能市场」后 0.3s／0.8s／1.5s／3s／6s／11s 六个采样点都没有红字，卡片 0 → 10 → 20，console 无错误。
+
+**遗留**：磁盘上 `~/.dsh/workbase/skills/state.json` 仍带着旧 `issue` 文本，要等下一次保存配置才被清掉（此前由 `initializeOnce()` 在内存里屏蔽）；桌面端 1.1.0 没有这段改动，升级前每次进市场仍会闪一次历史红字。首个真实采样里列表涨到 20 张就停，未确认是滚动填充阈值还是分页，本次未追。
+
+### 2026-11-25 · web 壳下镜像子插槽不再重复声明，插件恢复激活
+
+**背景**：预览包装到独立 profile 后，`dsh --profile workbase-pre --port 22720` 的 web 壳里完全没有侧栏入口（m00572）。服务端插件是正常挂载的（`/api/workbase/dispatch` 无 cookie 401、带 cookie 400 `invalid RPC envelope`），偏好默认也是显示（`src/shared/model.ts:83` 的 `defaultNavigation`）。用系统 Edge + `playwright-core`（仓库外 `%TEMP%\dsh-pw`）headless 抓 console 才看到真因：`web boot: warning: 1 entry did not activate` / `dsh-workbase: failed: Error: slot "conversation.input.model.label" is already declared (by an entry in "conversation.input.model" (WC))` —— 整个客户端插件激活失败，所以侧栏、工作台页面、输入区按钮一起消失。
+
+**决策**：`src/client/entry.tsx` 把宿主条目镜像到自有槽位时原来原样复制 `children: model.children`（`workbase.model-selector`）和 `children: activity.children`（`workbase.input-activity`）。web 壳的宿主已经把 `conversation.input.model.label` 声明在 `conversation.input.model` 上，再声明一次就撞上 SlotCore「一个子槽只能有一个声明者」，抛错直接中断 apply。改法是只镜像仍是空位的子槽：新增 `undeclaredChildren()`，用 `ctx.slots.spec(key)` 探测（未声明才保留，探测方法缺失或抛错时保持原样），全部子槽都被占用时传 `undefined`。放弃的两个方案：整体不传 children（桌面端已工作的嵌套子槽会一起丢）；try/catch 兜底后重注册（首次 register 可能已部分声明，重试仍会撞 already declared，等于把失败从激活期推迟到渲染期）。缺省子槽只影响被镜像控件内部渲染，不影响插件整体加载，这是比「整个插件不激活」更好的降级。
+
+**证据**：`test/client-entry.test.ts` 新增 `宿主已声明同名子插槽时只镜像空位子插槽，不因重复声明中断插件激活`（`spec` 只把 `conversation.input.model.label` 报为已声明，断言镜像注册成功且 children 只剩 `conversation.input.model.hint`）；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/client-entry.test.ts` 17 passed；重打 pre 包 `dsh-workbase-1.1.1-pre.20261125.2-aac60d36.tgz`（SHA-256 `AAC60D367A54EEB032AAD06FE3AE9E72D7EEE2D8A8C30F127154D9A5AF261D8F`）重装后复测：console 无任何错误，侧栏出现「项目概览」，首页统计卡读到「技能 123」与「订阅 0」，RSS 面板列表 127 篇——同时确认上一条的订阅列表修复在真实宿主里生效。
+
+**遗留**：桌面端 Electron（`1.1.0`）没有这段改动，未复测，无法确认它在同一宿主布局下是否也走到这条冲突路径；被过滤掉的子槽在被镜像的选择器里不再渲染，本实例未观察到视觉差异，但窄屏与其它宿主布局尚未逐个核对；web 壳与 Electron 的宿主插槽布局差异本身没有归档，下次宿主升级要按 [HOST-COMPATIBILITY](../../docs/HOST-COMPATIBILITY.md) 再核一遍。
+
+### 2026-11-25 · 订阅列表不再受统计时间范围裁剪
+
+**背景**：用户反馈添加订阅后订阅列表不显示内容（m00306）。真实缓存 `C:\Users\yolo\.dsh\workbase\rss\cache-5cb116ad-171a-4835-81e3-163e18a1860e.json` 有 127 篇 HelloGitHub 文章（最新 2026-10-28），线上 `https://hellogithub.com/rss` 也是 127 条、首发 pubDate 与缓存逐字一致，解析与缓存都正常；列表为空是因为面板按统计时间范围过滤：`src/client/Workbase.tsx:97` 始终传 `recentDays={snapshot.preferences.home.statDays}`（默认 7 天，`src/shared/model.ts:66`），`src/client/RssPanel.tsx:87` 用 `rssRecentArticles` 裁剪列表、`:490` 把同一份裁剪数据喂给左侧导航计数、`:90` 空态文案也按窗口分支。HelloGitHub 是月刊，7 天内命中 0 篇，于是列表和计数同时全空，看起来像订阅没生效。
+
+**决策**：用户裁决「这个七天只管统计卡的数字，订阅列表的文章该显示还是要显示呀」（m00346），即统计时间范围只作用于数字。改法是 `RssArticleList` 删掉 `recentDays` 入参、直接渲染 `snapshot.articles`（停用源、未知发布时间、早于窗口的文章都显示），`RssPanel` 不再给 `RssNavigation` 注入裁剪后的 articles（左侧计数随列表恢复），空态去掉「所选时间范围内暂无更新」分支统一为「暂无缓存文章」。`RssPanelProps.recentDays` 保留，但只表示「从统计卡进入」，用于重置筛选与滚动位置。首页统计卡的数字仍走服务端 `src/server/rss.ts:142` 的 `rssRecentArticles`，符合用户口径。放弃的方案：为空时自动回退显示更早缓存再在顶部加说明、或空态加「查看全部缓存」按钮——两者都要在列表里再解释一次时间范围，而用户要的是列表本就与统计口径解耦。同步删掉 `src/client/i18n-en.ts` 里两条已无人使用的译文。
+
+**证据**：`node -e` 读真实缓存得 total 127、7 天窗口内 0、最新 2026-10-28，即改动前列表必然为空、改动后显示 127 篇；`test/rss-panel.test.ts` 的窗口用例改为「订阅列表不受统计时间范围影响，早于窗口、停用源与未知发布时间都照常显示」；`test/ui-interaction.test.ts` 两处断言改为「列表拿不到 recentDays」；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/rss-panel.test.ts test/ui-interaction.test.ts test/rss.test.ts` 102 passed / 0 failed；`npm test` 757 项中 732 通过／18 失败／7 跳过，18 项全是既有环境基线（符号链接 `EPERM`、Git 初始化、`spawn sqlite3 ENOENT`），不含本次改动；`node build.mjs` 连跑两次 `lib/client.js` 均为 1767715 字符、SHA-256 `C201B2B5F31BF4F1733413444183A5F568F6C19C9F57E547630335201D5D5A5C`（幂等）。
+
+**遗留**：`src/client/i18n-en.ts` 同时带着上一批迁移工作未提交的译文改动，提交时要按 hunk 拆分，别整文件 `git add`；工作区其余改动（`MigrationPanel`／`DiagnosticsPanel`／`Workbase`／`api`／`migration` 等）与本次无关，不一起提交；统计卡数字（7 天内 0 篇）与列表（127 篇）不一致是用户要的口径，未额外加提示文案；未在真实宿主里目视确认（GUI 需认证、本机无 playwright 会话），改动未提交、未安装到宿主。
+
+### 2026-11-25 · 首页技能数字首帧不再空等下一轮轮询
+
+**背景**：用户反馈首页统计卡里技能的数字显示很慢（m00001）。隔离基准证明服务端不慢——真实目录 `~/.agents/skills`（8 个来源包、62 个 SKILL.md、208 个文件）下 `SkillsManager.summary()` 冷跑 114.0ms、热跑 14-16ms，`snapshot()` 1.9ms，count=102、errors=0。慢在链路语义而不是算力：`src/server/skills.ts:352` 的 `count: this.checkedAt === null ? null : global` 只有宿主把每个作用域的技能目录读完并且没有 `pending` 行时才给数字（`checkEffects()`，`src/server/skills.ts:827-848`；`observeEffect()` 在快照 `!complete` 时把行标成 `pending`，`src/server/skills.ts:876-898`），而客户端原来只靠 `setInterval(refresh, 15000)` 兜底（原 `src/client/extension-summary.ts`）。于是首帧撞上宿主目录未就绪时，卡片要等下一次 15 秒轮询才有数字，用户看到的就是「很慢」。
+
+**决策**：不放松服务端的确认语义（数字仍只在宿主确认后出现，避免把未生效技能算进去），改客户端对「未确认」的等待方式：`src/client/extension-summary.ts` 增加 `RETRY_DELAYS = [400, 800, 1600, 3200, 5000]`，某一轮所有模块返回 `count === null` 时按该退避链重发，拿到具体数字即复位；15 秒常规轮询与 `api.subscribe` 依然保留并会清零退避计数，卸载时清除待触发的重试定时器。这样确认结果早到就早显示，最坏退化仍是原来的 15 秒轮询。放弃的方案：把 `checkedAt` 判断改成「有值就先给数字」——会让首帧数字在宿主确认前抖动，且掩盖 pending 状态；也放弃把轮询间隔整体调到秒级——请求量变成 15 倍，而慢的只是首帧与目录变更后那一小段时间。
+
+**证据**：`test/ui-interaction.test.ts` 新增 `技能数字未确认时按短退避重试，确认后不再重试`、`卸载时清除未确认数字的短延迟重试`；`node node_modules/typescript/bin/tsc --noEmit` 无输出；`node --import tsx --test test/ui-interaction.test.ts test/ui-audit-fixes.test.ts` 99 passed / 0 failed；`node build.mjs` 连跑两次 `lib/client.js` SHA-256 均为 `A04D874C6D072BCAD14B729080D0D322FAF73FFFCCC587CC3DFD24B5FB0FF3D4`（幂等）。
+
+**遗留**：真实宿主下的首帧耗时与退避命中率未测（GUI 需认证、本机无 playwright 会话），只看得到逻辑与单测层面；服务端 `effectReader()` 按作用域串行 `await`、整批共享 10 秒超时，若宿主目录确实长时间不完整，退避重试只会在 5 次后回落到 15 秒轮询，卡片仍显示「—」，属于服务端确认门的既有行为，本次未改。
+
 ### 2026-11-23 · 进入首页固定显示最顶部，移除首页滚动位置记忆
 
 **背景**：用户反馈项目较多时进入首页默认被拉到屏幕最低，要求默认显示最顶部（m00001）。

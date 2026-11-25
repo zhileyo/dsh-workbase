@@ -481,6 +481,23 @@ export function apply(ctx: Context) {
     document.head.append(style);
     return () => style.remove();
   });
+  // 宿主条目自带的子槽可能已由宿主自己声明（web 壳把 conversation.input.model.label 声明在
+  // conversation.input.model 上）。镜像条目再声明同名子槽会让 register 抛 "already declared"，
+  // 整个客户端插件随后激活失败（侧栏入口、工作台页面全部消失）；因此只镜像仍是空位的子槽，
+  // 缺失的子槽只影响被镜像控件的内部渲染，不影响插件整体加载。
+  const undeclaredChildren = <T extends object>(children: T | undefined): T | undefined => {
+    if (!children) return undefined;
+    const probe = (ctx.slots as { spec?: (key: string) => unknown }).spec;
+    if (typeof probe !== 'function') return children;
+    const free = (key: string) => {
+      try { return probe.call(ctx.slots, key) === undefined; }
+      catch { return true; }
+    };
+    const kept = Object.entries(children).filter(([key]) => free(key));
+    if (kept.length === Object.keys(children).length) return children;
+    if (!kept.length) return undefined;
+    return Object.fromEntries(kept) as T;
+  };
   ctx.slots.inject('main', () => {
     const dispose = ctx.slots.register(
       { name: 'main', key: 'dsh-workbase', children: {
@@ -516,7 +533,8 @@ export function apply(ctx: Context) {
       if (model !== previousModel) {
         previousModel = model; disposeModel?.(); disposeModel = undefined;
         if (model) disposeModel = ctx.slots.register({
-          name: 'workbase.model-selector', locale: model.locale as (keyof LocaleNamespaceMap & string) | undefined, children: model.children,
+          name: 'workbase.model-selector', locale: model.locale as (keyof LocaleNamespaceMap & string) | undefined,
+          children: undeclaredChildren(model.children) as typeof model.children,
           inject: (sessionId: SessionId) => (model.inject as unknown as (id: SessionId) =>
             { directory: Parameters<typeof ComposerModelState>[0]['directory'] } & Record<string, unknown>)(sessionId),
         }, props => <ComposerModelState directory={props.directory} onState={props.onState}>
@@ -528,7 +546,7 @@ export function apply(ctx: Context) {
         previousActivity = activity; disposeActivity?.(); disposeActivity = undefined;
         if (activity) disposeActivity = ctx.slots.register({
           name: 'workbase.input-activity', locale: activity.locale as (keyof LocaleNamespaceMap & string) | undefined,
-          children: activity.children,
+          children: undeclaredChildren(activity.children) as typeof activity.children,
           inject: (sessionId: SessionId) => (activity.inject as unknown as (id: SessionId) => Record<string, unknown>)(sessionId),
         }, props => <ComposerActivity {...props} component={activity.component as ComponentType<Record<string, unknown>>}/>);
       }

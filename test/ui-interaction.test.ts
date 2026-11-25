@@ -189,7 +189,92 @@ test('RSS摘要请求跟随统计天数变化，清除旧数字并丢弃迟到�
   h.unmount();
 });
 
-test('RSS统计入口清除旧筛选，无局部时间Picker并始终跟随统计天数', async () => {
+test('技能数字未确认时按短退避重试，确认后不再重试', async () => {
+  const requests: { resolve(value: any): void }[] = [];
+  const timers = new Map<number, { callback: () => void; delay: number }>(); let timerId = 0;
+  const api = { call() { return new Promise(resolve => requests.push({ resolve })); }, subscribe() { return () => {}; } };
+  const enabled = { skills: true, mcp: false, rss: false };
+  const h = await harness('src/client/extension-summary.ts', 'useExtensionSummaries', {}, {
+    effects: true, setInterval() { return 1; }, clearInterval() {},
+    setTimeout(callback: () => void, delay: number) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id: number) { timers.delete(id); },
+  });
+  h.invoke(api, enabled, 7); h.commitLayout();
+  assert.equal(requests.length, 1);
+  requests[0]!.resolve({ count: null, detail: '技能生效尚未确认 · 异常 0', errors: 0 }); await flush();
+  assert.equal(timers.size, 1, '未确认时安排一次短退避重试');
+  const first = [...timers.values()][0]!;
+  assert.ok(first.delay < 15000, '重试不等下一次轮询');
+  timers.clear(); first.callback();
+  assert.equal(requests.length, 2, '短延迟到期即重发摘要请求');
+  requests[1]!.resolve({ count: 5, detail: '项目 0 · 异常 0', errors: 0 }); await flush();
+  assert.equal(timers.size, 0, '宿主确认后不再安排重试');
+  assert.equal(h.invoke(api, enabled, 7).skills.value.count, 5);
+  h.unmount();
+});
+
+test('卸载时清除未确认数字的短延迟重试', async () => {
+  const requests: { resolve(value: any): void }[] = [];
+  const timers = new Map<number, { callback: () => void; delay: number }>(); let timerId = 0;
+  const api = { call() { return new Promise(resolve => requests.push({ resolve })); }, subscribe() { return () => {}; } };
+  const h = await harness('src/client/extension-summary.ts', 'useExtensionSummaries', {}, {
+    effects: true, setInterval() { return 1; }, clearInterval() {},
+    setTimeout(callback: () => void, delay: number) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id: number) { timers.delete(id); },
+  });
+  h.invoke(api, { skills: true, mcp: false, rss: false }, 7); h.commitLayout();
+  requests[0]!.resolve({ count: null, detail: '技能生效尚未确认 · 异常 0', errors: 0 }); await flush();
+  assert.equal(timers.size, 1);
+  h.unmount();
+  assert.equal(timers.size, 0, '卸载后不再留着重试定时器');
+});
+
+test('重新进入首页先用上次确认的数字填满统计卡，不等新一轮读取', async () => {
+  const requests: { resolve(value: any): void }[] = [];
+  let tick: (() => void) | undefined;
+  const api = { call() { return new Promise(resolve => requests.push({ resolve })); }, subscribe() { return () => {}; } };
+  const enabled = { skills: true, mcp: false, rss: false };
+  const h = await harness('src/client/extension-summary.ts', 'useExtensionSummaries', {}, {
+    effects: true, setInterval(callback: () => void) { tick = callback; return 1; }, clearInterval() {},
+    setTimeout() { return 1; }, clearTimeout() {},
+  });
+  h.invoke(api, enabled, 7); h.commitLayout();
+  requests[0]!.resolve({ count: 7, detail: '项目 1 · 异常 0', errors: 0 }); await flush();
+  assert.equal(h.invoke(api, enabled, 7).skills.value.count, 7);
+  tick!();
+  requests[1]!.resolve({ count: 8, detail: '项目 2 · 异常 0', errors: 0 }); await flush();
+  assert.equal(h.invoke(api, enabled, 7).skills.value.count, 8, '后台刷新结果覆盖缓存');
+  h.unmount(); h.remount();
+  const again = h.invoke(api, enabled, 7);
+  assert.equal(again.skills.status, 'ready', '重新进入不再从「—」重新开始等');
+  assert.equal(again.skills.value.count, 8, '先用上次确认的数字');
+  assert.equal(requests.length, 2, '首帧不额外发请求');
+  h.unmount();
+});
+
+test('宿主未确认的新读数不撤下已经确认的数字', async () => {
+  const requests: { resolve(value: any): void }[] = [];
+  const timers = new Map<number, { callback: () => void; delay: number }>(); let timerId = 0, refresh: (() => void) | undefined;
+  const api = {
+    call() { return new Promise(resolve => requests.push({ resolve })); },
+    subscribe(listener: () => void) { refresh = listener; return () => {}; },
+  };
+  const enabled = { skills: true, mcp: false, rss: false };
+  const h = await harness('src/client/extension-summary.ts', 'useExtensionSummaries', {}, {
+    effects: true, setInterval() { return 1; }, clearInterval() {},
+    setTimeout(callback: () => void, delay: number) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id: number) { timers.delete(id); },
+  });
+  h.invoke(api, enabled, 7); h.commitLayout();
+  requests[0]!.resolve({ count: 7, detail: '项目 1 · 异常 0', errors: 0 }); await flush();
+  refresh!();
+  requests[1]!.resolve({ count: null, detail: '技能生效尚未确认 · 异常 0', errors: 0 }); await flush();
+  assert.equal(h.invoke(api, enabled, 7).skills.value.count, 7, '未确认时不把卡片退回「—」');
+  assert.equal(timers.size, 1, '仍按短退避等宿主确认');
+  h.unmount();
+});
+
+test('RSS统计入口清除旧筛选，无局部时间Picker且不按统计天数裁剪文章', async () => {
   const api = { call: async () => ({}) }, memory = new UiMemory();
   memory.extensions.rss = { tab: 'catalog', group: 'old-group', search: '旧搜索', scroll: 0 };
   const data = { revision: 1, articles: [], groups: [], feeds: [], recommendations: [], refreshing: [], summary: {} };
@@ -197,13 +282,13 @@ test('RSS统计入口清除旧筛选，无局部时间Picker并始终跟随统�
   h.seedPanelSnapshot(0, api, 'rss', data);
   const list = () => h.render().find(n => n.type?.name === 'RssArticleList')!;
   const hasPicker = () => h.render().some(n => n.props.label === '文章时间范围');
-  assert.equal(list().props.recentDays, 7);
+  assert.equal(list().props.recentDays, undefined, '文章列表不再按统计时间范围过滤');
   assert.equal(list().props.query.groupId, undefined);
   assert.equal(list().props.query.feedId, '');
   assert.equal(list().props.query.query, '');
   assert.equal(hasPicker(), false);
   h.props.recentDays = 14;
-  assert.equal(list().props.recentDays, 14);
+  assert.equal(list().props.recentDays, undefined);
   assert.equal(hasPicker(), false);
 });
 
@@ -1009,10 +1094,33 @@ test('添加订阅定位我的订阅并单源刷新，刷新失败仍保留新�
   assert.equal(list.props.query.feedId, 'new');
   assert.equal(list.props.query.groupId, 'g');
   assert.equal(list.props.query.query, '');
-  assert.equal(list.props.recentDays, 7, '新增订阅也不能覆盖全局时间范围');
+  assert.equal(list.props.recentDays, undefined, '统计时间范围只作用于统计卡，不裁剪订阅列表');
   assert.ok(!tree.some(n => n.type?.name === 'RssEditor'));
   assert.deepEqual(JSON.parse(JSON.stringify(calls.find(c => c.method === 'refresh').input)), { feedId: 'new' });
   assert.equal(list.props.snapshot.feeds[0].id, 'new');
+});
+
+test('编辑订阅保存后回到订阅列表，不进入该来源的文章详情', async () => {
+  const feed = { id: 'f', name: '来源', url: 'https://test.invalid/rss', groupId: 'g', revision: 3, enabled: true };
+  const snapshot = { revision: 1, feeds: [feed], groups: [{ id: 'g', name: '工程', collapsed: false }], articles: [], refreshing: [], summary: {}, recommendations: [] };
+  const writes: any[] = [];
+  const api = { call: async (command: any) => {
+    if (command.method === 'feed.update') { writes.push(command.input); return { ...feed, name: command.input.name }; }
+    return snapshot;
+  } };
+  const h = await harness('src/client/RssPanel.tsx', 'RssPanel', { api, embedded: true, onClose() {} });
+  h.seedPanelSnapshot(0, api, 'rss', snapshot);
+  h.render().find(n => n.type?.name === 'RssNavigation')!.props.onFeed('f');
+  h.render().find(n => n.props?.label === '来源的订阅操作')!.props.items
+    .find((item: any) => item.label === '编辑订阅').action();
+  await h.render().find(n => n.type?.name === 'RssEditor')!.props.onSave('feed.update', { id: 'f', revision: 3, name: '新名字' });
+  await flush();
+  const tree = h.render();
+  assert.equal(JSON.stringify(writes), JSON.stringify([{ id: 'f', revision: 3, name: '新名字' }]));
+  assert.ok(!tree.some(n => n.type?.name === 'RssEditor'), '保存后关闭编辑面板');
+  const list = tree.find(n => n.type?.name === 'RssArticleList')!;
+  assert.equal(list.props.query.feedId, '', '回到订阅列表而不是该来源的文章详情');
+  assert.equal(tree.some(n => n.props?.children === '最近文章'), false, '不进入来源详情');
 });
 
 test('市场卡片显示安装与真实连接状态，删除记录后恢复操作', async () => {

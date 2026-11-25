@@ -221,6 +221,35 @@ test('正常市场榜单截断不计为来源错误', async () => {
   } finally { await manager.dispose(); await rm(home, { recursive: true, force: true }); }
 });
 
+test('市场来源失败提示只属于本次读取，不跨重启显示也不写回配置', async () => {
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'market-issue-')));
+  const path = join(home, 'workbase/skills/state.json');
+  await mkdir(join(home, 'workbase/skills'), { recursive: true });
+  await writeFile(path, JSON.stringify({ revision: 3, policies: {}, sources: [], skills: [], marketSources: [
+    { id: 'builtin-clawhub', name: 'ClawHub', url: 'https://clawhub.ai/api/v1/skills', enabled: true,
+      issue: '技能市场拒绝内网、回环或保留地址' },
+  ] }));
+  let fail = false;
+  const manager = new SkillsManager({ home, projects: () => [], config: () => ({ defaultSourceId: 'dsh', defaultEnabled: true }),
+    fetchMarket: async () => {
+      if (fail) throw new Error('网络不可达');
+      return JSON.stringify({ items: [{ ownerHandle: 'owner', slug: 'demo', displayName: 'Demo' }], nextCursor: null });
+    },
+  });
+  try {
+    const restored = await manager.handle('snapshot') as SkillsSnapshot;
+    assert.equal(restored.marketSources.find(source => source.name === 'ClawHub')!.issue, undefined, '旧文件里的失败提示不显示');
+    fail = true;
+    const failed = await manager.handle('market.load', {}) as SkillsSnapshot;
+    assert.match(failed.marketSources.find(source => source.name === 'ClawHub')!.issue!, /网络不可达/);
+    const toggle = failed.marketSources.find(source => source.name === 'ClawHub')!;
+    const saved = await manager.handle('market.source.toggle', { id: toggle.id, enabled: true }) as SkillsSnapshot;
+    assert.match(saved.marketSources.find(source => source.name === 'ClawHub')!.issue!, /网络不可达/, '内存里的失败提示不因保存配置消失');
+    const stored = JSON.parse(await readFile(path, 'utf8'));
+    assert.deepEqual(stored.marketSources.filter((source: { issue?: string }) => source.issue !== undefined), [], '失败提示不写回配置');
+  } finally { await manager.dispose(); await rm(home, { recursive: true, force: true }); }
+});
+
 function zip(files: { path: string; text: string; mode?: number }[]) {
   const local: Buffer[] = [], central: Buffer[] = []; let offset = 0;
   for (const file of files) {
