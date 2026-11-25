@@ -77,17 +77,16 @@ test('官方工作树请求失败保留已创建会话，重试先登记请求�
   assert.deepEqual(calls, ['begin-session', 'worktree', 'worktree', 'submit-message']);
 });
 
-test('本机搜索词、草稿、分组滚动及首页位置跨重新初始化恢复', () => {
+test('本机搜索词、草稿及分组滚动跨重新初始化恢复，首页位置不再记忆', () => {
   let value = '';
   const storage = { getItem: () => value, setItem: (_key: string, next: string) => { value = next; }, removeItem: (_key: string) => {} };
   const memory = new UiMemory(storage);
   memory.search = '原搜索';
-  memory.homeScroll = 210;
   memory.detail('p').draft = '待办草稿';
   memory.detail('p').done = 320;
   const restored = new UiMemory(storage);
   assert.equal(restored.search, '原搜索');
-  assert.equal(restored.homeScroll, 210);
+  assert.equal('homeScroll' in restored, false);
   assert.equal(restored.detail('p').draft, '待办草稿');
   assert.equal(restored.detail('p').done, 320);
 });

@@ -78,6 +78,8 @@ export const english: Record<string, string> = Object.fromEntries(`
 保留项目身份、名称、全部会话、待办及设置。|Keep the project identity, name, all sessions, to-dos and settings.
 不移动代码文件，不改写历史会话的原执行目录与日志。成功后 72 小时内可撤销。|Code files and historical session working directories and logs stay unchanged. Undo is available for 72 hours after success.
 当前宿主未提供安全迁移事务，暂不能执行迁移|The host does not provide safe migration transactions. Migration is unavailable.
+源项目或目标项目仍在迁移撤销期内。请先撤销相关迁移，或等待到期后重试：|The source or target project is still within a migration undo window. Undo the related migration or wait for it to expire before retrying:
+{source} → {target}（撤销截止：{time}）|{source} → {target} (undo deadline: {time})
 正在读取迁移记录…|Loading migration history…
 暂无迁移记录。预览不会生成记录。|No migration history. Previews do not create records.
 迁移记录读取失败|Failed to load migration history
@@ -1552,7 +1554,8 @@ npm 官方源|Official npm registry
 操作失败|Operation failed
 操作已完成|Operation completed
 操作已完成，但刷新失败：|Operation completed, but refresh failed:
-操作结果已保留，重新检查失败：{p0}|Results retained; recheck failed: {p0}
+操作结果已保留|Results retained
+刷新失败：{p0}|Refresh failed: {p0}
 支持 Markdown：背景、实施步骤、验收标准…|Markdown supported: context, steps, acceptance criteria…
 收藏|Favorites
 收藏会话|Favorite session
@@ -1871,6 +1874,7 @@ Agent 使用终端和图片读取工具，并支持上下文压缩，适合测�
 重新打开：{p0}|Reopen: {p0}
 重新检查|Check again
 重新检查失败|Recheck failed
+重新检查失败：{p0}|Recheck failed: {p0}
 重新读取|Reload
 重试|Retry
 重试上传|Retry upload

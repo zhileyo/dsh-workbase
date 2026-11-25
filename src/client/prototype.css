@@ -642,6 +642,10 @@ textarea::placeholder{color:var(--muted);opacity:1}
 @container workbase-dialog (max-width:650px){:scope .wb-migration-projects{grid-template-columns:minmax(0,1fr)}:scope .wb-migration-comparison :is(th,td){padding:12px 8px}}
 :scope .wb-migration-page{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
 :scope .wb-migration-page[hidden]{display:none}
+:scope .wb-migration-page>.dialog-footer{flex-wrap:wrap}
+:scope .wb-migration-footer-note{flex:1 1 320px;min-width:0;margin:0;line-height:20px}
+:scope .wb-migration-footer-note p{margin:0}
+:scope .wb-migration-footer-note ul{margin:4px 0 0;padding-left:20px}
 :scope .wb-migration-body{flex:1;min-width:0;min-height:0;padding:24px 28px;overflow:auto;overscroll-behavior:contain}
 @container workbase-dialog (max-width:650px){:scope .wb-migration-body{padding:20px 18px}}
 :scope .wb-migration .dialog-description{margin:16px 0;overflow-wrap:anywhere}

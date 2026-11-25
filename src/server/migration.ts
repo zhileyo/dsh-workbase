@@ -2,7 +2,7 @@ import { access, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { WorkbaseError, type State, type HostWorkspace, type HostSession, type Binding } from '../shared/model.js';
-import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, MIGRATION_PREVIEW_MS, type MigrationPreview, type MigrationCounts } from '../shared/migration.js';
+import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, MIGRATION_UNDO_ACTIVE, MIGRATION_PREVIEW_MS, type MigrationPreview, type MigrationCounts } from '../shared/migration.js';
 import { migrationTarget } from './migration-ownership.js';
 
 export async function migrationPreview(state: State, workspaces: HostWorkspace[], sessions: HostSession[],
@@ -76,9 +76,13 @@ export async function migrationPreview(state: State, workspaces: HostWorkspace[]
     if (todoIds.has(todo.id) && todoIds.get(todo.id) !== serialized) blockers.push('待办身份存在冲突');
     todoIds.set(todo.id, serialized);
   }
-  if (state.migrations.some(r => r.status === 'completed' && now < r.undoUntil
-    && [r.source.projectId, r.target.projectId].some(id => id === source.projectId || (target && id === target.projectId))))
-    blockers.push('项目存在未结束的可撤销迁移');
+  const undoBlockers: NonNullable<MigrationPreview['undoBlockers']> = [];
+  for (const record of state.migrations) {
+    if (record.status !== 'completed' || now >= record.undoUntil
+      || ![record.source.projectId, record.target.projectId].some(id => id === source.projectId || (target && id === target.projectId))) continue;
+    blockers.push(MIGRATION_UNDO_ACTIVE);
+    undoBlockers.push({ id: record.id, sourceTitle: record.source.title, targetTitle: record.target.title, undoUntil: record.undoUntil });
+  }
   const counts = (binding: Binding | undefined, sessionIds: Set<string>): MigrationCounts => {
     const selected = sessions.filter(s => sessionIds.has(s.sessionId));
     const todos = binding ? state.todos.filter(t => t.projectId === binding.projectId) : [];
@@ -99,6 +103,6 @@ export async function migrationPreview(state: State, workspaces: HostWorkspace[]
       path: source.path, counts: counts(source, sourceIds) },
     target: { projectId: target?.projectId ?? null, workspaceId: target?.workspaceId ?? null,
       title: peers[0]?.title ?? workspace?.title ?? source.projectId, path: directory, counts: counts(target, targetIds) },
-    notices, resultCounts, blockers: [...new Set(blockers)], executable: blockers.length === 0,
+    notices, resultCounts, blockers: [...new Set(blockers)], undoBlockers, executable: blockers.length === 0,
   };
 }

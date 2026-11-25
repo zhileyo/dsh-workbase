@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ClientPort } from './api.js';
 import type { Project } from '../shared/model.js';
 import type { MigrationPreview, MigrationRecord, MigrationRecordView, MigrationCounts } from '../shared/migration.js';
-import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, migrationRecordSchema } from '../shared/migration.js';
-import { IconButton, Modal, ModalFlow, Picker, preventImeSubmit, type Notify } from './ui.js';
+import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, MIGRATION_UNDO_ACTIVE, migrationRecordSchema } from '../shared/migration.js';
+import { IconButton, Modal, ModalFlow, Picker, preventImeSubmit } from './ui.js';
 import { errorText, languageTag, t } from './i18n.js';
 
 export function MigrationCountsView({ counts }: { counts: MigrationCounts }) {
@@ -24,8 +24,23 @@ export function MigrationComparisonView({ preview }: { preview: MigrationPreview
         <td key={index} className={value === 0 || value === null ? 'wb-migration-zero' : undefined}>{value ?? '—'}</td>)}</tr>)}</tbody>
   </table></div>;
 }
+export function MigrationPreviewBlockers({ preview }: { preview: MigrationPreview }) {
+  const undoBlockers = preview.undoBlockers ?? [];
+  const issues = preview.blockers.filter(message => message !== MIGRATION_UNAVAILABLE
+    && (message !== MIGRATION_UNDO_ACTIVE || !undoBlockers.length));
+  if (!issues.length && !undoBlockers.length) return null;
+  return <div className="wb-warning wb-migration-footer-note" role="status">
+    {!!undoBlockers.length && <>
+      <p>源项目或目标项目仍在迁移撤销期内。请先撤销相关迁移，或等待到期后重试：</p>
+      <ul>{undoBlockers.map(blocker => <li key={blocker.id}>{t('{source} → {target}（撤销截止：{time}）', {
+        source: blocker.sourceTitle, target: blocker.targetTitle,
+        time: new Date(blocker.undoUntil).toLocaleString(languageTag(), { hour12: false }),
+      })}</li>)}</ul>
+    </>}
+    {!!issues.length && <ul>{issues.map(message => <li key={message}>{errorText(message)}</li>)}</ul>}
+  </div>;
+}
 export function MigrationPreviewView({ preview, identities = true }: { preview: MigrationPreview; identities?: boolean }) {
-  const issues = preview.blockers.filter(message => message !== MIGRATION_UNAVAILABLE);
   const notices = [...(preview.notices ?? []), ...(preview.blockers.includes(MIGRATION_UNAVAILABLE) ? [MIGRATION_UNAVAILABLE] : [])];
   return <div className="wb-migration">
     {identities ? <><p className="dialog-description">{preview.kind === 'merge' ? '迁入已有项目' : '更新原项目目录'}</p>
@@ -40,7 +55,6 @@ export function MigrationPreviewView({ preview, identities = true }: { preview: 
     <p className="dialog-description">不移动代码文件，不改写历史会话的原执行目录与日志。成功后 72 小时内可撤销。</p></div>
     {!!notices.length && <div className="wb-migration-notice" role="status">{notices.map(message =>
       <p key={message}>{errorText(message)}{message === MIGRATION_SOURCE_MISSING && <code>{preview.source.path}</code>}</p>)}</div>}
-    {!!issues.length && <div className="wb-warning" role="status"><ul>{issues.map(message => <li key={message}>{errorText(message)}</li>)}</ul></div>}
   </div>;
 }
 
@@ -72,8 +86,8 @@ export function MigrationRecordEntitiesView({ record }: { record: MigrationRecor
   return <>{section(t('迁移的会话'), sessions)}{section(t('迁移的待办'), todos)}</>;
 }
 
-export function MigrationPanel({ api, project, projects, revision = 0, records = false, notify, onClose, onMigrated }: {
-  api: ClientPort; project: Project; projects: Project[]; revision?: number; records?: boolean; notify?: Notify; onClose(): void;
+export function MigrationPanel({ api, project, projects, revision = 0, records = false, onClose, onMigrated }: {
+  api: ClientPort; project: Project; projects: Project[]; revision?: number; records?: boolean; onClose(): void;
   onMigrated?(targetProjectId: string, reverted?: boolean): Promise<void>;
 }) {
   const [targetId, setTargetId] = useState('');
@@ -143,8 +157,9 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       await onMigrated?.(targetId);
       onClose();
     } catch (error) {
+      // 失败发生在弹窗打开期间（未调 onClose），按原型 error() 归内联告警，不转投 Toast。
       const message = completed ? '迁移已完成，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '迁移失败，请重试';
-      if (notify) notify(errorText(message), 'info'); else setError(message);
+      setError(message);
     } finally { setBusy(false); pending.current = false; }
   };
   const undo = async () => {
@@ -161,8 +176,9 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       await onMigrated?.(selected.source.projectId!, true);
       onClose();
     } catch (error) {
+      // 同上：撤销失败时详情弹窗仍在打开，保留内联告警供重试，不转投 Toast。
       const message = completed ? '迁移已撤销，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '撤销失败，请重试';
-      if (notify) notify(errorText(message), 'info'); else setError(message);
+      setError(message);
     } finally { setBusy(false); pending.current = false; }
   };
   const main = <Modal drawer title={records ? '迁移记录' : '项目迁移'} busy={busy} onClose={onClose}>
@@ -201,7 +217,7 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
       </>}
       </div>
       <footer className="dialog-footer">{records ? <button type="button" onClick={onClose}>关闭</button>
-        : <><button type="button" disabled={busy} onClick={onClose}>取消</button>
+        : <>{preview && <MigrationPreviewBlockers preview={preview}/>}<button type="button" disabled={busy} onClick={onClose}>取消</button>
           <button type="submit" className="wb-primary" disabled={!canConfirm}>确认迁移</button></>}</footer>
     </form>
   </Modal>;

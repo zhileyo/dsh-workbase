@@ -8,7 +8,7 @@ import { StatsProjectPanel, type StatEntry } from './StatsProjectPanel.js';
 import { DiagnosticsPanel, diagnosticSummary, fallbackDiagnosis } from './DiagnosticsPanel.js';
 import { TodoDetail } from './TodoDetail.js';
 import type { Diagnosis } from '../shared/diagnostics.js';
-import { dateText, folderName, Icon, IconButton, Menu, Modal, Tabs, type ModalState } from './ui.js';
+import { dateText, folderName, Icon, IconButton, Menu, Modal, Tabs, type ModalState, type Notify } from './ui.js';
 import { useExtensionSummaries } from './extension-summary.js';
 import { overviewTabs, type CoreOverviewTab, type OverviewTab } from './OverviewNavigation.js';
 import { errorText, t as translate } from './i18n.js';
@@ -43,7 +43,7 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
   const root = useRef<HTMLDivElement>(null);
   const recentRow = useRef<HTMLDivElement>(null);
   const [recentCount, setRecentCount] = useState(Infinity);
-  useLayoutEffect(() => { if (root.current) root.current.scrollTop = memory.homeScroll; }, []);
+  // 进入首页始终显示最顶部：不记忆滚动位置，避免项目多时被旧偏移直接拉到页尾。
   const prefs = snapshot.preferences, home = prefs.home;
   const savedOrder = home.statOrder ?? defaultStatOrder();
   const orderKey = savedOrder.join(',');
@@ -180,7 +180,7 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
       </div>)}</div><Menu label={`${p.title}的更多操作`} disabled={busy} items={menus(p)}/>
     </article>;
   });
-  return <main className="wb-home main home-main" ref={root} onScroll={e => { memory.homeScroll = e.currentTarget.scrollTop; }}>
+  return <main className="wb-home main home-main" ref={root}>
     {home.quick && <Composer snapshot={snapshot} api={api} memory={memory}/>}
     {home.recent && recent.length > 0 && <section className="wb-recent recent-sessions" data-layout={recentStyle} aria-label="最近会话">
       <div ref={recentRow} className={`recent-shortcuts wb-recent-${recentStyle}`} data-layout={recentStyle}>{recent.map((s, index) => <button type="button" className="recent-session" key={s.sessionId}
@@ -232,10 +232,11 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
 }
 
 /** 核心概览内容复用统一外层，待办详情保留列表恢复行为。 */
-export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, diagnosis, onReport, navigation, onClose, embedded, onModalState }: {
+export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, diagnosis, onReport, navigation, onClose, embedded, onModalState, notify }: {
   stat: CoreOverviewTab; snapshot: Snapshot; api: ClientPort; busy: boolean; refresh(): Promise<void>;
   navigate(projectId: string): void; diagnosis: Diagnosis; onReport(report: Diagnosis): void;
   navigation?: ReactNode; onClose(): void; embedded?: boolean; onModalState?(state: ModalState): void;
+  notify?: Notify;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [statTodo, setStatTodo] = useState<{ project: Project; todo: Todo } | null>(null);
@@ -272,7 +273,7 @@ export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, di
         <p className="dialog-description stats-page-description">{stat === 'running' ? '当前正在运行的会话。'
           : stat === 'recent' ? `最近 ${home.statDays} 天更新的未归档会话。` : '尚未完成的待办，含手动创建与 Agent 创建。'}</p>
         </>}
-        {stat === 'diagnostic' ? <DiagnosticsPanel report={diagnosis} api={api} busy={busy}
+        {stat === 'diagnostic' ? <DiagnosticsPanel report={diagnosis} api={api} busy={busy} notify={notify}
           onReport={onReport}
           openProject={id => { navigate(id); onClose(); }}/> : <StatsProjectPanel key={stat}
           empty="暂无符合条件的记录"

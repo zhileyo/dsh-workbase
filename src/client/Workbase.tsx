@@ -175,17 +175,19 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     working.current = true;
     setBusy(true);
     let committed = false;
+    let receipt = '';
     try {
       const result = await action();
-      if (result === false) {
-        if (mounted.current) { await load(); notify('项目已存在，原有数据已保留'); }
-        return true;
-      }
-      committed = true;
-      if (mounted.current) { await load(); if (successNotice) notify(successNotice, 'success'); }
+      if (result === false) receipt = '项目已存在，原有数据已保留';
+      else { committed = true; receipt = successNotice; }
+      if (mounted.current) { await load(); if (receipt) notify(receipt, committed ? 'success' : 'info'); }
       return true;
     } catch (error) {
-      if (mounted.current) setError(`${committed ? '操作已完成，但刷新失败：' : ''}${error instanceof Error ? error.message : '操作失败'}`);
+      // 写入已落盘时回执仍走 Toast；顶部横幅只保留刷新失败与数据陈旧说明，不重复回执。
+      if (mounted.current) {
+        if (receipt) notify(receipt, committed ? 'success' : 'info');
+        setError(`${committed ? '刷新失败：' : ''}${error instanceof Error ? error.message : '操作失败'}`);
+      }
       return committed;
     } finally { working.current = false; if (mounted.current) setBusy(false); }
   };
@@ -256,7 +258,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
           rename={project => setDialog({ kind: 'rename', project })} removeProject={project => setDialog({ kind: 'remove-project', project })} notify={notify} openOverview={setOverview} diagnosis={diagnosis}
           migration={(project, records) => setMigration({ project, records })}/>)}
     {migration && snapshot && <MigrationPanel api={api} project={snapshot.projects.find(p => p.projectId === migration.project.projectId) ?? migration.project}
-      projects={snapshot.projects} revision={snapshot.revision} records={migration.records} notify={notify} onClose={() => setMigration(null)}
+      projects={snapshot.projects} revision={snapshot.revision} records={migration.records} onClose={() => setMigration(null)}
       onMigrated={async (targetProjectId, reverted) => { await load(); navigate(targetProjectId); notify(reverted ? '项目迁移已撤销' : '项目迁移已完成', 'success'); }}/>}
     {snapshot && overview && <WorkbaseOverview kind={overview} api={api} snapshot={snapshot} busy={busy} diagnosis={diagnosis}
       onReport={report => setFreshDiagnosis({ snapshot, report })} refresh={load} navigate={navigate}

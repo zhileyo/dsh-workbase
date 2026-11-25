@@ -141,13 +141,12 @@ test('迁移记录直接撤销，核验批次回执后刷新源项目，未知�
   }
 });
 
-test('迁移撤销与确认失败改走 Toast 提示，未提供 notify 时保留内联告警', async () => {
+test('迁移撤销失败保留弹窗内联告警，失败信息不再转投 Toast', async () => {
   const { project } = fixture();
   const endpoint = { projectId: project.projectId, workspaceId: project.workspaceId, title: project.title, path: project.path };
   const record = { id: 'batch', kind: 'merge', status: 'completed', source: endpoint,
     target: { ...endpoint, projectId: 'target' }, completedAt: 1, undoUntil: Date.now() + 1000,
     revertedAt: null, entities: [], canUndo: true, expired: false };
-  const notices: { message: string; tone: string }[] = [];
   const api = { call(command: any) {
     if (command.op === 'migration-records') return Promise.resolve([record]);
     if (command.op === 'migration-undo') return Promise.reject(new Error('源项目目录已不存在，请恢复原目录后再撤销迁移'));
@@ -155,15 +154,16 @@ test('迁移撤销与确认失败改走 Toast 提示，未提供 notify 时保�
   } };
   const h = await harness('src/client/MigrationPanel.tsx', 'MigrationPanel', {
     api, project, projects: [project], records: true, onClose() {},
-    notify(message: string, tone: string) { notices.push({ message, tone }); },
     async onMigrated() {},
   }, { effects: true });
   h.render(); h.commitLayout(); await flush();
   h.render().find(n => n.type === 'button' && n.props.className === 'stats-item')!.props.onClick();
   const button = () => h.render().find(n => n.type === 'button' && n.props.children === '撤销迁移')!;
   button().props.onClick(); await flush();
-  assert.deepEqual(notices, [{ message: '源项目目录已不存在，请恢复原目录后再撤销迁移', tone: 'info' }]);
-  assert.equal(h.render().some(n => n.props.role === 'alert'), false, '提供 notify 后失败不写回内联告警');
+  const alerts = h.render().filter(n => n.props.role === 'alert');
+  assert.equal(alerts.length > 0, true, '撤销失败写回弹窗内联告警');
+  assert.ok(alerts.some(n => String(n.props.children).includes('源项目目录已不存在，请恢复原目录后再撤销迁移')),
+    '内联告警包含具体失败原因');
   assert.equal(button().props.disabled, true);
   h.unmount();
 });

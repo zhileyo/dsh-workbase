@@ -21,7 +21,7 @@ test('加载态渲染骨架屏而不是纯文字', () => {
 test('设置尚未返回时首帧使用已保存的主题', () => {
   for (const theme of ['follow', 'dsh', 'fresh', 'warm', 'violet']) {
     const storage = {
-      getItem: () => JSON.stringify({ search: '', homeScroll: 0, theme }),
+      getItem: () => JSON.stringify({ search: '', theme }),
       setItem() {}, removeItem() {},
     };
     const html = renderToStaticMarkup(createElement(Workbase, { api: {} as ClientPort, memory: new UiMemory(storage) }));
@@ -34,7 +34,7 @@ test('设置尚未返回时首帧使用已保存的主题', () => {
 test('主题缓存缺失或无效时先显示中性骨架，隐藏带主题色的顶栏', () => {
   for (const theme of [undefined, 'invalid']) {
     const storage = {
-      getItem: () => JSON.stringify({ search: '', homeScroll: 0, theme }),
+      getItem: () => JSON.stringify({ search: '', theme }),
       setItem() {}, removeItem() {},
     };
     const html = renderToStaticMarkup(createElement(Workbase, { api: {} as ClientPort, memory: new UiMemory(storage) }));

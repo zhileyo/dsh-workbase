@@ -97,7 +97,7 @@ export interface DetailMemory {
 export class UiMemory {
   readonly extensions: Partial<Record<ExtensionModule, { tab: string; group: string; search: string; scroll: number }>> = {};
   readonly details = new Map<string, DetailMemory>();
-  private values = { homeScroll: 0, search: '' };
+  private values = { search: '' };
   private savedTheme: Preferences['theme'] | null = null;
   composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
     creationRequests: {} as Record<string, string>,
@@ -121,13 +121,13 @@ export class UiMemory {
       const saved = JSON.parse(raw ?? 'null');
       const theme = preferencesSchema.shape.theme.safeParse(saved?.theme);
       if (theme.success) this.savedTheme = theme.data;
-      if (saved && typeof saved.search === 'string' && Number.isFinite(saved.homeScroll)) {
+      if (saved && typeof saved.search === 'string') {
         for (const key of ['skills', 'mcp', 'rss'] as const) {
           const item = saved.extensions?.[key];
           if (item && typeof item.tab === 'string' && typeof item.group === 'string' && typeof item.search === 'string' && Number.isFinite(item.scroll))
             this.extensions[key] = item;
         }
-        this.values = { search: saved.search, homeScroll: saved.homeScroll };
+        this.values = { search: saved.search };
         if (saved.composer && typeof saved.composer.draft === 'string') this.composer = { ...this.composer, ...saved.composer };
         for (const [id, detail] of Object.entries(saved.details ?? {})) {
           const d = detail as DetailMemory;
@@ -137,8 +137,6 @@ export class UiMemory {
       }
     } catch { /* 损坏或不可用的浏览器存储不阻断宿主数据。 */ }
   }
-  get homeScroll() { return this.values.homeScroll; }
-  set homeScroll(value: number) { this.values.homeScroll = value; this.save(); }
   get search() { return this.values.search; }
   set search(value: string) { this.values.search = value; this.save(); }
   get theme() { return this.savedTheme; }

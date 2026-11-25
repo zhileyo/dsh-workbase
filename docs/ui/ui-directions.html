@@ -646,6 +646,10 @@ textarea::placeholder{color:var(--muted);opacity:1}
 @container workbase (max-width:650px){.app .wb-migration-projects{grid-template-columns:minmax(0,1fr)}.app .wb-migration-comparison :is(th,td){padding:12px 8px}}
 .app .wb-migration-page{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
 .app .wb-migration-page[hidden]{display:none}
+.app .wb-migration-page>.dialog-footer{flex-wrap:wrap}
+.app .wb-migration-footer-note{flex:1 1 320px;min-width:0;margin:0;line-height:20px}
+.app .wb-migration-footer-note p{margin:0}
+.app .wb-migration-footer-note ul{margin:4px 0 0;padding-left:20px}
 .app .wb-migration-body{flex:1;min-width:0;min-height:0;padding:24px 28px;overflow:auto;overscroll-behavior:contain}
 @container workbase (max-width:650px){.app .wb-migration-body{padding:20px 18px}}
 .app .wb-migration .dialog-description{margin:16px 0;overflow-wrap:anywhere}
@@ -6941,7 +6945,8 @@ function migrationPlan(sourceId,value){
  if(target&&scene==='path'&&target.id==='p1')return {error:'目标项目目录异常，请先修复目标目录。'};
  if([source,target].filter(Boolean).some(x=>x.sessions.some(s=>s.running)))return {error:'请先在 Harness 停止源项目和目标项目的运行中会话，再进行迁移。'};
  const ids=[source.id,target?.id].filter(Boolean);
- if(migrations.some(m=>migrationPending(m)&&ids.some(id=>m.from===id||m.to===id)))return {error:'相关项目仍有可撤销的迁移，请先撤销或等待 72 小时期限结束。'};
+ const pending=migrations.filter(m=>migrationPending(m)&&ids.some(id=>m.from===id||m.to===id));
+  if(pending.length)return {error:`源项目或目标项目仍在迁移撤销期内，请先撤销相关迁移或等待到期后重试：${pending.map(m=>`${m.sourceName} → ${m.targetName}（撤销截止：${new Date(m.at+72*3600000).toLocaleString('zh-CN',{hour12:false})}）`).join('；')}`};
  if(target)for(const key of ['sessions','todos']){
   const seen=new Map();
   for(const item of [...target[key],...source[key]]){
@@ -6957,20 +6962,21 @@ function openMigration(sourceId){
  if(!source||source.archived||source.removed||source.merged)return toast('此项目已不可迁移');
  migrationDraft={sourceId,targetId:''};
  const targets=projects.filter(x=>x.id!==source.id&&!x.archived&&!x.removed&&!x.merged);
- modal('迁移项目',`<div class="wb-migration-content"><div class="wb-migration-projects"><div class="wb-migration-target"><span class="field">当前项目</span><div class="wb-migration-current theme-select-trigger" title="${esc(source.name)}">${esc(source.name)}</div></div><div class="wb-migration-target"><label class="field" for="migration-target">迁移到项目</label><select id="migration-target"><option value="">选择目标项目</option>${targets.map(x=>`<option value="${x.id}">${esc(x.name+(targets.filter(peer=>peer.name===x.name).length>1?' · '+x.path:''))}</option>`).join('')}</select></div></div><section id="migration-inline-preview" aria-label="迁移预览"><p class="dialog-description">${targets.length?'选择目标项目后显示迁移预览。':'暂无可迁入的项目。'}</p></section></div>`,button('取消','close-modal')+button('确认迁移','commit-migration','primary','disabled'),true);
+ modal('迁移项目',`<div class="wb-migration-content"><div class="wb-migration-projects"><div class="wb-migration-target"><span class="field">当前项目</span><div class="wb-migration-current theme-select-trigger" title="${esc(source.name)}">${esc(source.name)}</div></div><div class="wb-migration-target"><label class="field" for="migration-target">迁移到项目</label><select id="migration-target"><option value="">选择目标项目</option>${targets.map(x=>`<option value="${x.id}">${esc(x.name+(targets.filter(peer=>peer.name===x.name).length>1?' · '+x.path:''))}</option>`).join('')}</select></div></div><section id="migration-inline-preview" aria-label="迁移预览"><p class="dialog-description">${targets.length?'选择目标项目后显示迁移预览。':'暂无可迁入的项目。'}</p></section></div>`,`<span id="migration-footer-note" class="wb-migration-footer-note" role="status" hidden></span>`+button('取消','close-modal')+button('确认迁移','commit-migration','primary','disabled'),true);
  document.getElementById('migration-target').addEventListener('change',previewMigration);
 }
 function previewMigration(){
  const source=projects.find(x=>x.id===migrationDraft.sourceId),target=projects.find(x=>x.id===document.getElementById('migration-target').value);
  migrationDraft.targetId=target?.id||'';
- if(!source||!target){document.getElementById('migration-inline-preview').innerHTML='<p class="dialog-description">选择目标项目后显示迁移预览。</p>';return;}
+ if(!source||!target){document.getElementById('migration-inline-preview').innerHTML='<p class="dialog-description">选择目标项目后显示迁移预览。</p>';document.querySelector('[data-action="commit-migration"]').disabled=true;const note=document.getElementById('migration-footer-note');note.hidden=true;note.textContent='';return;}
  const counts=p=>[p.sessions.filter(s=>!s.archived).length,p.sessions.filter(s=>s.archived).length,p.todos.filter(t=>t.status!==2).length,p.todos.filter(t=>t.status===2).length];
  const a=counts(source),b=counts(target),merged=counts({sessions:[...new Map([...source.sessions,...target.sessions].map(s=>[s.id,s])).values()],todos:[...new Map([...source.todos,...target.todos].map(t=>[t.id,t])).values()]});
  const labels=['活跃会话','归档会话','待处理待办','已完成待办'];
  const table=`<div class="wb-migration-comparison"><table aria-label="迁移内容对照"><thead><tr><th scope="col">内容</th><th scope="col">迁出</th><th scope="col">目标现有</th><th scope="col">迁移后</th></tr></thead><tbody>${labels.map((label,i)=>`<tr><th scope="row">${label}</th>${[a[i],b[i],merged[i]].map(value=>`<td${value===0?' class="wb-migration-zero"':''}>${value}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
  const plan=migrationPlan(source.id,target.path);
  document.querySelector('[data-action="commit-migration"]').disabled=!!plan.error;
- document.getElementById('migration-inline-preview').innerHTML=`<div class="wb-migration"><p class="dialog-description">迁移预览</p>${table}<div class="wb-migration-notes"><p class="dialog-description">保留目标项目名称、目录及设置；源项目设置与实体来源须随迁移保存。</p><p class="dialog-description">不移动代码文件，不改写历史会话的原执行目录与日志。成功后 72 小时内可撤销。</p></div>${scene==='path'&&source.id==='p1'?`<div class="wb-migration-notice" role="status"><p>源项目目录已不存在；保留的会话与待办仍参与预览。<code>${esc(source.path)}</code></p></div>`:''}${plan.error?`<p class="wb-warning">${esc(plan.error)}</p>`:''}</div>`;
+  const note=document.getElementById('migration-footer-note');note.hidden=!plan.error;note.textContent=plan.error||'';
+ document.getElementById('migration-inline-preview').innerHTML=`<div class="wb-migration"><p class="dialog-description">迁移预览</p>${table}<div class="wb-migration-notes"><p class="dialog-description">保留目标项目名称、目录及设置；源项目设置与实体来源须随迁移保存。</p><p class="dialog-description">不移动代码文件，不改写历史会话的原执行目录与日志。成功后 72 小时内可撤销。</p></div>${scene==='path'&&source.id==='p1'?`<div class="wb-migration-notice" role="status"><p>源项目目录已不存在；保留的会话与待办仍参与预览。<code>${esc(source.path)}</code></p></div>`:''}</div>`;
 }
 function commitMigration(){
  const source=projects.find(x=>x.id===migrationDraft?.sourceId),target=projects.find(x=>x.id===migrationDraft?.targetId);

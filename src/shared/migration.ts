@@ -4,6 +4,7 @@ export const MIGRATION_UNDO_MS = 72 * 60 * 60 * 1000;
 export const MIGRATION_PREVIEW_MS = 10 * 60 * 1000;
 export const MIGRATION_UNAVAILABLE = '当前宿主未提供安全迁移事务，暂不能执行迁移';
 export const MIGRATION_SOURCE_MISSING = '源项目目录已不存在；保留的会话与待办仍参与预览。';
+export const MIGRATION_UNDO_ACTIVE = '项目存在未结束的可撤销迁移';
 const identity = z.object({
   projectId: z.string().nullable(), workspaceId: z.string().nullable(),
   title: z.string(), path: z.string(),
@@ -62,6 +63,8 @@ export interface MigrationPreview {
   target: MigrationIdentity & { counts: MigrationCounts };
   /** 只读说明与按实体ID去重后的结果；可选以兼容旧客户端预览。 */
   notices?: string[]; resultCounts?: MigrationCounts;
-  blockers: string[]; executable: boolean;
+  blockers: string[];
+  undoBlockers?: Array<{ id: string; sourceTitle: string; targetTitle: string; undoUntil: number }>;
+  executable: boolean;
 }
 export type MigrationRecordView = MigrationRecord & { expired: boolean; canUndo: boolean };

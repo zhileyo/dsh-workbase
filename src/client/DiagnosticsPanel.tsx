@@ -3,7 +3,7 @@ import type { Snapshot } from '../shared/model.js';
 import { diagnosticRepairResult, type Diagnosis, type DiagnosticCandidate, type DiagnosticRepairKind, type DiagnosticRepairResult } from '../shared/diagnostics.js';
 import type { ClientPort } from './api.js';
 import { StatsProjectPanel, type StatEntry } from './StatsProjectPanel.js';
-import { Icon, Modal } from './ui.js';
+import { Icon, Modal, type Notify } from './ui.js';
 import { errorText, t } from './i18n.js';
 
 export function fallbackDiagnosis(snapshot: Snapshot): Diagnosis {
@@ -80,8 +80,9 @@ const candidate = (report: Diagnosis, kind: DiagnosticRepairKind, ids?: string[]
   .filter(i => i.kind === kind && !i.readOnly && i.sessionId && i.identity && (!ids || ids.includes(i.sessionId)))
   .map(i => ({ sessionId: i.sessionId!, identity: i.identity! }));
 
-export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
+export function DiagnosticsPanel({ report, api, busy, onReport, openProject, notify }: {
   report: Diagnosis; api: ClientPort; busy: boolean; onReport(report: Diagnosis): void; openProject(id: string): void;
+  notify?: Notify;
 }) {
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -129,7 +130,13 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject }: {
       if (!mounted.current) return;
       setFeedback({ kind, result });
       try { await refresh(); }
-      catch (reason) { if (mounted.current) setError(`操作结果已保留，重新检查失败：${reason instanceof Error ? reason.message : '读取失败'}`); }
+      catch (reason) {
+        // 修复结果已通过 Toast 回执；持续区域只保留「重新检查失败」，供重试与对照上次结果。
+        if (mounted.current) {
+          notify?.('操作结果已保留');
+          setError(`重新检查失败：${reason instanceof Error ? reason.message : '读取失败'}`);
+        }
+      }
     } finally {
       lock.current = false;
       if (mounted.current) { setWorking(false); setProgress(null); }

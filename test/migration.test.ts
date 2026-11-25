@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { initialState, stateSchema } from '../src/shared/model.js';
 import { WorkbaseService } from '../src/server/service.js';
 import { dispatch } from '../src/server/rpc.js';
-import { MIGRATION_UNDO_MS, migrationRecordSchema } from '../src/shared/migration.js';
+import { MIGRATION_UNDO_ACTIVE, MIGRATION_UNDO_MS, migrationRecordSchema } from '../src/shared/migration.js';
 
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-migration-'));
@@ -98,7 +98,8 @@ test('记录按项目筛选且72小时截止只读，不产生撤销写入', asy
   f.state().migrations[0]!.undoUntil = MIGRATION_UNDO_MS;
   await assert.rejects(f.service.undoMigration('r1'), /未提供安全迁移事务/);
   const preview = await f.service.previewMigration({ projectId: 'p1', directory: f.target }, new AbortController().signal);
-  assert.ok(preview.blockers.includes('项目存在未结束的可撤销迁移'));
+  assert.ok(preview.blockers.includes(MIGRATION_UNDO_ACTIVE));
+  assert.deepEqual(preview.undoBlockers, [{ id: 'r1', sourceTitle: '源', targetTitle: '源', undoUntil: MIGRATION_UNDO_MS }]);
   assert.equal(migrationRecordSchema.safeParse({ ...record, undoUntil: MIGRATION_UNDO_MS + 1 }).success, false);
   assert.equal(f.writes(), 0);
 });

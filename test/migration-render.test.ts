@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MigrationPreviewView, MigrationRecordEntitiesView, MigrationSourceStateView } from '../src/client/MigrationPanel.js';
-import { MIGRATION_UNAVAILABLE, migrationRecordSchema, type MigrationPreview, type MigrationRecord } from '../src/shared/migration.js';
+import { MigrationPreviewBlockers, MigrationPreviewView, MigrationRecordEntitiesView, MigrationSourceStateView } from '../src/client/MigrationPanel.js';
+import { MIGRATION_UNAVAILABLE, MIGRATION_UNDO_ACTIVE, migrationRecordSchema, type MigrationPreview, type MigrationRecord } from '../src/shared/migration.js';
 
 test('迁移预览显示源与目标身份、全部统计、设置规则及宿主阻断原因', () => {
   const endpoint = { projectId: 'p1', workspaceId: 'w1', title: '<script>用户标题</script>', path: '/example/project',
@@ -22,7 +22,7 @@ test('迁移预览显示源与目标身份、全部统计、设置规则及宿�
   assert.ok(updated.includes('保留项目身份、名称、全部会话、待办及设置'));
 });
 
-test('单页迁移预览使用四行数量对照，能力提示与真正错误分别呈现', () => {
+test('单页迁移预览使用四行数量对照，能力提示留在正文，真正错误呈现于页脚', () => {
   const endpoint = { projectId: 'p1', workspaceId: 'w1', title: '源', path: '/example/source',
     counts: { active: 0, archived: 0, pending: 1, done: 0 } };
   const preview: MigrationPreview = { token: 'unused', revision: 0, expiresAt: 1000, kind: 'merge',
@@ -38,8 +38,15 @@ test('单页迁移预览使用四行数量对照，能力提示与真正错误�
   assert.equal(html.includes('wb-warning'), false, '能力缺失及已核实目录缺失不伪装为数据错误');
   preview.blockers.push('项目存在运行中的会话');
   html = renderToStaticMarkup(createElement(MigrationPreviewView, { preview, identities: false }));
-  assert.ok(html.includes('wb-warning'));
+  assert.equal(html.includes('wb-warning'), false, '阻断原因不再占用滚动正文');
+  html = renderToStaticMarkup(createElement(MigrationPreviewBlockers, { preview }));
+  assert.ok(html.includes('wb-migration-footer-note'));
   assert.ok(html.includes('项目存在运行中的会话'));
+  preview.blockers.push(MIGRATION_UNDO_ACTIVE);
+  preview.undoBlockers = [{ id: 'r1', sourceTitle: '1234', targetTitle: '12345', undoUntil: Date.UTC(2026, 10, 25, 12, 0, 31) }];
+  html = renderToStaticMarkup(createElement(MigrationPreviewBlockers, { preview }));
+  for (const text of ['1234', '12345', '撤销截止', '请先撤销相关迁移', '等待到期后重试']) assert.ok(html.includes(text), text);
+  assert.equal(html.includes(MIGRATION_UNDO_ACTIVE), false, '有具体撤销记录时不重复旧的笼统提示');
   delete preview.resultCounts;
   html = renderToStaticMarkup(createElement(MigrationPreviewView, { preview, identities: false }));
   assert.equal((html.match(/>—<\/td>/g) ?? []).length, 4, '旧预览缺少去重结果时不把相加数量冒充结果');
