@@ -1,5 +1,5 @@
 # CNB 是 GitHub 的只读镜像，方向是「拉取」：本仓库不接收 GitHub 的推送，
-# 由下面的定时任务（每 10 分钟）从 GitHub 取 main 与全部标签，强推到本仓库。
+# 由下面的定时任务（每天 04:00）从 GitHub 取 main 与全部标签，强推到本仓库。
 # 发布在 GitHub Actions 里完成（.github/workflows/release.yml），CNB 不做构建。
 #
 # 拉取用 GitHub 公开仓库的匿名 HTTPS，不需要额外凭据；
@@ -47,7 +47,7 @@
         echo "已同步到 $(git rev-parse refs/remotes/github/main)"
 
 main:
-  "crontab: */10 * * * *":
+  "crontab: 0 4 * * *":
     - *mirror-job
 
 $:
