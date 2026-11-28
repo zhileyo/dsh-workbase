@@ -2,13 +2,15 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import {
-  RSS_LIMITS, RSS_RECOMMENDATIONS, safeRssUrl, rssOriginalUrl, rssNavigationGroups, rssRecentArticles, type RssConfig, type RssFeed, type RssArticle,
+  RSS_LIMITS, RSS_RECOMMENDATIONS, rssOriginalUrl, rssNavigationGroups, rssRecentArticles, type RssConfig, type RssFeed, type RssArticle,
   type RssArticleQuery, type RssIncrementalQuery, type RssSnapshot, type RssSummary, type RssRefreshResult,
 } from '../shared/rss.js';
 import { fetchRss } from './rss-network.js';
 import { parseRss, previewOpml, exportOpml } from './rss-parser.js';
 import { extractRssContent } from './rss-content.js';
 import { RssStore, emptyRssState, expireRssUndo, boundRssCache, rssFeedIn, rssArticleIn, type RssStoredState } from './rss-store.js';
+import { createFeed, feedCreateSchema, feedUpdateSchema, nameSchema, rssGroupIn, touchFeed, uniqueName, uniqueUrl, validGroup } from './rss-feeds.js';
+import { importOpmlFeeds } from './rss-opml.js';
 
 /**
  * Host evidence, read-only inspection 2026-11-20:
@@ -21,13 +23,13 @@ import { RssStore, emptyRssState, expireRssUndo, boundRssCache, rssFeedIn, rssAr
  * Its subscriptions/cursors must not be silently reused or changed.
  * These are not equivalent safe raw RSS transports. Use pinned standalone transport.
  * A future official equivalent must be contract-verified before wiring, not tried after failure.
+ *
+ * Capability summary (previously the zero-reference RSS_HOST_EVIDENCE constant, kept as a note so it
+ * cannot drift away from the real probe): inspectedAt 2026-11-20, nativeRss false;
+ * '@deepseek-ai/dsh-web-fetch-http' 0.2.2-rc.5 equivalent: false (private networks allowed,
+ * same-origin redirects only, response truncation, no caller DNS pinning); community 'dsh-rss'
+ * 0.11.4 independentOwnership: true.
  */
-export const RSS_HOST_EVIDENCE = {
-  inspectedAt: '2026-11-20', nativeRss: false,
-  http: { package: '@deepseek-ai/dsh-web-fetch-http', version: '0.2.2-rc.5', equivalent: false,
-    reasons: ['private networks allowed', 'same-origin redirects only', 'response truncation', 'no caller DNS pinning policy'] },
-  community: { package: 'dsh-rss', version: '0.11.4', independentOwnership: true },
-} as const;
 
 export interface RssManagerOptions {
   /** Absolute, resolved host home, not a profile subscriptions directory. One manager per home. */
@@ -37,13 +39,6 @@ export interface RssManagerOptions {
   limits?: Partial<{ articles: number; perFeed: number; cacheBytes: number; concurrency: number; timeoutMs: number }>;
 }
 const idInput = z.object({ id: z.string().min(1) });
-const nameSchema = z.string().trim().min(1, '请填写名称').max(80, '名称最多 80 字符');
-const feedCreate = z.object({ name: nameSchema, url: z.string(), groupId: z.string().default(''), enabled: z.boolean().default(true), trusted: z.boolean().default(false) });
-const feedUpdate = z.object({
-  id: z.string().min(1), revision: z.number().int().nonnegative(),
-  name: nameSchema.optional(), url: z.string().optional(), groupId: z.string().optional(),
-  enabled: z.boolean().optional(), trusted: z.boolean().optional(),
-});
 const querySchema = z.object({
   feedId: z.string().optional(), groupId: z.string().optional(), query: z.string().max(1000).optional(),
   limit: z.number().int().min(1).max(200).optional(), offset: z.number().int().nonnegative().max(100_000).optional(),
@@ -100,35 +95,17 @@ export class RssManager {
     this.queue = run.catch(() => {});
     return run;
   }
-  private group(state: RssStoredState, id: string) {
-    const group = state.config.groups.find(g => g.id === id);
-    if (!group) throw new Error('分组不存在');
-    return group;
-  }
-  private validGroup(state: RssStoredState, id: string) { if (id) this.group(state, id); }
-  private uniqueName(state: RssStoredState, name: string, id = '') {
-    if (['默认分组', '未分组', '全部订阅'].includes(name) || state.config.groups.some(g => g.id !== id && g.name === name)) throw new Error('分组名称重复或保留');
-  }
-  private uniqueUrl(state: RssStoredState, raw: string, id = '') {
-    const url = safeRssUrl(raw);
-    if (!url) throw new Error('RSS URL 无效，仅允许无凭据的 HTTP/HTTPS');
-    if (state.config.feeds.some(f => f.id !== id && f.url === url)) throw new Error('订阅地址重复');
-    return url;
-  }
-  private createFeed(state: RssStoredState, input: z.infer<typeof feedCreate>) {
-    if (state.config.feeds.length >= RSS_LIMITS.feeds) throw new Error('订阅数量超过上限');
-    this.validGroup(state, input.groupId);
-    const feed: RssFeed = { ...input, url: this.uniqueUrl(state, input.url), id: randomUUID(), revision: 1, installedAt: Date.now() };
-    state.config.feeds.push(feed);
-    return feed;
-  }
-  async snapshot(): Promise<RssSnapshot> {
+  /** light 只用于周期性列表投影：正文与结构化正文由 article.fetch 按打开的篇目单独读取。 */
+  async snapshot(light = false): Promise<RssSnapshot> {
     await this.ready(); await this.queue;
+    const articles = light
+      ? this.state.cache.articles.map(({ bodyContent, ...article }) => ({ ...article, body: '', bodySource: article.bodySource }))
+      : this.state.cache.articles;
     return structuredClone({ revision: this.state.config.revision, feeds: this.state.config.feeds, groups: this.state.config.groups,
       ungroupedCollapsed: this.state.config.ungroupedCollapsed,
       ungroupedPosition: this.state.config.ungroupedPosition,
       undo: this.state.config.undo.filter(item => item.expiresAt > Date.now()).map(item => ({ token: item.token, name: item.feed.name, expiresAt: item.expiresAt })),
-      articles: this.state.cache.articles, refreshing: [...this.jobs.keys()], summary: this.currentSummary(), recommendations: [...RSS_RECOMMENDATIONS] });
+      articles, refreshing: [...this.jobs.keys()], summary: this.currentSummary(), recommendations: [...RSS_RECOMMENDATIONS] });
   }
   private currentSummary(): RssSummary {
     const feeds = this.state.config.feeds;
@@ -236,7 +213,7 @@ export class RssManager {
     if (signal?.aborted) throw new Error('RSS 操作已取消');
     const transaction = <T,>(change: (state: RssStoredState) => T) => this.transaction(change, signal);
     switch (method) {
-      case 'snapshot': return this.snapshot();
+      case 'snapshot': return this.snapshot(z.object({ light: z.boolean().optional() }).parse(input).light === true);
       case 'summary': return this.summary(input);
       case 'feeds': return this.listFeeds();
       case 'articles': return this.searchArticles(querySchema.parse(input));
@@ -247,7 +224,7 @@ export class RssManager {
       case 'group.create': {
         const { name } = z.object({ name: nameSchema }).parse(input);
         return transaction(state => {
-          this.uniqueName(state, name);
+          uniqueName(state, name);
           if (state.config.groups.length >= RSS_LIMITS.groups) throw new Error('分组数量超过上限');
           const group = { id: randomUUID(), name, collapsed: false };
           state.config.groups.push(group); return group;
@@ -261,8 +238,8 @@ export class RssManager {
             if (data.collapsed !== undefined) state.config.ungroupedCollapsed = data.collapsed;
             return { id: '', name: '默认分组', collapsed: state.config.ungroupedCollapsed };
           }
-          const group = this.group(state, data.id);
-          if (data.name !== undefined) { this.uniqueName(state, data.name, data.id); group.name = data.name; }
+          const group = rssGroupIn(state, data.id);
+          if (data.name !== undefined) { uniqueName(state, data.name, data.id); group.name = data.name; }
           if (data.collapsed !== undefined) group.collapsed = data.collapsed;
           return group;
         });
@@ -270,33 +247,33 @@ export class RssManager {
       case 'group.remove': {
         const { id } = idInput.parse(input);
         return transaction(state => {
-          this.group(state, id);
+          rssGroupIn(state, id);
           if (state.config.groups.findIndex(g => g.id === id) < state.config.ungroupedPosition) state.config.ungroupedPosition--;
           state.config.groups = state.config.groups.filter(g => g.id !== id);
-          for (const feed of state.config.feeds) if (feed.groupId === id) { feed.groupId = ''; feed.revision++; }
+          for (const feed of state.config.feeds) if (feed.groupId === id) touchFeed(feed, item => { item.groupId = ''; });
           return { removed: true };
         });
       }
-      case 'feed.create': return transaction(state => this.createFeed(state, feedCreate.parse(input)));
+      case 'feed.create': return transaction(state => createFeed(state, feedCreateSchema.parse(input)));
       case 'feed.update': {
-        const data = feedUpdate.parse(input);
+        const data = feedUpdateSchema.parse(input);
         const articleIds = (await this.snapshot()).articles.filter(a => a.feedId === data.id).map(a => a.id);
         const result = await transaction(state => {
           const feed = rssFeedIn(state, data.id);
           if (feed.revision !== data.revision) throw new Error('订阅版本已变化，请重新读取后保存');
-          if (data.url !== undefined) {
-            const url = this.uniqueUrl(state, data.url, data.id);
-            if (url !== feed.url) {
-              feed.url = url; delete feed.etag; delete feed.lastModified; delete feed.checkedAt; delete feed.error;
-              state.cache.articles = state.cache.articles.filter(a => a.feedId !== feed.id);
+          return touchFeed(feed, next => {
+            if (data.url !== undefined) {
+              const url = uniqueUrl(state, data.url, data.id);
+              if (url !== next.url) {
+                next.url = url; delete next.etag; delete next.lastModified; delete next.checkedAt; delete next.error;
+                state.cache.articles = state.cache.articles.filter(a => a.feedId !== next.id);
+              }
             }
-          }
-          if (data.groupId !== undefined) { this.validGroup(state, data.groupId); feed.groupId = data.groupId; }
-          if (data.name !== undefined) feed.name = data.name;
-          if (data.enabled !== undefined) feed.enabled = data.enabled;
-          if (data.trusted !== undefined) { feed.trusted = data.trusted; delete feed.etag; delete feed.lastModified; }
-          feed.revision++;
-          return feed;
+            if (data.groupId !== undefined) { validGroup(state, data.groupId); next.groupId = data.groupId; }
+            if (data.name !== undefined) next.name = data.name;
+            if (data.enabled !== undefined) next.enabled = data.enabled;
+            if (data.trusted !== undefined) { next.trusted = data.trusted; delete next.etag; delete next.lastModified; }
+          });
         });
         this.jobs.get(data.id)?.controller.abort(new Error('订阅已编辑，抓取已取消'));
         for (const id of articleIds) this.articleJobs.get(id)?.controller.abort(new Error('订阅已编辑，抓取已取消'));
@@ -325,7 +302,10 @@ export class RssManager {
           if (!undo || undo.expiresAt <= Date.now()) throw new Error('撤销期限已过或订阅已恢复');
           if (state.config.feeds.some(f => f.url === undo.feed.url)) throw new Error('已重新订阅相同地址，不重复恢复');
           if (state.config.feeds.length >= RSS_LIMITS.feeds) throw new Error('订阅数量超过上限');
-          const feed = { ...undo.feed, groupId: state.config.groups.some(g => g.id === undo.feed.groupId) ? undo.feed.groupId : '', revision: undo.feed.revision + 1 };
+          // 恢复也走同一入口：撤销记录里的版本号是移除时的版本，恢复后由 touchFeed 自增一次。
+          const feed = touchFeed({
+            ...undo.feed, groupId: state.config.groups.some(g => g.id === undo.feed.groupId) ? undo.feed.groupId : '',
+          });
           state.config.feeds.splice(Math.min(undo.index, state.config.feeds.length), 0, feed);
           state.cache.articles.push(...state.cache.undo[token] ?? []);
           delete state.cache.undo[token]; state.config.undo = state.config.undo.filter(u => u.token !== token);
@@ -350,13 +330,13 @@ export class RssManager {
           }
           const item = rssFeedIn(state, data.id), target = data.targetId ? rssFeedIn(state, data.targetId) : undefined;
           const groupId = target?.groupId ?? data.groupId ?? item.groupId;
-          this.validGroup(state, groupId);
+          validGroup(state, groupId);
           if (target?.id === item.id) return item;
-          item.groupId = groupId; item.revision++;
+          touchFeed(item, next => { next.groupId = groupId; });
           state.config.feeds = state.config.feeds.filter(f => f.id !== item.id);
           const index = target ? state.config.feeds.indexOf(target) + Number(data.position === 'after') : state.config.feeds.length;
           state.config.feeds.splice(index, 0, item);
-          if (groupId) this.group(state, groupId).collapsed = false;
+          if (groupId) rssGroupIn(state, groupId).collapsed = false;
           else state.config.ungroupedCollapsed = false;
           return item;
         });
@@ -367,27 +347,7 @@ export class RssManager {
       }
       case 'opml.import': {
         const data = z.object({ text: z.string(), defaultGroup: z.string().max(80).default(''), selected: z.array(z.number().int().nonnegative()).max(1000), trusted: z.boolean().default(false) }).parse(input);
-        return transaction(state => {
-          const preview = previewOpml(data.text, state.config.feeds, data.defaultGroup), selected = new Set(data.selected);
-          if ([...selected].some(index => !preview.candidates.some(c => c.index === index))) throw new Error('OPML 候选已变化，请重新预览');
-          let imported = 0, skipped = 0;
-          for (const candidate of preview.candidates.filter(c => selected.has(c.index))) {
-            if (candidate.error) throw new Error(candidate.error);
-            if (candidate.duplicate) { skipped++; continue; }
-            let groupId = '';
-            if (candidate.groupName && !['默认分组', '未分组'].includes(candidate.groupName)) {
-              let group = state.config.groups.find(g => g.name === candidate.groupName);
-              if (!group) {
-                this.uniqueName(state, candidate.groupName);
-                if (state.config.groups.length >= RSS_LIMITS.groups) throw new Error('分组数量超过上限');
-                group = { id: randomUUID(), name: candidate.groupName, collapsed: false }; state.config.groups.push(group);
-              }
-              groupId = group.id;
-            }
-            this.createFeed(state, { name: candidate.name, url: candidate.url, groupId, enabled: true, trusted: data.trusted }); imported++;
-          }
-          return { imported, skipped };
-        });
+        return transaction(state => importOpmlFeeds(state, data));
       }
       case 'opml.export': {
         const { feedId } = z.object({ feedId: z.string().optional() }).parse(input);

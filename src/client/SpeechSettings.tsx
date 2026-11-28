@@ -29,10 +29,14 @@ export function SpeechSettings({ draft, disabled }: { draft: SpeechSave; disable
         <input type="checkbox" checked={draft.config.filterMarkdown} disabled={locked}
           onChange={e => { draft.config = { ...draft.config, filterMarkdown: e.target.checked }; draft.changed(); }}/></label>
     </> : <>
-    {(['endpoint', 'model', 'voice'] as const).map((field, i) => <label className="field" key={field}>
-      <span>{['服务地址（完整 HTTPS 接口）', '语音模型', '音色'][i]}</span>
-      <input type="text" disabled={locked} value={draft.config[field]} maxLength={field === 'endpoint' ? 2000 : 200}
-        placeholder={field === 'endpoint' ? 'https://api.openai.com/v1/audio/speech' : undefined}
+    {([
+      { field: 'endpoint', label: '服务地址（完整 HTTPS 接口）', maxLength: 2000,
+        placeholder: 'https://api.openai.com/v1/audio/speech' },
+      { field: 'model', label: '语音模型', maxLength: 200, placeholder: undefined },
+      { field: 'voice', label: '音色', maxLength: 200, placeholder: undefined },
+    ] as const).map(({ field, label, maxLength, placeholder }) => <label className="field" key={field}>
+      <span>{label}</span>
+      <input type="text" disabled={locked} value={draft.config[field]} maxLength={maxLength} placeholder={placeholder}
         onChange={e => { draft.config = { ...draft.config, [field]: e.target.value }; draft.changed(); }}/></label>)}
     <label className="field"><span>语速（0.25–4）</span><input type="number" min="0.25" max="4" step="0.25"
       disabled={locked} value={Number.isFinite(draft.config.speed) ? draft.config.speed : ''}

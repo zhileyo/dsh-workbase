@@ -1,9 +1,9 @@
 import { SpeechTurns } from './speech-turns.js';
 import { SpeechStreamTurns } from './speech-stream-turns.js';
 import type { SpeechPlayback } from './speech-playback.js';
+import type { SpeechEntry } from '../shared/speech.js';
 
-type Entry = { type: string; event: { type: string; seq: number; data: unknown } };
-type Change = { kind: string; entries?: readonly Entry[]; entry?: Entry; attemptId?: string };
+type Change = { kind: string; entries?: readonly SpeechEntry[]; entry?: SpeechEntry; attemptId?: string };
 
 /** 同一会话仅订阅一次；历史只建立按消息ID的重播索引。 */
 export class SpeechSessionWatch {
@@ -12,7 +12,7 @@ export class SpeechSessionWatch {
   constructor(private readonly playback: SpeechPlayback, private readonly session: string) {
     this.streamTurns = new SpeechStreamTurns(playback.status.config.filterMarkdown);
   }
-  seed(entries: readonly Entry[]) {
+  seed(entries: readonly SpeechEntry[]) {
     this.playback.stopSession(this.session);
     this.playback.updateReplies(this.session, entries, true);
     this.turns = new SpeechTurns(); this.streamTurns.seed(entries);

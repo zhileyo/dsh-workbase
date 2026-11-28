@@ -10,9 +10,18 @@ import { extensionModuleSchema } from './extensions.js';
 import { personalFileSchema } from './personalization.js';
 import { speechConfigSchema } from './speech.js';
 const projectId = z.string().min(1).max(200);
-const todoId = z.string().min(1).max(200);
-// 读取旧状态时需要默认值；增量更新不能让 Zod 4 给未提交字段填默认值。
-const preferencesPatchSchema = preferencesSchema.extend({
+// 持久标识（待办、会话、附件、工作区）与一次性访问令牌、模型名分开声明：
+// 约束目前相同，但各自的演化边界不同，不能靠一个「待办 ID」名把三件事绑在一起。
+const entityId = z.string().min(1).max(200);
+const accessToken = z.string().min(1).max(200);
+const modelName = z.string().min(1).max(200);
+type PreferenceShape = typeof preferencesSchema.shape;
+// 不参与增量补丁与设置选项的偏好：视图、筛选、详情展开由界面直接写入，backup 用补丁子 schema。
+// 其余键都必须在 preferenceFields 登记：preferencesSchema 新增字段若漏登记，这里的 satisfies 会编译失败。
+type DerivedPreferenceKey = Exclude<keyof PreferenceShape,
+  'theme' | 'view' | 'layout' | 'selectedProject' | 'projectFilter' | 'detail' | 'backup'>;
+/** 读取旧状态时需要默认值；增量更新不能让 Zod 4 给未提交字段填默认值，所以这里统一去掉字段默认值。 */
+const preferenceFields = {
   language: preferencesSchema.shape.language.removeDefault(),
   home: preferencesSchema.shape.home.removeDefault(),
   fields: preferencesSchema.shape.fields.removeDefault(),
@@ -27,9 +36,25 @@ const preferencesPatchSchema = preferencesSchema.extend({
   terminalSettingsVisible: preferencesSchema.shape.terminalSettingsVisible.removeDefault(),
   speechComponentEnabled: preferencesSchema.shape.speechComponentEnabled.removeDefault(),
   terminalPalette: preferencesSchema.shape.terminalPalette.removeDefault(),
-  backup: backupPreferencesPatchSchema,
   navigation: preferencesSchema.shape.navigation.removeDefault(),
+} satisfies Record<DerivedPreferenceKey, z.ZodType>;
+const preferencesPatchSchema = z.object({
+  ...preferenceFields,
+  backup: backupPreferencesPatchSchema,
+  // 无默认值、可整份替换的偏好：补丁里按原样接受。
+  theme: preferencesSchema.shape.theme,
+  view: preferencesSchema.shape.view,
+  layout: preferencesSchema.shape.layout,
+  selectedProject: preferencesSchema.shape.selectedProject,
+  projectFilter: preferencesSchema.shape.projectFilter,
+  detail: preferencesSchema.shape.detail,
 }).partial().strict();
+// 设置命令与偏好补丁共用上面那份字段表；home／root 在设置里是必填，其余仍可选。
+const preferencesOptionsSchema = z.object({
+  ...preferenceFields,
+  backup: backupPreferencesPatchSchema,
+  expectedRules: preferenceFields.rules.optional(),
+}).partial().extend({ home: preferenceFields.home, root: preferenceFields.root }).strict();
 export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('speech-stream-text'), id: z.string().uuid(), seq: z.number().int().nonnegative(),
     text: z.string().max(12000), finish: z.boolean() }).strict(),
@@ -65,34 +90,21 @@ export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('repair-diagnostics'), kind: z.enum(['cache', 'orphan', 'empty']),
     items: z.array(diagnosticCandidate).min(1).max(20) }).strict(),
   z.object({ op: z.literal('create'), projectId, title: z.string().trim().min(1).max(500), note: z.string().max(10000).optional(), priority: prioritySchema.optional() }).strict(),
-  z.object({ op: z.literal('update'), projectId, id: todoId, expectedVersion: z.number().int().positive(),
+  z.object({ op: z.literal('update'), projectId, id: entityId, expectedVersion: z.number().int().positive(),
     title: z.string().trim().min(1).max(500).optional(), note: z.string().max(10000).optional(), done: z.boolean().optional(), priority: prioritySchema.optional() }).strict(),
-  z.object({ op: z.literal('remove-todo-image'), projectId, id: todoId, expectedVersion: z.number().int().positive(), attachmentId: todoId }).strict(),
-  z.object({ op: z.literal('remove-todo-attachment'), projectId, id: todoId, expectedVersion: z.number().int().positive(), attachmentId: todoId }).strict(),
-  z.object({ op: z.literal('delete'), projectId, id: todoId, expectedVersion: z.number().int().positive() }).strict(),
-  z.object({ op: z.literal('restore-deleted-todo'), projectId, token: todoId }).strict(),
+  z.object({ op: z.literal('remove-todo-image'), projectId, id: entityId, expectedVersion: z.number().int().positive(), attachmentId: entityId }).strict(),
+  z.object({ op: z.literal('remove-todo-attachment'), projectId, id: entityId, expectedVersion: z.number().int().positive(), attachmentId: entityId }).strict(),
+  z.object({ op: z.literal('delete'), projectId, id: entityId, expectedVersion: z.number().int().positive() }).strict(),
+  z.object({ op: z.literal('restore-deleted-todo'), projectId, token: accessToken }).strict(),
   z.object({ op: z.literal('rename'), projectId, title: z.string().trim().min(1).max(200) }).strict(),
   z.object({ op: z.literal('permission'), projectId, allowed: z.boolean() }).strict(),
-  z.object({ op: z.literal('binding'), projectId, workspaceId: todoId, choice: z.enum(['restore', 'new']) }).strict(),
-  z.object({ op: z.literal('mark'), projectId, sessionId: todoId.optional(), field: z.enum(['pinned', 'favorite']), value: z.boolean() }).strict(),
+  z.object({ op: z.literal('binding'), projectId, workspaceId: entityId, choice: z.enum(['restore', 'new']) }).strict(),
+  z.object({ op: z.literal('mark'), projectId, sessionId: entityId.optional(), field: z.enum(['pinned', 'favorite']), value: z.boolean() }).strict(),
   z.object({ op: z.literal('preferences'), patch: preferencesPatchSchema,
     expectedRevision: z.number().int().nonnegative().optional() }).strict(),
   z.object({ op: z.literal('settings'), theme: preferencesSchema.shape.theme, permissions: z.record(projectId, z.boolean()),
     expectedRevision: z.number().int().nonnegative().optional(),
-    options: z.object({ home: preferencesSchema.shape.home, root: preferencesSchema.shape.root,
-      language: preferencesSchema.shape.language.removeDefault().optional(),
-      projectInitialization: preferencesSchema.shape.projectInitialization.removeDefault().optional(),
-      rules: preferencesSchema.shape.rules.removeDefault().optional(),
-      expectedRules: preferencesSchema.shape.rules.removeDefault().optional(),
-      extensionConfig: preferencesSchema.shape.extensionConfig.removeDefault().optional(),
-      openOnStartup: preferencesSchema.shape.openOnStartup.removeDefault().optional(),
-      agentManageTodos: preferencesSchema.shape.agentManageTodos.removeDefault().optional(),
-      pluginUpdateVisible: preferencesSchema.shape.pluginUpdateVisible.removeDefault().optional(),
-      pluginAutoUpdate: preferencesSchema.shape.pluginAutoUpdate.removeDefault().optional(),
-      terminalSettingsVisible: preferencesSchema.shape.terminalSettingsVisible.removeDefault().optional(),
-      speechComponentEnabled: preferencesSchema.shape.speechComponentEnabled.removeDefault().optional(),
-      backup: backupPreferencesPatchSchema.optional(),
-      navigation: preferencesSchema.shape.navigation.removeDefault().optional() }).strict().optional() }).strict(),
+    options: preferencesOptionsSchema.optional() }).strict(),
   z.object({ op: z.literal('rules-save'), rules: preferencesSchema.shape.rules.removeDefault(),
     expectedRevision: z.number().int().nonnegative().optional(),
     expectedRules: preferencesSchema.shape.rules.removeDefault() }).strict(),
@@ -102,18 +114,18 @@ export const commandSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('remove-project'), projectId }).strict(),
   z.object({ op: z.literal('search-sessions'), query: z.string().trim().min(1).max(500) }).strict(),
   z.object({ op: z.literal('launch-catalog') }).strict(),
-  z.object({ op: z.literal('native-session-check'), workspaceId: todoId, sessionId: todoId.optional(), hold: z.boolean().optional() }).strict()
+  z.object({ op: z.literal('native-session-check'), workspaceId: entityId, sessionId: entityId.optional(), hold: z.boolean().optional() }).strict()
     .refine(value => !value.hold || !!value.sessionId, '提交保护需要会话标识'),
-  z.object({ op: z.literal('native-session-release'), token: todoId }).strict(),
+  z.object({ op: z.literal('native-session-release'), token: accessToken }).strict(),
   z.object({ op: z.literal('begin-session'), projectId, preset: z.string().min(1).max(200),
-    sessionId: todoId.optional(), requestId: z.string().uuid().optional() }).strict(),
-  z.object({ op: z.literal('configure-session-model'), projectId, sessionId: todoId, provider: todoId, model: todoId }).strict(),
-  z.object({ op: z.literal('submit-message'), projectId, sessionId: todoId, provider: todoId, model: todoId,
+    sessionId: entityId.optional(), requestId: z.string().uuid().optional() }).strict(),
+  z.object({ op: z.literal('configure-session-model'), projectId, sessionId: entityId, provider: modelName, model: modelName }).strict(),
+  z.object({ op: z.literal('submit-message'), projectId, sessionId: entityId, provider: modelName, model: modelName,
     text: z.string().min(1).max(20000).refine(text => text.trim().length > 0, '消息不能为空'), requestId: z.string().uuid() }).strict(),
-  z.object({ op: z.literal('rename-session'), projectId, sessionId: todoId, title: z.string().trim().min(1).max(200) }).strict(),
-  z.object({ op: z.literal('delete-session'), projectId, sessionId: todoId }).strict(),
+  z.object({ op: z.literal('rename-session'), projectId, sessionId: entityId, title: z.string().trim().min(1).max(200) }).strict(),
+  z.object({ op: z.literal('delete-session'), projectId, sessionId: entityId }).strict(),
   z.object({ op: z.literal('reveal-directory'), projectId }).strict(),
-  z.object({ op: z.literal('session-preview'), projectId, sessionId: todoId }).strict(),
+  z.object({ op: z.literal('session-preview'), projectId, sessionId: entityId }).strict(),
   z.object({ op: z.literal('archive-project'), projectId, archived: z.boolean() }).strict(),
   z.object({ op: z.literal('git-branches'), projectId }).strict(),
 ]);

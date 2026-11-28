@@ -7,12 +7,13 @@ import type { Diagnosis, DiagnosticCandidate, DiagnosticRepairKind, DiagnosticRe
 import type { BackupPort } from '../shared/backup.js';
 import type { RestorePort } from '../shared/restore.js';
 import { resolveTerminalColors, type TerminalPalette } from '../shared/terminal-palette.js';
-import { todoImageSchema, todoAttachmentSchema, todoAttachments, todoFilterSchema, MAX_TODO_IMAGE_BYTES, MAX_TODO_IMAGES, type Priority, type TodoImage, type TodoAttachment, type TodoFilter } from '../shared/todo.js';
+import { todoImageSchema, todoAttachmentSchema, todoAttachments, todoFilterSchema, todoKey, MAX_TODO_IMAGE_BYTES, MAX_TODO_IMAGES, type Priority, type TodoImage, type TodoAttachment, type TodoFilter } from '../shared/todo.js';
 import { projectInitializationSchema, type ProjectInitialization, type ProjectInitializationInput, type ProjectInitializationResult } from '../shared/project-initialization.js';
 import { projectRulesSchema, type ProjectRules, type RuleTarget, type RuleReceipt } from '../shared/project-rules.js';
 import type { PersonalPort, PersonalFile } from '../shared/personalization.js';
 import type { Speech } from './speech.js';
 import { migrationPreview } from './migration.js';
+import { restoredState } from './restore-state.js';
 import { MIGRATION_UNAVAILABLE, MIGRATION_UNDO_MS, type MigrationPreview, type MigrationRecordView, type MigrationRecord } from '../shared/migration.js';
 import { projectWorkspaces, migrationTarget } from './migration-ownership.js';
 import type { DeleteTarget } from './session-maintenance.js';
@@ -49,8 +50,21 @@ export interface HostPort {
   repairDiagnostics?(kind: DiagnosticRepairKind, items: DiagnosticCandidate[],
     authorize?: (target: DeleteTarget) => Promise<void>): Promise<DiagnosticRepairResult>;
 }
-const identity = (projectId: string) => {
+// 项目标识前置校验：只做守卫、不产出值，函数名按「断言」语义取，避免与宿主返回的删除身份 identity 混淆。
+const assertProjectId = (projectId: string) => {
   if (!projectId) throw new WorkbaseError('invalid', '缺少项目标识');
+};
+// 撤销窗口：与迁移撤销同口径的短时窗口，仅供删除待办后的「撤销」使用。
+const TODO_UNDO_MS = 5000;
+/** 绑定身份三元组：项目、宿主工作区与项目目录同时匹配才算同一关联（迁移身份未解析时为 null）。 */
+interface BindingTriple { projectId: string | null; workspaceId: string | null; path: string }
+// 关联仍有效：三元组一致且未被移除／停用；allowArchived=false 时归档也算失效（迁移端点核验要求未归档）。
+const isLiveBinding = (binding: Binding, triple: BindingTriple, allowArchived = true) =>
+  binding.projectId === triple.projectId && binding.workspaceId === triple.workspaceId
+  && binding.path === triple.path && !binding.retired && !binding.removed && (allowArchived || !binding.archived);
+// 写入后读回核验：持久层读回的状态必须与写入值结构化相等，判定口径与其它读回校验统一。
+const assertPersisted = (actual: unknown, expected: unknown, message: string) => {
+  if (!isDeepStrictEqual(actual, expected)) throw new Error(message);
 };
 // 归档项目业务只读：待办、重命名、会话创建与消息等写入全部拒绝；个人标记（置顶／收藏）仍可改。
 const assertWritable = (binding: Binding) => {
@@ -80,7 +94,7 @@ export class WorkbaseService {
   previewProjectMigration(input: { projectId: string; targetProjectId: string }, signal: AbortSignal) {
     return this.serial(async () => {
       signal.throwIfAborted();
-      identity(input.projectId); identity(input.targetProjectId);
+      assertProjectId(input.projectId); assertProjectId(input.targetProjectId);
       if (input.projectId === input.targetProjectId) throw new WorkbaseError('invalid', '请选择其他项目作为迁移目标');
       const matches = this.persistence.get().bindings.filter(b => b.projectId === input.targetProjectId);
       const target = matches[0];
@@ -177,7 +191,7 @@ export class WorkbaseService {
       for (const todo of next.todos) if (todo.projectId === sourceId) {
         todo.projectId = targetId; todo.version++; todo.updatedAt = completedAt;
       }
-      next.todos = [...new Map(next.todos.map(todo => [JSON.stringify([todo.projectId, todo.id]), todo])).values()];
+      next.todos = [...new Map(next.todos.map(todo => [todoKey(todo.projectId, todo.id), todo])).values()];
       if (next.preferences.selectedProject === sourceId) next.preferences.selectedProject = targetId;
       // 身份中的 counts 只用于预览，不写入严格回执模型。
       record.source = { projectId: sourceId, workspaceId: fresh.source.workspaceId, title: fresh.source.title, path: fresh.source.path };
@@ -196,14 +210,15 @@ export class WorkbaseService {
     });
   }
   /** 跨存储域不能声称原子提交：回执先落盘，失败后仅补齐官方登记移除。 */
-  private async removeMigratedWorkspace(record: MigrationRecord) {
+  private async removeMigratedWorkspace(record: MigrationRecord, known?: readonly HostWorkspace[]) {
     this.assertMigrationStorage();
     if (record.kind !== 'merge' || record.status !== 'completed') return;
-    const source = (await this.host.workspaces()).find(w => w.workspaceId === record.source.workspaceId);
+    const listed = known ?? await this.host.workspaces();
+    const source = listed.find(w => w.workspaceId === record.source.workspaceId);
     if (!source) return;
     const state = this.persistence.get();
-    if (source.path !== record.source.path || !state.bindings.some(b => b.projectId === record.source.projectId
-      && b.workspaceId === source.workspaceId && b.path === source.path && !b.retired && !b.removed))
+    if (source.path !== record.source.path
+      || !state.bindings.some(b => isLiveBinding(b, { projectId: record.source.projectId, workspaceId: source.workspaceId, path: source.path })))
       throw new WorkbaseError('binding-conflict', '迁移已完成，但源工作区关联已变化，无法移除登记');
     if (!this.host.remove) throw new WorkbaseError('unsupported', '迁移已完成，但宿主未提供工作区移除能力');
     const sessions = await this.host.sessions();
@@ -217,15 +232,21 @@ export class WorkbaseService {
     let failure: unknown;
     try { await this.host.remove(source.workspaceId); } catch (error) { failure = error; }
     // 超时或异常后读回已不存在即可复用结果；仍存在则保持回执供重试，不重做迁移。
-    if ((await this.host.workspaces()).some(w => w.workspaceId === source.workspaceId))
+    const after = await this.host.workspaces();
+    if (after.some(w => w.workspaceId === source.workspaceId))
       throw new WorkbaseError('unavailable', `迁移已完成，但源工作区登记移除失败：${failure instanceof Error ? failure.message : '请刷新重试'}`);
   }
   syncMigratedWorkspaces() {
     return this.serial(async () => {
       this.assertMigrationStorage();
+      // 没有待清的已完成合并时直接返回：这是最常见的情况，不该为它去列一次宿主工作区。
+      const pending = this.persistence.get().migrations
+        .filter(record => record.kind === 'merge' && record.status === 'completed');
+      if (pending.length === 0) return [] as string[];
+      const listed = await this.host.workspaces();
       const failures: string[] = [];
-      for (const record of this.persistence.get().migrations) {
-        try { await this.removeMigratedWorkspace(record); }
+      for (const record of pending) {
+        try { await this.removeMigratedWorkspace(record, listed); }
         catch (error) { failures.push(error instanceof Error ? error.message : '迁移源工作区登记移除失败'); }
       }
       return failures;
@@ -246,8 +267,7 @@ export class WorkbaseService {
   workspaceForSession(sessionId: string, fallbackWorkspaceId?: string): string {
     const state = this.persistence.get(), owner = state.sessionOwnership.find(value => value.sessionId === sessionId);
     if (owner) {
-      if (!state.bindings.some(b => b.projectId === owner.projectId && b.workspaceId === owner.workspaceId
-        && b.path === owner.path && !b.retired && !b.removed))
+      if (!state.bindings.some(b => isLiveBinding(b, owner)))
         throw new WorkbaseError('binding-unavailable', '迁移会话目标关联已失效');
       return owner.workspaceId;
     }
@@ -263,7 +283,7 @@ export class WorkbaseService {
     const parsed = stateSchema.parse(next);
     try {
       await this.persistence.set(parsed);
-      if (JSON.stringify(this.persistence.get()) !== JSON.stringify(parsed)) throw new Error('迁移持久化校验失败');
+      assertPersisted(this.persistence.get(), parsed, '迁移持久化校验失败');
     } catch (error) {
       // 同一个存储域内提交归属、待办和回执；写入失败同时恢复内存与持久状态。
       try { await this.persistence.set(before); }
@@ -281,14 +301,13 @@ export class WorkbaseService {
   discardMigration(token: string) { this.migrationPreviews.delete(token); this.migrationWitnesses.delete(token); return null; }
   migrationRecords(projectId: string): Promise<MigrationRecordView[]> {
     return this.serial(async () => {
-      identity(projectId);
+      assertProjectId(projectId);
       const state = this.persistence.get();
       if (!state.bindings.some(b => b.projectId === projectId)) throw new WorkbaseError('not-found', '项目不存在');
       return structuredClone(state.migrations.filter(r => r.source.projectId === projectId || r.target.projectId === projectId)
         .sort((a, b) => b.completedAt - a.completedAt).map(r => ({ ...r, expired: this.now() >= r.undoUntil,
           canUndo: r.status === 'completed' && this.now() < r.undoUntil && !!r.undo && r.kind === 'merge'
-            && [r.source, r.target].every(endpoint => state.bindings.some(b => b.projectId === endpoint.projectId
-              && b.workspaceId === endpoint.workspaceId && b.path === endpoint.path && !b.archived && !b.removed && !b.retired)) })));
+            && [r.source, r.target].every(endpoint => state.bindings.some(b => isLiveBinding(b, endpoint, false))) })));
     });
   }
   undoMigration(id: string) {
@@ -317,7 +336,8 @@ export class WorkbaseService {
         assertWritable(binding);
         if (binding.workspaceId !== endpoint.workspaceId || binding.path !== endpoint.path)
           throw new WorkbaseError('binding-conflict', '迁移项目关联已变化，无法撤销');
-        const ids = workspaces.find(w => w.workspaceId === endpoint.workspaceId)!.sessionIds;
+        // 上一行的三元组核验已保证绑定工作区就是端点工作区，按绑定取会话列表。
+        const ids = this.boundWorkspace(workspaces, binding).sessionIds;
         if (sessions.some(s => ids.includes(s.sessionId) && s.running))
           throw new WorkbaseError('running', '项目存在运行中的会话');
       }
@@ -429,92 +449,9 @@ export class WorkbaseService {
     if (!this.restore) throw new WorkbaseError('unsupported', '当前宿主未启用恢复服务');
     return this.restore.discard(token);
   }
-  private restoredState(input: unknown, workspaces: HostWorkspace[]) {
-    const value = stateSchema.parse(input), blockers: string[] = [];
-    const current = this.persistence.get();
-    const projects = new Set<string>(), todos = new Set<string>(), paths = new Set<string>();
-    for (const binding of value.bindings) {
-      if (projects.has(binding.projectId)) blockers.push('备份项目标识重复');
-      projects.add(binding.projectId);
-      if (binding.retired || binding.removed) continue;
-      if (paths.has(binding.path)) blockers.push('备份存在重复的活跃项目目录');
-      paths.add(binding.path);
-      const matches = workspaces.filter(w => w.path === binding.path);
-      if (matches.length === 0 && migrationTarget(value, binding.projectId)) {
-        const retained = current.bindings.find(b => b.path === binding.path && !b.retired && !b.removed);
-        if (retained) binding.workspaceId = retained.workspaceId;
-      } else if (matches.length !== 1) blockers.push(`当前宿主没有唯一匹配项目：${binding.path}`);
-      else binding.workspaceId = matches[0]!.workspaceId;
-    }
-    const todoProjects = new Map<string, Set<string>>();
-    for (const todo of value.todos) {
-      const pair = JSON.stringify([todo.projectId, todo.id]), peers = todoProjects.get(todo.id) ?? new Set<string>();
-      const shared = value.migrations.some(record => record.status === 'reverted'
-        && record.undo?.todos.some(item => item.id === todo.id && item.shared)
-        && [record.source.projectId, record.target.projectId].includes(todo.projectId)
-        && [...peers].every(id => [record.source.projectId, record.target.projectId].includes(id)));
-      if (!projects.has(todo.projectId) || todos.has(pair) || (peers.size > 0 && !shared)) blockers.push('待办归属或标识不完整');
-      todos.add(pair); peers.add(todo.projectId); todoProjects.set(todo.id, peers);
-    }
-    if (value.worktreeSessions.some(s => !projects.has(s.projectId))) blockers.push('工作树会话缺少项目归属');
-    const owners = new Set<string>();
-    for (const owner of value.sessionOwnership) {
-      const binding = value.bindings.find(b => b.projectId === owner.projectId);
-      if (owners.has(owner.sessionId) || !binding || binding.path !== owner.path)
-        blockers.push('迁移会话归属或标识不完整');
-      owners.add(owner.sessionId);
-      if (!workspaces.some(w => w.sessionIds.includes(owner.sessionId))
-        && !current.worktreeSessions.some(s => s.sessionId === owner.sessionId)
-        && !current.sessionOwnership.some(s => s.sessionId === owner.sessionId))
-        blockers.push('迁移会话无法与当前宿主核实');
-      if (binding) owner.workspaceId = binding.workspaceId;
-    }
-    if (value.worktreeSessions.some(s => !current.worktreeSessions.some(c => c.sessionId === s.sessionId
-      && current.bindings.find(b => b.projectId === c.projectId)?.path === value.bindings.find(b => b.projectId === s.projectId)?.path)))
-      blockers.push('工作树会话无法与当前宿主的项目关联核实');
-    // 独立Skills/MCP存储仍引用当前身份；按唯一目录保留身份，不改写扩展存储。
-    const mapping = new Map<string, string>();
-    for (const binding of current.bindings.filter(b => !b.retired && !b.removed)) {
-      const matches = value.bindings.filter(b => !b.retired && !b.removed && b.path === binding.path);
-      const peers = current.bindings.filter(b => !b.retired && !b.removed && b.path === binding.path);
-      if (matches.length !== 1 || peers.length !== 1 || matches[0]!.archived !== binding.archived)
-        blockers.push(`当前项目关联无法安全保留：${binding.path}`);
-      else mapping.set(matches[0]!.projectId, binding.projectId);
-    }
-    for (const rule of current.preferences.rules.projects) for (const id of rule.projectIds)
-      if (!current.bindings.some(b => b.projectId === id && !b.retired && !b.removed))
-        blockers.push(`当前规则项目关联无法核实：${id}`);
-    for (const binding of value.bindings) binding.projectId = mapping.get(binding.projectId) ?? binding.projectId;
-    if (new Set(value.bindings.map(b => b.projectId)).size !== value.bindings.length)
-      blockers.push('恢复项目关联映射后标识冲突');
-    for (const todo of value.todos) todo.projectId = mapping.get(todo.projectId) ?? todo.projectId;
-    for (const session of value.worktreeSessions) session.projectId = mapping.get(session.projectId) ?? session.projectId;
-    for (const owner of value.sessionOwnership) owner.projectId = mapping.get(owner.projectId) ?? owner.projectId;
-    for (const record of value.migrations) {
-      for (const endpoint of [record.source, record.target]) if (endpoint.projectId) {
-        endpoint.projectId = mapping.get(endpoint.projectId) ?? endpoint.projectId;
-        const binding = value.bindings.find(b => b.projectId === endpoint.projectId && b.path === endpoint.path);
-        if (binding) endpoint.workspaceId = binding.workspaceId;
-      }
-      for (const entity of record.entities) {
-        entity.sourceProjectId = mapping.get(entity.sourceProjectId) ?? entity.sourceProjectId;
-        entity.targetProjectId = mapping.get(entity.targetProjectId) ?? entity.targetProjectId;
-      }
-      for (const item of record.undo?.sessions ?? []) if (item.previous) {
-        item.previous.projectId = mapping.get(item.previous.projectId) ?? item.previous.projectId;
-        const binding = value.bindings.find(b => b.projectId === item.previous!.projectId && b.path === item.previous!.path);
-        if (binding) item.previous.workspaceId = binding.workspaceId;
-      }
-    }
-    value.projectMarks = Object.fromEntries(Object.entries(value.projectMarks).map(([id, mark]) => [mapping.get(id) ?? id, mark]));
-    value.preferences.detail = Object.fromEntries(Object.entries(value.preferences.detail).map(([id, detail]) => [mapping.get(id) ?? id, detail]));
-    if (value.preferences.selectedProject)
-      value.preferences.selectedProject = mapping.get(value.preferences.selectedProject) ?? value.preferences.selectedProject;
-    return { value, blockers: [...new Set(blockers)] };
-  }
   inspectRestore(input: unknown) {
     return this.serial(async () => {
-      const restored = this.restoredState(input, await this.host.workspaces());
+      const restored = restoredState(input, await this.host.workspaces(), this.persistence.get());
       return { revision: this.persistence.get().revision, blockers: restored.blockers };
     });
   }
@@ -524,7 +461,7 @@ export class WorkbaseService {
       this.assertMigrationStorage();
       const before = structuredClone(this.persistence.get());
       if (before.revision !== expectedRevision) throw new WorkbaseError('conflict', '预览后工作台数据已变化，请重新预览');
-      const restored = this.restoredState(input, await this.host.workspaces());
+      const restored = restoredState(input, await this.host.workspaces(), this.persistence.get());
       if (restored.blockers.length) throw new WorkbaseError('binding-conflict', restored.blockers.join('；'));
       const next = restored.value;
       next.revision = before.revision + 1;
@@ -540,13 +477,13 @@ export class WorkbaseService {
       await beforeWrite(before);
       try {
         await this.persistence.set(next);
-        if (JSON.stringify(this.persistence.get()) !== JSON.stringify(next)) throw new Error('恢复持久化校验失败');
+        assertPersisted(this.persistence.get(), next, '恢复持久化校验失败');
       }
       catch (error) {
         try {
           const rollback = { ...before, revision: before.revision + 2 };
           await this.persistence.set(rollback);
-          if (JSON.stringify(this.persistence.get()) !== JSON.stringify(rollback)) throw new Error('恢复回滚校验失败');
+          assertPersisted(this.persistence.get(), rollback, '恢复回滚校验失败');
         } catch {
           this.migrationStorageUnknown = true;
           throw new WorkbaseError('rollback-failed', '恢复写入及自动回滚均失败，请使用保留的加密回滚副本');
@@ -561,6 +498,34 @@ export class WorkbaseService {
     const pending = this.queue.then(run);
     this.queue = pending.catch(() => undefined);
     return pending;
+  }
+  /** 只读通道：不做整份克隆、不做变更检测，避免读操作承担写路径的比较成本。
+   * 绑定对齐只在实际漂移时补一次落盘，正常读路径不写盘。 */
+  private async read<T>(run: (state: State, workspaces: HostWorkspace[]) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+    return this.serial(async () => {
+      this.assertMigrationStorage();
+      signal?.throwIfAborted();
+      const workspaces = await this.workspaces();
+      await this.ensureBindings(workspaces);
+      signal?.throwIfAborted();
+      return run(this.persistence.get(), workspaces);
+    });
+  }
+  /** 绑定对齐只在实际漂移时补一次落盘；正常读路径不写盘。 */
+  private async ensureBindings(workspaces: HostWorkspace[]): Promise<void> {
+    if (!this.needsReconcile(this.persistence.get(), workspaces)) return;
+    const next = structuredClone(this.persistence.get());
+    this.reconcile(next, workspaces);
+    next.revision = next.revision + 1;
+    await this.persistence.set(stateSchema.parse(next));
+  }  /** 宿主工作区与绑定发生漂移（新增、路径变化、待导入占位）时读路径才需要对齐。 */
+  private needsReconcile(state: State, workspaces: HostWorkspace[]): boolean {
+    if (this.pendingImports.size > 0) return true;
+    return workspaces.some(workspace => {
+      if (state.pendingImports.some(item => item.workspaceId === workspace.workspaceId || item.path === workspace.path)) return false;
+      const existing = state.bindings.find(b => b.workspaceId === workspace.workspaceId);
+      return !existing || existing.path !== workspace.path;
+    });
   }
   async configureSessionModel(input: { projectId: string; sessionId: string; provider: string; model: string }, signal: AbortSignal) {
     return this.change(async (state, workspaces) => {
@@ -587,7 +552,9 @@ export class WorkbaseService {
       try {
         result = await run(next, workspaces);
         signal?.throwIfAborted();
-        if (JSON.stringify(next) !== JSON.stringify(current)) {
+        // 变更检测与读回核验（assertPersisted）一样按结构化深等比较，
+        // 不受键序或 undefined 字段序列化差异影响，只关心「有没有真实改动」。
+        if (!isDeepStrictEqual(next, current)) {
           next.revision = current.revision + 1;
           await this.persistence.set(stateSchema.parse(next));
         }
@@ -595,7 +562,7 @@ export class WorkbaseService {
         if (onFailure) {
           // 某些持久化适配器先改内存再等待落盘，失败时同时撤销偏好和文件。
           let stateFailed = false;
-          if (JSON.stringify(this.persistence.get()) !== JSON.stringify(current)) {
+          if (!isDeepStrictEqual(this.persistence.get(), current)) {
             try { await this.persistence.set(current); } catch { stateFailed = true; this.migrationStorageUnknown = true; }
           }
           await onFailure();
@@ -627,7 +594,7 @@ export class WorkbaseService {
     }
   }
   private writable(state: State, workspaces: HostWorkspace[], projectId: string, actor = userActor, allowMigratedSource = false): Binding {
-    identity(projectId);
+    assertProjectId(projectId);
     if (!allowMigratedSource && migrationTarget(state, projectId))
       throw new WorkbaseError('migrated', '项目已迁入其他项目，请在目标项目查看迁移记录');
     const b = state.bindings.find(b => b.projectId === projectId && !b.retired && !b.removed);
@@ -636,6 +603,24 @@ export class WorkbaseService {
     if (actor.kind === 'agent' && actor.workspaceId !== b.workspaceId)
       throw new WorkbaseError('forbidden', 'Agent 只能操作当前项目');
     return b;
+  }
+  /** 绑定对应的工作区：writable() 已核验 workspaceId 与 path 一致，这里只承担查找与失败分支，
+   * 不再让每个调用方各自 find(...)! 去依赖那次核验。 */
+  private requireWorkspace(workspaces: HostWorkspace[], workspaceId: string): HostWorkspace {
+    const workspace = workspaces.find(w => w.workspaceId === workspaceId);
+    if (!workspace) throw new WorkbaseError('binding-unavailable', '项目绑定不可用，请刷新或处理绑定冲突');
+    return workspace;
+  }
+  private boundWorkspace(workspaces: HostWorkspace[], binding: Binding): HostWorkspace {
+    return this.requireWorkspace(workspaces, binding.workspaceId);
+  }
+  /** 会话归属判定：工作区会话列表优先，工作树会话按项目登记放行。
+   * 各入口只决定失败时的错误码与文案，判定口径集中在这里。 */
+  private assertSessionInProject(state: State, workspace: HostWorkspace, projectId: string, sessionId: string,
+    message = '会话不属于当前项目') {
+    if (workspace.sessionIds.includes(sessionId)) return;
+    if (state.worktreeSessions.some(s => s.sessionId === sessionId && s.projectId === projectId)) return;
+    throw new WorkbaseError('forbidden', message);
   }
   async snapshot(signal?: AbortSignal): Promise<Snapshot> {
     // 会话读取失败时不提交半份同步，也不把前端已有结果替换为空列表。
@@ -811,11 +796,11 @@ export class WorkbaseService {
       if (!old) throw new WorkbaseError('not-found', '待办不存在');
       if (old.version !== input.expectedVersion) throw new WorkbaseError('conflict', '待办已经变化，请刷新后重试');
       state.todos = state.todos.filter(t => t.id !== old.id || t.projectId !== old.projectId);
-      undo = { token: this.uuid(), todo: structuredClone(old), expiresAt: this.now() + 5000 };
+      undo = { token: this.uuid(), todo: structuredClone(old), expiresAt: this.now() + TODO_UNDO_MS };
       return { deleted: true, undoToken: undo.token, undoExpiresAt: undo.expiresAt };
     }, signal, result => {
       if (undo) {
-        undo.expiresAt = this.now() + 5000; result.undoExpiresAt = undo.expiresAt;
+        undo.expiresAt = this.now() + TODO_UNDO_MS; result.undoExpiresAt = undo.expiresAt;
         if (actor.kind === 'user') this.deletedTodo = undo;
       }
     });
@@ -840,7 +825,7 @@ export class WorkbaseService {
   }
   async listForAgent(workspaceId: string, signal?: AbortSignal, filter: TodoFilter = {}) {
     const options = todoFilterSchema.parse(filter);
-    return this.change((state, workspaces) => {
+    return this.read((state, workspaces) => {
       const binding = state.bindings.find(b => b.workspaceId === workspaceId && !b.retired);
       if (!binding) throw new WorkbaseError('binding-unavailable', '当前项目绑定不可用');
       this.writable(state, workspaces, binding.projectId, { kind: 'agent', workspaceId });
@@ -853,11 +838,25 @@ export class WorkbaseService {
         ({ ...todo, imageCount: images.length, attachmentCount: images.length + attachments.length })) : todos };
     }, signal);
   }
+  /** 写入类工具只需要当前工作区的项目身份；为此列出整份待办既浪费一次扫描，也让 projectId 落地得更早。 */
+  async projectForAgent(workspaceId: string, signal?: AbortSignal): Promise<{ projectId: string }> {
+    return this.read((state, workspaces) => {
+      const binding = state.bindings.find(b => b.workspaceId === workspaceId && !b.retired);
+      if (!binding) throw new WorkbaseError('binding-unavailable', '当前项目绑定不可用');
+      this.writable(state, workspaces, binding.projectId, { kind: 'agent', workspaceId });
+      return { projectId: binding.projectId };
+    }, signal);
+  }
   async getForAgent(workspaceId: string, id: string, signal?: AbortSignal): Promise<Todo> {
     const result = await this.listForAgent(workspaceId, signal);
     const todo = result.todos.find(t => t.id === id);
     if (!todo || !('note' in todo)) throw new WorkbaseError('not-found', '待办不存在');
     return todo;
+  }
+  /** 附件配额：图片与通用附件共用一个上限；文案里的数字取自 shared/todo.ts 的常量，改配额时无需再同步字面量。 */
+  private assertTodoAttachmentQuota(todo: { images: TodoImage[]; attachments?: TodoAttachment[] }) {
+    if (todoAttachments(todo).length >= MAX_TODO_IMAGES)
+      throw new WorkbaseError('invalid', `每个待办最多${MAX_TODO_IMAGES}个附件`);
   }
   private imageTodo(state: State, workspaces: HostWorkspace[],
     input: { projectId: string; id: string; expectedVersion?: number }, actor: Actor, write: boolean) {
@@ -872,11 +871,13 @@ export class WorkbaseService {
   async uploadTodoImage(input: { projectId: string; id: string; expectedVersion: number },
     data: Uint8Array, mediaType: string, actor = userActor, signal?: AbortSignal) {
     if (!this.host.saveTodoImage) throw new WorkbaseError('unsupported', '宿主未提供图片附件服务');
-    if (!data.length || data.length > MAX_TODO_IMAGE_BYTES) throw new WorkbaseError('invalid', '图片应小于等于10MiB');
+    // 上限文案与常量同源，改配额时不用再同步字面量。
+    if (!data.length || data.length > MAX_TODO_IMAGE_BYTES)
+      throw new WorkbaseError('invalid', `图片应小于等于${MAX_TODO_IMAGE_BYTES / 1024 / 1024}MiB`);
     const type = todoImageSchema.shape.mediaType.parse(mediaType);
     return this.change(async (state, workspaces) => {
       const todo = this.imageTodo(state, workspaces, input, actor, true);
-      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      this.assertTodoAttachmentQuota(todo);
       const image = todoImageSchema.parse(await this.host.saveTodoImage!(data, type));
       if (!todo.images.some(i => i.attachmentId === image.attachmentId)) todo.images.push(image);
       todo.version++; todo.updatedAt = this.now();
@@ -887,7 +888,7 @@ export class WorkbaseService {
     read: () => Promise<TodoImage>, actor: Actor, signal: AbortSignal) {
     return this.change(async (state, workspaces) => {
       const todo = this.imageTodo(state, workspaces, input, actor, true);
-      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      this.assertTodoAttachmentQuota(todo);
       const image = todoImageSchema.parse(await read());
       if (!todo.images.some(i => i.attachmentId === image.attachmentId)) todo.images.push(image);
       todo.version++; todo.updatedAt = this.now();
@@ -906,7 +907,7 @@ export class WorkbaseService {
   }
   async readImage(input: { projectId: string; id: string; attachmentId: string }, actor = userActor,
     signal = new AbortController().signal) {
-    return this.change(async (state, workspaces) => {
+    return this.read(async (state, workspaces) => {
       const todo = this.imageTodo(state, workspaces, input, actor, false);
       const image = todo.images.find(i => i.attachmentId === input.attachmentId);
       if (!image) throw new WorkbaseError('not-found', '图片不存在');
@@ -927,7 +928,7 @@ export class WorkbaseService {
     read: () => Promise<TodoAttachment>, actor = userActor, signal?: AbortSignal) {
     return this.change(async (state, workspaces) => {
       const todo = this.imageTodo(state, workspaces, input, actor, true);
-      if (todoAttachments(todo).length >= MAX_TODO_IMAGES) throw new WorkbaseError('invalid', '每个待办最多10个附件');
+      this.assertTodoAttachmentQuota(todo);
       const attachment = todoAttachmentSchema.parse(await read());
       if (!todoAttachments(todo).some(a => a.attachmentId === attachment.attachmentId))
         todo.attachments.push(attachment);
@@ -949,7 +950,7 @@ export class WorkbaseService {
   }
   async readAttachment(input: { projectId: string; id: string; attachmentId: string }, actor = userActor,
     signal = new AbortController().signal) {
-    return this.change(async (state, workspaces) => {
+    return this.read(async (state, workspaces) => {
       const todo = this.imageTodo(state, workspaces, input, actor, false);
       const attachment = todoAttachments(todo).find(a => a.attachmentId === input.attachmentId);
       if (!attachment) throw new WorkbaseError('not-found', '附件不存在');
@@ -999,7 +1000,7 @@ export class WorkbaseService {
   async setMark(input: { projectId: string; sessionId?: string; field: 'pinned' | 'favorite'; value: boolean }) {
     return this.change((state, workspaces) => {
       const b = this.writable(state, workspaces, input.projectId);
-      const w = workspaces.find(w => w.workspaceId === b.workspaceId)!;
+      const w = this.boundWorkspace(workspaces, b);
       if (input.sessionId && !w.sessionIds.includes(input.sessionId)) throw new WorkbaseError('forbidden', '会话不属于当前项目');
       const marks = input.sessionId ? state.sessionMarks : state.projectMarks;
       const key = input.sessionId ?? input.projectId;
@@ -1017,7 +1018,7 @@ export class WorkbaseService {
   }
   async saveTerminalPalette(expected: TerminalPalette, value: TerminalPalette) {
     return this.change(state => {
-      if (JSON.stringify(state.preferences.terminalPalette) !== JSON.stringify(expected))
+      if (!isDeepStrictEqual(state.preferences.terminalPalette, expected))
         throw new WorkbaseError('conflict', '终端配色已在其他窗口修改，请重新打开设置。');
       if (value.mode !== 'follow' && !resolveTerminalColors(value))
         throw new WorkbaseError('invalid', '请先下载 Catppuccin 色板。');
@@ -1032,7 +1033,7 @@ export class WorkbaseService {
       const previous = structuredClone(state.preferences.rules);
       let rules: ProjectRules | undefined;
       if (options?.rules !== undefined) {
-        if (!options.expectedRules || JSON.stringify(previous) !== JSON.stringify(projectRulesSchema.parse(options.expectedRules)))
+        if (!options.expectedRules || !isDeepStrictEqual(previous, projectRulesSchema.parse(options.expectedRules)))
           throw new WorkbaseError('conflict', '规则已在其他窗口修改，请重新打开设置');
         rules = projectRulesSchema.parse(options.rules);
       }
@@ -1067,7 +1068,7 @@ export class WorkbaseService {
     return this.change(async (state, workspaces) => {
       this.assertRevision(state, expectedRevision);
       const previous = structuredClone(state.preferences.rules);
-      if (JSON.stringify(previous) !== JSON.stringify(projectRulesSchema.parse(expectedRules)))
+      if (!isDeepStrictEqual(previous, projectRulesSchema.parse(expectedRules)))
         throw new WorkbaseError('conflict', '规则已在其他窗口修改，请重新打开设置');
       receipt = await this.applyRules(state, workspaces, previous, projectRulesSchema.parse(rules));
       return { saved: true, revision: state.revision };
@@ -1086,7 +1087,7 @@ export class WorkbaseService {
   }
   private async transitionMigrationRules(before: State, next: State) {
     const previous = this.effectiveRules(before), rules = this.effectiveRules(next);
-    if (JSON.stringify(previous) === JSON.stringify(rules)) return;
+    if (isDeepStrictEqual(previous, rules)) return;
     const ids = new Set([...previous.projects, ...rules.projects].filter(r => r.enabled).flatMap(r => r.projectIds));
     const targets = [...ids].map(projectId => {
       const binding = next.bindings.find(b => b.projectId === projectId && !b.retired && !b.removed);
@@ -1098,15 +1099,15 @@ export class WorkbaseService {
     return this.host.saveRules(previous, rules, targets);
   }
   private async applyRules(state: State, workspaces: HostWorkspace[], previous: ProjectRules, rules: ProjectRules) {
-    if (JSON.stringify(rules) === JSON.stringify(previous)) return;
+    if (isDeepStrictEqual(rules, previous)) return;
     const targets: RuleTarget[] = [];
     const oldEffective = this.effectiveRules(state, previous), newEffective = this.effectiveRules(state, rules, true);
     const ids = new Set([...oldEffective.projects, ...newEffective.projects].filter(rule => rule.enabled).flatMap(rule => rule.projectIds));
     for (const projectId of ids) {
-      const effective = (value: ProjectRules) => JSON.stringify(value.projects
+      const effective = (value: ProjectRules) => value.projects
         .filter(rule => rule.enabled && rule.projectIds.includes(projectId))
-        .map(rule => ({ name: rule.name, content: rule.content.trim() })));
-      if (effective(oldEffective) === effective(newEffective)) continue;
+        .map(rule => ({ name: rule.name, content: rule.content.trim() }));
+      if (isDeepStrictEqual(effective(oldEffective), effective(newEffective))) continue;
       const migrated = migrationTarget(state, projectId);
       const binding = migrated ? state.bindings.find(b => b.projectId === projectId && !b.retired && !b.removed)
         : this.writable(state, workspaces, projectId);
@@ -1141,7 +1142,7 @@ export class WorkbaseService {
         await this.persistence.set(stateSchema.parse(state));
         throw new WorkbaseError('remove-unconfirmed', '原项目登记仍在，已确认未移除；请重新操作');
       }
-      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
+      const workspace = this.boundWorkspace(workspaces, binding);
       const sessions = await this.host.sessions();
       if (sessions.some(s => workspace.sessionIds.includes(s.sessionId) && s.running))
         throw new WorkbaseError('running', '项目仍有运行中会话，请先停止运行');
@@ -1238,8 +1239,24 @@ export class WorkbaseService {
   }
   async searchSessions(query: string, signal: AbortSignal): Promise<SessionSearch> {
     if (!this.host.search) throw new WorkbaseError('unsupported', '当前宿主不支持会话全文检索');
-    const snapshot = await this.snapshot(signal);
-    const visible = new Set(snapshot.projects.flatMap(p => p.sessions.map(s => s.sessionId)));
+    // 搜索只需要可见会话集合：不跑完整快照，也就不跑诊断与迁移核对。
+    const visible = await this.serial(async () => {
+      signal.throwIfAborted();
+      const workspaces = await this.workspaces();
+      await this.ensureBindings(workspaces);
+      const state = this.persistence.get();
+      const ids = new Set<string>();
+      for (const workspace of workspaces) {
+        const binding = state.bindings.find(b => b.workspaceId === workspace.workspaceId
+          && !b.retired && !b.removed && b.path === workspace.path);
+        if (!binding) continue;
+        for (const sessionId of workspace.sessionIds) ids.add(sessionId);
+      }
+      for (const item of state.worktreeSessions) {
+        if (state.bindings.some(b => b.projectId === item.projectId && !b.retired && !b.removed)) ids.add(item.sessionId);
+      }
+      return ids;
+    });
     const results = await this.host.search(query, signal, [...visible]);
     return { items: results.items.filter(item => visible.has(item.sessionId)), hasMore: results.hasMore };
   }
@@ -1254,11 +1271,9 @@ export class WorkbaseService {
       if (matches.length !== 1) throw new WorkbaseError('binding-unavailable', '原生输入的项目关联不可用');
       const binding = this.writable(state, workspaces, matches[0]!.projectId);
       assertWritable(binding);
-      const workspace = workspaces.find(w => w.workspaceId === workspaceId)!;
+      const workspace = this.requireWorkspace(workspaces, workspaceId);
       if (!workspace.available) throw new WorkbaseError('directory-unavailable', '项目目录不可用');
-      if (sessionId && !workspace.sessionIds.includes(sessionId)
-        && !state.worktreeSessions.some(s => s.sessionId === sessionId && s.projectId === binding.projectId))
-        throw new WorkbaseError('forbidden', '原生会话不属于当前项目');
+      if (sessionId) this.assertSessionInProject(state, workspace, binding.projectId, sessionId, '原生会话不属于当前项目');
       return { projectId: binding.projectId, revision: state.revision, ...(hold ? { token: this.uuid() } : {}) };
     }, signal, result => {
       result.revision = this.persistence.get().revision;
@@ -1276,13 +1291,11 @@ export class WorkbaseService {
       this.reconcile(state, workspaces);
       const binding = this.writable(state, workspaces, projectId);
       assertWritable(binding);
-      if (!workspaces.find(w => w.workspaceId === binding.workspaceId)?.available)
+      if (!this.requireWorkspace(workspaces, binding.workspaceId).available)
         throw new WorkbaseError('directory-unavailable', '项目目录不可用，请先修复目录');
       const validate = async (sessionId: string) => {
-        const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
-        if (!workspace.sessionIds.includes(sessionId)
-          && !state.worktreeSessions.some(s => s.projectId === projectId && s.sessionId === sessionId))
-          throw new WorkbaseError('forbidden', '重试会话不属于当前项目');
+        this.assertSessionInProject(state, this.requireWorkspace(workspaces, binding.workspaceId), projectId, sessionId,
+          '重试会话不属于当前项目');
         if (!(await this.host.sessions()).some(s => s.sessionId === sessionId))
           throw new WorkbaseError('not-found', '重试会话已不存在，请核对原创建结果');
         return { sessionId };
@@ -1327,9 +1340,9 @@ export class WorkbaseService {
   async gitBranches(projectId: string, signal: AbortSignal = new AbortController().signal): Promise<GitBranches> {
     if (!this.host.gitBranches) throw new WorkbaseError('unsupported', '当前宿主不支持读取 Git 分支');
     signal.throwIfAborted();
-    return this.change(async (state, workspaces) => {
+    return this.read(async (state, workspaces) => {
       const binding = this.writable(state, workspaces, projectId);
-      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
+      const workspace = this.boundWorkspace(workspaces, binding);
       return this.host.gitBranches!(workspace.path, signal);
     }, signal);
   }
@@ -1338,12 +1351,10 @@ export class WorkbaseService {
     return this.change(async (state, workspaces) => {
       const binding = this.writable(state, workspaces, input.projectId);
       assertWritable(binding);
-      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
+      const workspace = this.boundWorkspace(workspaces, binding);
       if (!workspace.available) throw new WorkbaseError('directory-unavailable', '项目目录不可用');
       // 工作树会话不在工作区 sessionIds 里，按 worktreeSessions 登记放行。
-      if (!workspace.sessionIds.includes(input.sessionId)
-        && !state.worktreeSessions.some(w => w.sessionId === input.sessionId && w.projectId === input.projectId))
-        throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      this.assertSessionInProject(state, workspace, input.projectId, input.sessionId);
       await this.host.submit!(input, signal);
       return { accepted: true };
     }, signal);
@@ -1353,9 +1364,7 @@ export class WorkbaseService {
     return this.change(async (state, workspaces) => {
       const binding = this.writable(state, workspaces, projectId);
       assertWritable(binding);
-      if (!workspaces.find(w => w.workspaceId === binding.workspaceId)!.sessionIds.includes(sessionId)
-        && !state.worktreeSessions.some(w => w.sessionId === sessionId && w.projectId === projectId))
-        throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      this.assertSessionInProject(state, this.boundWorkspace(workspaces, binding), projectId, sessionId);
       await this.host.renameSession!(sessionId, title);
       return { saved: true };
     });
@@ -1371,9 +1380,8 @@ export class WorkbaseService {
       if (receipt && (receipt.projectId !== projectId || receipt.workspaceId !== binding.workspaceId
         || receipt.path !== binding.path))
         throw new WorkbaseError('forbidden', '删除回执的会话归属不属于当前项目');
-      if (!receipt && !workspaces.find(w => w.workspaceId === binding.workspaceId)!.sessionIds.includes(sessionId)
-        && !state.worktreeSessions.some(w => w.sessionId === sessionId && w.projectId === projectId))
-        throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      // 已落盘删除回执时不重复判定归属：回执自身的三元组已在上方核验。
+      if (!receipt) this.assertSessionInProject(state, this.boundWorkspace(workspaces, binding), projectId, sessionId);
       const session = (await this.host.sessions()).find(s => s.sessionId === sessionId);
       if (!session && !receipt) throw new WorkbaseError('not-found', '会话已不存在，请刷新');
       if (session?.running) throw new WorkbaseError('running', '请先停止运行中的会话，再永久删除');
@@ -1421,20 +1429,17 @@ export class WorkbaseService {
     if (!this.host.reveal) throw new WorkbaseError('unsupported', '当前宿主不支持打开目录');
     return this.change(async (state, workspaces) => {
       const binding = this.writable(state, workspaces, projectId);
-      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
-      await this.host.reveal!(workspace.path);
+      await this.host.reveal!(this.boundWorkspace(workspaces, binding).path);
       return { revealed: true };
     });
   }
   async sessionPreview(input: { projectId: string; sessionId: string }, signal: AbortSignal = new AbortController().signal): Promise<SessionPreview> {
     if (!this.host.readSession) throw new WorkbaseError('unsupported', '当前宿主不支持会话预览');
     signal.throwIfAborted();
-    return this.change(async (state, workspaces) => {
+    return this.read(async (state, workspaces) => {
       const binding = this.writable(state, workspaces, input.projectId);
-      const workspace = workspaces.find(w => w.workspaceId === binding.workspaceId)!;
-      if (!workspace.sessionIds.includes(input.sessionId)
-        && !state.worktreeSessions.some(w => w.sessionId === input.sessionId && w.projectId === input.projectId))
-        throw new WorkbaseError('forbidden', '会话不属于当前项目');
+      const workspace = this.boundWorkspace(workspaces, binding);
+      this.assertSessionInProject(state, workspace, input.projectId, input.sessionId);
       const [content, sessions] = await Promise.all([
         this.host.readSession!(input.sessionId, signal), this.host.sessions(signal),
       ]);

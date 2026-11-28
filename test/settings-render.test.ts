@@ -2,8 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { readFile } from 'node:fs/promises';
 import { Settings } from '../src/client/Settings.js';
-import { BackupSettings } from '../src/client/BackupSettings.js';
+import { ExtensionSettings, sessionIsolationView } from '../src/client/ExtensionSettings.js';
+import { SettingsSubtabs } from '../src/client/settings-subtabs.js';
+import { defaultExtensionConfig } from '../src/shared/extensions.js';
+import { BackupSettings, coverageLabel } from '../src/client/BackupSettings.js';
 import { ProjectRulesSettings } from '../src/client/ProjectRulesSettings.js';
 import { initialState, type Snapshot } from '../src/shared/model.js';
 
@@ -165,4 +169,50 @@ test('项目初始化二级菜单包含分组及导入补齐，全局页只保�
     assert.doesNotMatch(global, /<details|<summary|自定义提交规则|恢复默认提交规则/);
     assert.doesNotMatch(global, /<label[^>]*>提交规则内容<\/label>/);
   }
+});
+
+test('扩展配置二级页签复用设置页签控件，不再手写键盘公式', async () => {
+  const source = await readFile(new URL('../src/client/ExtensionSettings.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /ArrowLeft/, '不再手写键盘导航');
+  assert.doesNotMatch(source, /% 3/, '不再硬编码页签数量');
+  assert.match(source, /<SettingsSubtabs /);
+  const html = renderToStaticMarkup(createElement(ExtensionSettings, {
+    value: defaultExtensionConfig(), onChange: () => {}, disabled: false, tab: 'mcp', onTabChange: () => {},
+  }));
+  const shared = renderToStaticMarkup(createElement(SettingsSubtabs, {
+    scope: 'extension', idPrefix: 'wb-extension', label: '扩展配置分类', value: 'mcp',
+    options: [{ value: 'skills', label: '技能' }, { value: 'mcp', label: '连接器' }, { value: 'rss', label: '订阅' }],
+    onChange: () => {},
+  }));
+  assert.ok(html.includes(shared), '扩展配置页签与设置页签由同一控件渲染');
+});
+test('连接器能力读取失败不冒充宿主不支持会话隔离，并可重试', async () => {
+  const source = await readFile(new URL('../src/client/ExtensionSettings.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /\.catch\(\(\) => \{\}\)/, '读取失败不得静默吞掉');
+  assert.match(source, /setMcpError/, '读取失败要留下可显示的原因');
+  assert.match(source, /setAttempt/, '要能重试');
+  const failed = sessionIsolationView(false, '连接器能力读取失败');
+  assert.equal(failed.retry, true);
+  assert.equal(failed.unsupported, false, '读失败不算确认不支持');
+  assert.match(failed.help, /读取失败/);
+  assert.doesNotMatch(failed.help, /不支持会话隔离/);
+  const confirmed = sessionIsolationView(false, '');
+  assert.equal(confirmed.unsupported, true);
+  assert.equal(confirmed.retry, false);
+  assert.match(confirmed.help, /不支持会话隔离/);
+  assert.deepEqual(sessionIsolationView(true, ''), { help: '', unsupported: false, retry: false });
+});
+test('备份覆盖明细用用户能理解的措辞替代内部术语「观察副本」', async () => {
+  assert.equal(coverageLabel.observation, '运行中读取');
+  assert.equal(coverageLabel.verified, '已校验');
+  const panel = await readFile(new URL('../src/client/BackupSettings.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(panel, /观察副本/);
+  const dict = await readFile(new URL('../src/client/i18n-en.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(dict, /观察副本/, '词典不再保留内部术语');
+  assert.match(dict, /运行中读取\|/);
+  const backup = await readFile(new URL('../src/server/backup.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(backup, /文件观察副本/);
+  assert.match(backup, /运行中读取，与磁盘写入并发时不保证一致/);
+  const sources = await readFile(new URL('../src/server/backup-sources.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(sources, /文件观察副本/);
 });

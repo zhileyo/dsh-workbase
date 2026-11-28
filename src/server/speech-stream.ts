@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEEPSEEK_TTS_ENDPOINT } from '../shared/speech.js';
 import { WorkbaseError } from '../shared/model.js';
 
 export interface SpeechSocket extends EventTarget {
@@ -28,7 +29,9 @@ export class SpeechStream {
       start: controller => { this.output = controller; },
       cancel: () => { this.end(); },
     }, { highWaterMark: 8 * 1024 * 1024, size: chunk => chunk.byteLength });
-    const url = new URL('wss://api.deepseek.com/v1/tools/tts');
+    // 与 schema 校验的端点同源：换协议而不另写字面量，地址或路径变更时两处不会漂移。
+    const url = new URL(DEEPSEEK_TTS_ENDPOINT);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     url.search = new URLSearchParams({ voice_id: voice, format: 'pcm', filter_markdown: String(filterMarkdown) }).toString();
     try { this.socket = factory(url.href, ['tts', `bearer.${key}`]); }
     catch { throw new WorkbaseError('unavailable', '流式播报连接失败'); }

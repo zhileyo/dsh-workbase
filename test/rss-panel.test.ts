@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { RssArticleList, RssNavigation, RssReading } from '../src/client/RssPanel.js';
+import { RssArticleList, RssNavigation, RssReading, keepArticleBodies, rssGroupNameConflict } from '../src/client/RssPanel.js';
 import type { RssSnapshot } from '../src/shared/rss.js';
 import { setLanguage, errorText } from '../src/client/i18n.js';
 import { rssReadingMarkdown } from '../src/client/rss-reading.js';
@@ -128,4 +128,55 @@ test('known RSS issues follow UI language but user content remains verbatim', ()
     const reading = renderToStaticMarkup(createElement(RssReading, { article: { ...snapshot.articles[0]!, body: '缓存不可用，请重新刷新' } }));
     assert.match(reading, /缓存不可用，请重新刷新/, 'user body is never translated as a known error');
   } finally { setLanguage('zh'); }
+});
+
+test('轮询投影不覆盖已读到的正文，序列变化时才丢弃旧正文', () => {
+  const known = [{ ...snapshot.articles[0]!, id: 'a', sequence: 1, body: '已读正文' }];
+  const light = [{ ...snapshot.articles[0]!, id: 'a', sequence: 1, body: '', title: '新标题' }];
+  const merged = keepArticleBodies(known, light);
+  assert.equal(merged[0]!.body, '已读正文');
+  assert.equal(merged[0]!.title, '新标题');
+  assert.equal(keepArticleBodies(known, [{ ...light[0]!, sequence: 2 }])[0]!.body, '');
+});
+
+test('RSS 分组名保留判定按协议名与当前语言显示名同时拦截', () => {
+  try {
+    setLanguage('zh');
+    assert.equal(rssGroupNameConflict('默认分组', [], 'g1'), true, '协议内的保留名始终拦截');
+    assert.equal(rssGroupNameConflict('Default group', [], 'g1'), false, '中文界面下英文名不是保留名');
+    setLanguage('en');
+    assert.equal(rssGroupNameConflict('Default group', [], 'g1'), true, '英文界面下用户看到的保留名同样拦截');
+    assert.equal(rssGroupNameConflict('All subscriptions', [], 'g1'), true);
+    assert.equal(rssGroupNameConflict('未分组', [], 'g1'), true, '协议名跨语言始终保留');
+    assert.equal(rssGroupNameConflict('技术周刊', [], 'g1'), false);
+    assert.equal(rssGroupNameConflict('', [], 'g1'), true, '空名拦截');
+    assert.equal(rssGroupNameConflict('同名', [{ id: 'g2', name: '同名' }], 'g1'), true, '其它分组重名拦截');
+    assert.equal(rssGroupNameConflict('同名', [{ id: 'g1', name: '同名' }], 'g1'), false, '改自己名字不拦截');
+  } finally { setLanguage('zh'); }
+});
+test('文章列表按一次小写文本匹配全部关键词，不为每个关键词重复拼接', () => {
+  const feed = { id: 'f1', name: '技术周刊', groupId: undefined, enabled: true, revision: 1, url: 'https://example.org/feed' };
+  const many: RssSnapshot = {
+    ...snapshot,
+    feeds: [feed] as any,
+    articles: Array.from({ length: 200 }, (_, index) => ({
+      ...(snapshot.articles[0] as any), id: `a-${index}`, sequence: index + 1,
+      title: `第 ${index} 篇 需要 内容`, summary: '三个 关键词', feedId: 'f1',
+    })),
+  };
+  const original = String.prototype.toLocaleLowerCase;
+  let calls = 0;
+  String.prototype.toLocaleLowerCase = function counting(this: string, ...rest: unknown[]) {
+    calls += 1;
+    return (original as (...args: unknown[]) => string).apply(this, rest);
+  };
+  try {
+    const html = renderToStaticMarkup(createElement(RssArticleList, {
+      snapshot: many, query: { query: '需要 三个 关键词' }, onRead() {}, onFeed() {},
+    }));
+    assert.equal((html.match(/rss-article-row/g) ?? []).length, 200);
+    assert.ok(calls <= 205, `小写转换次数应为按文章的常数级，实际 ${calls}`);
+  } finally {
+    String.prototype.toLocaleLowerCase = original;
+  }
 });

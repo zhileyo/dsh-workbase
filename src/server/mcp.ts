@@ -1,14 +1,15 @@
-import { mkdir, readFile, rename, writeFile, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Context } from '@deepseek-ai/cordis';
 import type { Project } from '../shared/model.js';
 import { builtinMcpSource, mcpConfigSchema, mcpDefaults, mcpRedactedConfig, type McpConfig, type McpConnection,
-  redactMcpArgs, isMcpSecretArg, type McpConnectionView, type McpSnapshot, type McpSource, type McpTool, type McpCandidate } from '../shared/mcp.js';
+  redactMcpArgs, isMcpSecretArg, type McpConnectionView, type McpSnapshot, type McpSource, type McpTool } from '../shared/mcp.js';
 import { createMcpBackend, McpCleanupError } from './mcp-host.js';
 import { beginMcpOAuth, mcpGrantKey, refreshMcpOAuth, type McpOAuthVault, type McpAuthorization } from './mcp-oauth.js';
-import { loadMcpMarket } from './mcp-market.js';
+import { marketSourceAllowed } from './mcp-market.js';
+import { McpMarketCache } from './mcp-market-cache.js';
 
 export interface McpRuntimeUpdate {
   state: McpConnectionView['state']; issue?: string; tools?: Omit<McpTool, 'enabled'>[];
@@ -18,8 +19,14 @@ export interface McpLease { dispose(): Promise<void> }
 export interface McpBackend {
   credentials?: { set(ref: string, value: string): Promise<void>; unset(ref: string): Promise<void> };
   oauthVault?: McpOAuthVault;
+  /** 官方客户端不可用的真实原因；undefined 表示纯能力缺失（宿主确实没提供这个包）。 */
+  issue?: string;
+  /**
+   * sessionId 是 agent.session.id，既可能命中登记项目的 workspaceId，也可能命中它的 sessionIds，
+   * 参数名按真实语义命名，不要按名字「修正」成只比对工作区。
+   */
   connect?(record: McpConnection, publish: (update: McpRuntimeUpdate) => void,
-    signal: AbortSignal, allowed: (workspaceId: string | undefined, publicName: string) => boolean): Promise<McpLease>;
+    signal: AbortSignal, allowed: (sessionId: string | undefined, publicName: string) => boolean): Promise<McpLease>;
   foreign?(): { name: string; source: string; readonly: true }[];
 }
 export interface McpManagerOptions {
@@ -33,58 +40,28 @@ interface Runtime {
   cleanupUnconfirmed?: boolean;
 }
 const inputObject = z.record(z.string(), z.unknown());
+const isolationIssue = '按会话隔离没有当前官方公开契约；OAuth 使用 PKCE 与官方凭据库';
 // 引用包含 HEADER / ENV / ARG / AUTH / OAUTH 后缀，不仅是十六进制字符。
 const credentialRefPattern = /^WB_MCP_[A-Z0-9_]+$/;
 const sourceSchema = z.object({ id: z.string().optional(), name: z.string().trim().min(1).max(80),
   url: z.string().url(), enabled: z.boolean().default(true) });
 const storedSchema = z.object({ version: z.literal(1), connections: z.array(z.unknown()), sources: z.array(sourceSchema.extend({ id: z.string() })) });
-const marketCandidateSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{64}$/).optional(), name: z.string().min(1).max(80),
-  description: z.string().max(1000), issue: z.string().max(2000).optional(),
-  config: z.union([mcpConfigSchema, z.object({}).strict()]),
-  metadata: z.object({
-    description: z.string().max(12000), vendor: z.string().max(200), category: z.string().max(200),
-    homepage: z.string().max(2000), credentialName: z.string().max(200), credentialPlaceholder: z.string().max(500),
-    credentialDescription: z.string().max(4000), credentialHelpLabel: z.string().max(200), credentialHelpUrl: z.string().max(2000),
-    credentialFields: z.array(z.object({
-      key: z.string().max(200), label: z.string().max(200), placeholder: z.string().max(500),
-      description: z.string().max(1000), required: z.boolean(), secret: z.boolean(),
-      helpLabel: z.string().max(200), helpUrl: z.string().max(2000),
-      bindings: z.array(z.object({ target: z.enum(['env', 'headers']), name: z.string().max(200) })).max(100),
-    })).max(100),
-  }).optional(),
-});
-const marketCacheSchema = z.object({ version: z.literal(1), entries: z.array(z.object({
-  key: z.string().regex(/^[a-f0-9]{64}$/), candidates: z.array(marketCandidateSchema).max(500),
-})).max(20) });
-/** 仅公开已知错误类别，不能把上游错误中的地址、参数或凭据带到界面。 */
-function marketFailure(error: unknown) {
-  if (error instanceof Error) {
-    if (error.name === 'TimeoutError' || error.name === 'AbortError') return '请求超时';
-    if (error instanceof SyntaxError) return 'JSON 格式无效';
-    if (/^市场目录 HTTP \d{3}$/.test(error.message)) return error.message;
-    if (['市场目录格式不支持', '市场目录最大 2 MB', '市场目录没有响应内容', '市场分页游标无效'].includes(error.message))
-      return error.message;
-    if (error instanceof TypeError) return '网络连接失败';
-  }
-  return '目录读取失败';
-}
 export class McpManager {
   private records: McpConnection[] = [];
   private sources: McpSource[] = [];
   private backend: McpBackend = {};
   private readonly runtime = new Map<string, Runtime>();
   private readonly authorizations = new Map<string, { controller: AbortController; task?: McpAuthorization }>();
-  private marketCache = new Map<string, McpCandidate[]>();
   private tail: Promise<unknown> = Promise.resolve();
   private readonly ready: Promise<void>;
   private stopped = false;
   private readonly lifecycle = new AbortController();
   private readonly filename: string;
-  private readonly marketFilename: string;
+  private readonly marketCache: McpMarketCache;
   constructor(private readonly options: McpManagerOptions) {
     this.filename = path.join(options.home, 'workbase', 'mcp.json');
-    this.marketFilename = path.join(options.home, 'workbase', 'mcp-market.json');
+    // 市场目录缓存独立成类；lifecycle 是字段初始化的 AbortController，构造体内已可用。
+    this.marketCache = new McpMarketCache(path.join(options.home, 'workbase', 'mcp-market.json'), this.lifecycle.signal);
     this.ready = this.initialize();
     void this.ready.catch(() => undefined);
   }
@@ -113,12 +90,7 @@ export class McpManager {
     const sources = [...this.sources.filter(source => source !== existing), builtin];
     if (!existing || existing.name !== builtin.name || existing.url !== builtin.url) await this.persist(this.records, sources);
     else this.sources = sources;
-    try {
-      if ((await stat(this.marketFilename)).size <= 20 * 1024 * 1024) {
-        const cache = marketCacheSchema.parse(JSON.parse(await readFile(this.marketFilename, 'utf8')));
-        this.marketCache = new Map(cache.entries.map(entry => [entry.key, entry.candidates]));
-      }
-    } catch { /* 可重建的目录缓存缺失或损坏不影响连接配置，成功拉取后重新保存。 */ }
+    await this.marketCache.load();
     for (const record of this.records) this.start(record);
   }
   private queue<T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -160,9 +132,10 @@ export class McpManager {
     const publish = (update: McpRuntimeUpdate) => {
       if (controller.signal.aborted || this.runtime.get(record.id) !== runtime) return;
       runtime.update = { ...runtime.update, ...update };
-      if (update.state === 'connected') clearTimeout(runtime.timer);
+      // 看门狗只兜「握手还没有结果」：任何终态都必须停掉，否则等待授权的连接会被改写成超时错误。
+      if (update.state !== 'connecting') clearTimeout(runtime.timer);
     };
-    if (!this.backend.connect) { publish({ state: 'unavailable', issue: '缺少官方连接器客户端，不能建立连接' }); return; }
+    if (!this.backend.connect) { publish({ state: 'unavailable', issue: this.backend.issue ?? '缺少官方连接器客户端，不能建立连接' }); return; }
     runtime.timer = setTimeout(() => { publish({ state: 'error', issue: '连接握手或工具发现超时' }); controller.abort(); }, record.timeoutSeconds * 1000);
     runtime.timer.unref();
     runtime.done = (async () => {
@@ -189,12 +162,8 @@ export class McpManager {
           schedule();
         }
       }
-      return this.backend.connect!(record, publish, controller.signal, (workspaceId, name) => {
-      const current = this.records.find(r => r.id === record.id);
-      const project = this.options.projects().find(p => (p.workspaceId === workspaceId || p.sessionIds.includes(workspaceId ?? '')) && p.available && !p.archived);
-      return !!current && current.enabled && runtime.update.state === 'connected'
-        && !current.disabledTools.includes(name) && (current.scope === 'global' || !!project && current.projectIds.includes(project.projectId));
-      });
+      return this.backend.connect!(record, publish, controller.signal, (sessionId, name) =>
+        this.toolAllowed(record, runtime, sessionId, name));
     })().then(async lease => {
       runtime.lease = lease;
       if (controller.signal.aborted) await lease.dispose();
@@ -210,6 +179,14 @@ export class McpManager {
         ? 'OAuth 凭据缺失、过期或启动失败，需要重新授权'
         : '官方客户端启动、握手或工具注册失败，请检查服务与宿主诊断' });
     });
+  }
+  /** 工具授权判定：会话身份、项目归属、启用状态与连接状态只在这里合成一次。 */
+  private toolAllowed(record: McpConnection, runtime: Runtime, sessionId: string | undefined, publicName: string) {
+    const current = this.records.find(r => r.id === record.id);
+    const project = this.options.projects().find(p =>
+      (p.workspaceId === sessionId || p.sessionIds.includes(sessionId ?? '')) && p.available && !p.archived);
+    return !!current && current.enabled && runtime.update.state === 'connected'
+      && !current.disabledTools.includes(publicName) && (current.scope === 'global' || !!project && current.projectIds.includes(project.projectId));
   }
   private oauthTokenRef(record: McpConnection) {
     const ref = record.headers.Authorization?.match(/^\$\{credential:([A-Z0-9_]+)\}$/)?.[1];
@@ -248,7 +225,9 @@ export class McpManager {
       .filter(item => !this.records.some(record => record.prefix === item.name)),
       defaults: this.defaults(), capabilities: { connection: !!this.backend.connect, credentials: !!this.backend.credentials,
         oauth: !!this.backend.connect && !!this.backend.oauthVault && !!this.backend.credentials,
-        sessionIsolation: false, issue: '按会话隔离没有当前官方公开契约；OAuth 使用 PKCE 与官方凭据库' } };
+        sessionIsolation: false,
+        // 加载失败或导出契约变更要带上真实原因，不能伪装成「这台宿主没有这个能力」。
+        issue: this.backend.issue ? `${this.backend.issue}；${isolationIssue}` : isolationIssue } };
   }
   async summary() {
     const snapshot = await this.snapshot();
@@ -263,9 +242,7 @@ export class McpManager {
     if (method === 'market.cached') {
       await this.ready; signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
       const params = inputObject.parse(input), query = z.string().max(100).parse(params.query ?? '').trim();
-      return { candidates: this.sources.filter(source => source.enabled).flatMap(source =>
-        structuredClone(this.marketCache.get(this.marketKey(source, query)) ?? []).map(row => ({ ...row, sourceId: source.id }))),
-        errors: [] };
+      return this.marketCache.cached(this.sources, query);
     }
     return this.queue(async () => {
       const params = inputObject.parse(input);
@@ -306,7 +283,7 @@ export class McpManager {
           : this.sources.map(s => s === source ? { ...s, enabled: z.boolean().parse(params.enabled) } : s));
         return { saved: true };
       }
-      if (method === 'market') return this.market(z.string().max(100).parse(params.query ?? '').trim(), signal);
+      if (method === 'market') return this.marketCache.fetch(this.sources, z.string().max(100).parse(params.query ?? '').trim(), signal);
       const record = this.owned(params.id);
       if (method === 'oauth') return this.authorize(record);
       if (method === 'refreshToken') {
@@ -339,7 +316,18 @@ export class McpManager {
       if (method === 'clearCredentials') {
         if (!this.backend.credentials) throw new Error('官方凭据存储不可用');
         await this.stop(record.id);
-        for (const ref of record.credentialRefs) await this.backend.credentials.unset(ref);
+        // 逐项清除并记录进度：中途失败必须说明已经清掉了多少项，不能只报「清除失败」。
+        const cleared: string[] = [], failures: string[] = [];
+        for (const ref of record.credentialRefs) {
+          try { await this.backend.credentials.unset(ref); cleared.push(ref); }
+          catch (error) { failures.push(`${ref}：${error instanceof Error ? error.message : String(error)}`); }
+        }
+        if (failures.length) {
+          // 部分失败不能让已启用记录停在「无 runtime 的 unknown」状态：先恢复连接再如实报错，
+          // 已清除的项不写回配置（credentialRefs 仍被请求头引用，不能删名）。
+          this.start(record);
+          throw new Error(`凭据未能全部清除（已清除 ${cleared.length} 项，共 ${record.credentialRefs.length} 项）：${failures.join('；')}`);
+        }
         await this.backend.oauthVault?.deleteRecord(mcpGrantKey(record.id));
         const next = { ...record, hasSecret: false, revision: record.revision + 1 };
         await this.persist(this.records.map(r => r === record ? next : r)); this.start(next);
@@ -430,7 +418,15 @@ export class McpManager {
       return (await this.snapshot()).connections.find(r => r.id === id)!;
     } catch (error) {
       if (committed) throw new Error('连接器配置与凭据已保存，但旧连接资源清理失败；请重启宿主后重试');
-      for (const ref of stored) await this.backend.credentials?.unset(ref).catch(() => undefined);
+      // 回滚同样可能失败：失败时不能再对外声称「原配置保留」。
+      const rollbackFailures: string[] = [];
+      for (const ref of stored) {
+        try { await this.backend.credentials?.unset(ref); }
+        catch (error) { rollbackFailures.push(`${ref}：${error instanceof Error ? error.message : String(error)}`); }
+      }
+      if (rollbackFailures.length) {
+        throw new Error(`连接器保存失败，且新写入的凭据未能回滚（${rollbackFailures.join('；')}）；请重新保存或手动清理后重试`);
+      }
       if (old && !this.runtime.has(old.id)) this.start(old);
       if (old && this.runtime.get(old.id)?.cleanupUnconfirmed) throw new Error('官方连接器客户端资源清理未确认，需要重启宿主');
       throw error instanceof z.ZodError ? new Error('连接器字段格式无效，请检查输入') : new Error('连接器配置或凭据保存失败，原配置保留');
@@ -453,65 +449,8 @@ export class McpManager {
   }
   private sourceUrl(value: string) {
     const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('来源需要 HTTP/HTTPS 地址');
+    if (!marketSourceAllowed(url) || url.username || url.password) throw new Error('来源需要 HTTPS 地址（仅本机回环允许 http）');
     url.hash = ''; return url.href;
-  }
-  private marketKey(source: McpSource, query: string) {
-    return createHash('sha256').update(JSON.stringify([source.id, source.url, query])).digest('hex');
-  }
-  private async persistMarketCache(signal?: AbortSignal) {
-    const encode = () => JSON.stringify({ version: 1, entries: [...this.marketCache].map(([key, candidates]) => ({ key, candidates })) });
-    let content = encode();
-    while (Buffer.byteLength(content) > 20 * 1024 * 1024 && this.marketCache.size > 1) {
-      this.marketCache.delete(this.marketCache.keys().next().value!);
-      content = encode();
-    }
-    if (Buffer.byteLength(content) > 20 * 1024 * 1024) throw new Error('市场缓存超过大小限制');
-    const temp = `${this.marketFilename}.${randomUUID()}.tmp`;
-    try {
-      signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
-      await writeFile(temp, content, { mode: 0o600, flag: 'wx', signal });
-      signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
-      await rename(temp, this.marketFilename);
-    } finally { await rm(temp, { force: true }); }
-  }
-  private async market(query: string, signal?: AbortSignal) {
-    const results: McpCandidate[] = [], errors: { sourceId: string; message: string; reason?: string; cached?: boolean }[] = [];
-    const nextCache = new Map(this.marketCache), refreshedSources: string[] = [];
-    for (const source of this.sources.filter(s => s.enabled)) {
-      const cacheKey = this.marketKey(source, query);
-      try {
-        const requestSignal = AbortSignal.any([this.lifecycle.signal, ...(signal ? [signal] : []), AbortSignal.timeout(20_000)]);
-        const page = await loadMcpMarket(source.url, query, requestSignal);
-        requestSignal.throwIfAborted();
-        // 成功空目录也更新缓存，不能在后续失败时复活已经移除的条目。
-        nextCache.delete(cacheKey);
-        nextCache.set(cacheKey, structuredClone(page.candidates));
-        if (nextCache.size > 20) nextCache.delete(nextCache.keys().next().value!);
-        refreshedSources.push(source.id);
-        results.push(...page.candidates.map(row => ({ ...row, sourceId: source.id })));
-        if (page.truncated) errors.push({ sourceId: source.id, message: '已显示前 500 条市场记录，请输入关键词缩小范围。' });
-      } catch (error) {
-        signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
-        const cached = this.marketCache.get(cacheKey);
-        if (cached) results.push(...structuredClone(cached).map(row => ({ ...row, sourceId: source.id })));
-        const issue = marketFailure(error);
-        errors.push({ sourceId: source.id, reason: issue, cached: !!cached?.length, message: cached?.length
-          ? `市场刷新失败：${issue}；当前显示上次成功加载的目录。`
-          : `市场加载失败：${issue}；请重试或手工添加连接。` });
-      }
-    }
-    signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
-    if (refreshedSources.length) {
-      this.marketCache = nextCache;
-      try { await this.persistMarketCache(signal); }
-      catch {
-        signal?.throwIfAborted(); this.lifecycle.signal.throwIfAborted();
-        for (const sourceId of refreshedSources) errors.push({ sourceId,
-          message: '市场目录已更新，但本地缓存保存失败；下次打开可能需要重新加载。' });
-      }
-    }
-    return { candidates: results, errors };
   }
   async dispose() {
     this.stopped = true;

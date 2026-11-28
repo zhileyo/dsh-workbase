@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, symlink } from 'node:
 import { createHash } from 'node:crypto';
 import { Header } from 'tar';
 import { Encrypter, generateIdentity, identityToRecipient } from 'age-encryption';
-import { inspectArchive, archivePathSafe } from '../src/server/restore-archive.js';
+import { inspectArchive, archivePathSafe, scanArchive } from '../src/server/restore-archive.js';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { BackupManager } from '../src/server/backup.js';
@@ -272,4 +272,20 @@ test('恢复扫描拒绝穿越、链接、重复条目、漏清单和伪造摘�
     assert.equal((await readdir(root)).includes('outside'), false);
   }
   for (const name of ['../x', '/x', 'a\\b', 'a:b', 'NUL.txt', 'x./a', 'a//b']) assert.equal(archivePathSafe(name), false);
+});
+
+test('归档首个非法条目立即中止扫描，不再读完后续负载', async t => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wb-scan-abort-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const block = (name: string, size: number) => {
+    const header = new Header({ path: name, type: 'File', size, mode: 0o600 });
+    header.encode();
+    return Buffer.concat([header.block!, Buffer.alloc(size), Buffer.alloc((512 - size % 512) % 512)]);
+  };
+  // 首个条目穿越目录，第二个条目数据被截断：若继续读下去会先撞 tar 的 TAR_BAD_ARCHIVE
+  const body = Buffer.concat([block('../outside.txt', 900), block('second.txt', 700)]);
+  const plain = path.join(root, 'archive.tar');
+  await writeFile(plain, body.subarray(0, body.length - 700));
+  await assert.rejects(scanArchive(plain, new AbortController().signal), { message: '归档包含不安全路径或过多条目' });
+  assert.equal((await readdir(root)).includes('outside.txt'), false);
 });

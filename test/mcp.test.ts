@@ -251,6 +251,23 @@ test('握手超时不是成功，停用释放未完成后台连接', async () =>
     assert.equal((await s.manager.snapshot()).connections[0]?.state, 'error');
   } finally { await s.close(); }
 });
+test('OAuth 待授权终态不被握手超时改写成通用错误', async () => {
+  let disposals = 0;
+  const s = await setup({ connect: async (_record, publish) => {
+    // 对应 mcp-host.ts:111：官方客户端 waiting-credentials 映射为 auth 并正常发布。
+    publish({ state: 'auth', issue: '需要重新授权' });
+    return { dispose: async () => { disposals++; } };
+  } });
+  try {
+    await s.manager.handle('save', { ...draft, timeoutSeconds: 1 });
+    await s.manager.settle();
+    assert.equal((await s.manager.snapshot()).connections[0]?.state, 'auth');
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    await s.manager.settle();
+    assert.equal((await s.manager.snapshot()).connections[0]?.state, 'auth');
+    assert.equal(disposals, 0);
+  } finally { await s.close(); }
+});
 test('凭据仅写官方存储；摘要、磁盘、导出不含原文，空编辑保留，显式清除', async () => {
   const vault = new Map<string, string>();
   const s = await setup({
@@ -434,4 +451,76 @@ for (const days of [1, 30, 365]) test(`C11 ${days} 天 OAuth 分段定时不会�
     t.mock.timers.tick(lifetime); await s.manager.settle();
     assert.equal(connects, 2, '停用必须取消后续刷新');
   } finally { await s.close(); t.mock.restoreAll(); t.mock.timers.reset(); }
+});
+test('凭据回滚失败时不能声称原配置保留', async () => {
+  const vault = new Map<string, string>();
+  let writes = 0;
+  const s = await setup({ credentials: {
+    // 第二个凭据写入失败触发回滚，而回滚用的 unset 同样失败。
+    set: async (key, value) => { writes++; if (writes > 1) throw new Error('synthetic set failure'); vault.set(key, value); },
+    unset: async () => { throw new Error('synthetic unset failure'); },
+  } });
+  try {
+    await assert.rejects(s.manager.handle('save', { ...draft, enabled: false, auth: 'api-key',
+      keyHeader: 'X-Key', secret: 'synthetic-secret', headers: { 'X-Other': 'plain' } }), (error: Error) => {
+      assert.doesNotMatch(error.message, /原配置保留/, '回滚没成功就不能说原配置还在');
+      assert.match(error.message, /未能回滚/, '要说明凭据没有回滚');
+      assert.match(error.message, /synthetic unset failure/, '要带上真实原因');
+      return true;
+    });
+  } finally { await s.close(); }
+});
+
+test('清除凭据中途失败时报告已经清掉了几项', async () => {
+  const vault = new Map<string, string>();
+  let unsets = 0;
+  const s = await setup({ credentials: {
+    set: async (key, value) => { vault.set(key, value); },
+    unset: async () => { unsets++; throw new Error('synthetic unset failure'); },
+  } });
+  try {
+    const saved = await s.manager.handle('save', { ...draft, enabled: false, auth: 'api-key',
+      keyHeader: 'X-Key', secret: 'synthetic-secret' }) as McpConnection;
+    await assert.rejects(s.manager.handle('clearCredentials', { id: saved.id }), /已清除 ?0 ?项/);
+    assert.equal(unsets, 1, '已尝试清除');
+    assert.equal(vault.size, 1, '失败后别说全清干净了');
+  } finally { await s.close(); }
+});
+test('连接器市场来源只接受 HTTPS，本机回环地址例外', async () => {
+  const s = await setup();
+  try {
+    await assert.rejects(s.manager.handle('sourceSave', { name: '明文来源', url: 'http://example.org/catalog.json' }), /HTTPS/);
+    const loopback = await s.manager.handle('sourceSave', { name: '本机来源', url: 'http://127.0.0.1:8099/catalog.json' }) as { url: string };
+    assert.equal(loopback.url, 'http://127.0.0.1:8099/catalog.json');
+    const secure = await s.manager.handle('sourceSave', { name: '安全来源', url: 'https://example.org/catalog.json' }) as { url: string };
+    assert.equal(secure.url, 'https://example.org/catalog.json');
+    assert.equal((await s.manager.snapshot()).sources.filter(row => row.builtin).length, 1);
+  } finally { await s.close(); }
+});
+test('OAuth 授权请求按前置条件与并发状态拒绝，卸载时中止在途授权', async () => {
+  const f = await setup();
+  try {
+    await f.manager.handle('save', { ...draft, name: '无授权', auth: 'none', headers: {} });
+    const listed = await f.manager.handle('snapshot', {}) as unknown as { connections: { id: string; name: string; auth: string }[] };
+    const plain = listed.connections.find(item => item.name === '无授权')!;
+    await assert.rejects(f.manager.handle('oauth', { id: plain.id }), /OAuth 需要启用 HTTP 连接/);
+
+    await f.manager.handle('save', { ...draft, name: '待授权', auth: 'oauth', headers: {} });
+    const again = await f.manager.handle('snapshot', {}) as unknown as { connections: { id: string; name: string }[] };
+    const id = again.connections.find(item => item.name === '待授权')!.id;
+    await assert.rejects(f.manager.handle('oauth', { id }), /OAuth 需要启用 HTTP 连接/);
+
+    const manager = f.manager as unknown as { authorizations: Map<string, { controller: AbortController; task?: { cancel(): void } }>; backend: Record<string, unknown> };
+    manager.backend = { ...manager.backend, connect: async () => ({ dispose: async () => {} }), oauthVault: {}, credentials: {} };
+    const controller = new AbortController();
+    let cancelled = 0;
+    manager.authorizations.set(id, { controller, task: { cancel: () => { cancelled++; } } });
+    await assert.rejects(f.manager.handle('oauth', { id }), /授权正在进行/);
+    await assert.rejects(f.manager.handle('oauth', { id: 'missing' }), /只能管理工作台自有连接器条目|不存在/);
+
+    await f.manager.dispose();
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(cancelled, 1);
+    assert.equal(manager.authorizations.size, 0);
+  } finally { await f.close(); }
 });

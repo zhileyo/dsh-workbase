@@ -4,6 +4,8 @@ import type { RestoreArchive, RestoreStatus } from '../shared/restore.js';
 import { DirectoryInput } from './DirectoryInput.js';
 import { errorText, languageTag, statusText } from './i18n.js';
 import { Icon, Picker, usePopup } from './ui.js';
+import { coverageItemLabel } from './backup-labels.js';
+import { useStatusPolling } from './panel-utils.js';
 
 export function ArchiveInput({ value, onChange, archives, disabled, refresh, describedBy }: {
   value: string; onChange(value: string): void; archives: RestoreArchive[]; disabled: boolean; refresh(): void;
@@ -56,10 +58,10 @@ export function RestoreExecutionStatus({ status }: { status?: RestoreStatus }) {
     </p>}</div> : <p className="settings-inline-note">正在读取恢复状态…</p>;
 }
 
-export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange, onBusyChange, onRestored, onStatusChange, showStatus = true }: {
+export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange, onBusyChange, onRestored, onStatusChange, showStatus = true, paused = false }: {
   call?(command: Command): Promise<unknown>; disabled: boolean; pickDirectory(): Promise<string | null>;
   onPickingChange?(value: boolean): void; onBusyChange?(value: boolean): void; onRestored?(): void;
-  onStatusChange?(value: RestoreStatus): void; showStatus?: boolean;
+  onStatusChange?(value: RestoreStatus): void; showStatus?: boolean; paused?: boolean;
 }) {
   const [status, setStatus] = useState<RestoreStatus>();
   const [archives, setArchives] = useState<RestoreArchive[]>([]);
@@ -73,33 +75,38 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
   callbacks.current = { onBusyChange, onRestored, onStatusChange };
   const active = useRef(false), submitting = useRef(false);
   const generation = useRef(0);
+  const lastStatus = useRef(''), lastRunning = useRef(false);
   const receive = (next: RestoreStatus) => {
     setStatus(next);
-    callbacks.current.onStatusChange?.(next);
+    // 轮询每轮都拿到新对象，但内容没变时不该把父级拖进重渲染。
+    const text = JSON.stringify(next);
+    if (text !== lastStatus.current) { lastStatus.current = text; callbacks.current.onStatusChange?.(next); }
     const running = ['checking', 'restoring'].includes(next.phase);
-    callbacks.current.onBusyChange?.(running);
+    if (running !== lastRunning.current) { lastRunning.current = running; callbacks.current.onBusyChange?.(running); }
     if (next.phase === 'completed' && next.result?.mode === 'workbase' && active.current) {
       active.current = false; callbacks.current.onRestored?.();
     }
     active.current = running;
   };
+  useStatusPolling(!!call && !paused, async stopped => {
+    // 设置页可能停在别的分类，隐藏期间没必要继续读恢复状态。
+    const version = generation.current;
+    try {
+      const next = await call!({ op: 'restore-status' }) as RestoreStatus;
+      if (!stopped() && !submitting.current && version === generation.current) receive(next);
+    } catch (e) {
+      if (!stopped()) setError(e instanceof Error ? e.message : '无法读取恢复状态');
+    }
+    return lastRunning.current || submitting.current ? 1500 : 15000;
+  }, [call, paused]);
   useEffect(() => {
-    if (!call) return;
-    let stopped = false, timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      const version = generation.current;
-      try {
-        const next = await call({ op: 'restore-status' }) as RestoreStatus;
-        if (!stopped && !submitting.current && version === generation.current) receive(next);
-      } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : '无法读取恢复状态'); }
-      if (!stopped) timer = setTimeout(() => { void refresh(); }, 1500);
-    };
-    void refresh();
+    if (!call || paused) return;
+    let stopped = false;
     void call({ op: 'restore-catalog' }).then(result => {
       if (!stopped) setArchives(result as RestoreArchive[]);
     }).catch(e => { if (!stopped) setError(e instanceof Error ? e.message : '无法读取最近备份'); });
-    return () => { stopped = true; clearTimeout(timer); callbacks.current.onBusyChange?.(false); };
-  }, [call]);
+    return () => { stopped = true; callbacks.current.onBusyChange?.(false); };
+  }, [call, paused]);
   const execute = async (command: Command) => {
     if (!call || submitting.current) return;
     generation.current++;
@@ -146,7 +153,7 @@ export function RestoreSettings({ call, disabled, pickDirectory, onPickingChange
       </> : <p className="wb-warning">将替换工作台的项目关联、待办、标记和偏好。替换前保存加密回滚副本，保留当前备份配置并关闭插件自动更新。</p>}
       {!!preview.workbaseBlockers.length && <p className="wb-warning">工作台替换不可用：{preview.workbaseBlockers.map(errorText).join(languageTag() === 'en-US' ? '; ' : '；')}</p>}
       <details><summary>备份覆盖明细（{preview.coverage.length} 项）</summary>
-        {preview.coverage.map(item => <p className="settings-inline-note" key={item.id}>{item.id}：{errorText(item.message)}</p>)}</details>
+        {preview.coverage.map(item => <p className="settings-inline-note" key={item.id}>{coverageItemLabel(item.id)}：{errorText(item.message)}</p>)}</details>
       <div className="setting-row wb-setting-row">
         <button type="button" disabled={locked} onClick={() => void execute({ op: 'restore-discard', token: preview.token })}>取消预览</button>
         <button type="button" className="primary" disabled={locked || (mode === 'directory' ? !directory.trim() : !!preview.workbaseBlockers.length)}

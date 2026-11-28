@@ -2,9 +2,16 @@ import { useEffect, useState } from 'react';
 import type { ExtensionConfig } from '../shared/extensions.js';
 import type { Command } from '../shared/commands.js';
 import { Picker } from './ui.js';
+import { SettingsSubtabs } from './settings-subtabs.js';
 import { t } from './i18n.js';
 
 interface Source { id: string; path: string; writable?: boolean; readonly?: boolean; scope?: string }
+/** 读取失败不等于能力缺失：只有真的读到 false 才算确认不支持，读失败要显示原因并允许重试。 */
+export function sessionIsolationView(sessionSupported: boolean, readError: string) {
+  if (readError) return { help: t('连接器能力读取失败，暂不能确认宿主是否支持会话隔离。'), unsupported: false, retry: true };
+  if (!sessionSupported) return { help: t('宿主不支持会话隔离，暂不能按会话启用。'), unsupported: true, retry: false };
+  return { help: '', unsupported: false, retry: false };
+}
 export type ExtensionTab = 'skills' | 'mcp' | 'rss';
 export function ExtensionSettings({ value, onChange, disabled, call, tab, onTabChange: setTab }: {
   value: ExtensionConfig; onChange(value: ExtensionConfig): void; disabled: boolean;
@@ -14,6 +21,8 @@ export function ExtensionSettings({ value, onChange, disabled, call, tab, onTabC
   const [sources, setSources] = useState<Source[]>([]);
   const [error, setError] = useState('');
   const [sessionSupported, setSessionSupported] = useState(false);
+  const [mcpError, setMcpError] = useState('');
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     if (call) {
@@ -23,30 +32,25 @@ export function ExtensionSettings({ value, onChange, disabled, call, tab, onTabC
         setSources(Array.isArray(state.sources) ? state.sources : []);
       }).catch(err => { if (active) setError(err instanceof Error ? err.message : '无法读取安装位置'); });
       void call({ op: 'extensions', module: 'mcp', method: 'snapshot' }).then(result => {
-        if (active) setSessionSupported((result as { capabilities?: { sessionIsolation?: boolean } }).capabilities?.sessionIsolation === true);
-      }).catch(() => {});
+        if (!active) return;
+        setMcpError('');
+        setSessionSupported((result as { capabilities?: { sessionIsolation?: boolean } }).capabilities?.sessionIsolation === true);
+      }).catch(err => { if (active) setMcpError(err instanceof Error ? err.message : '无法读取连接器能力'); });
     }
     return () => { active = false; };
-  }, [call]);
+  }, [call, attempt]);
   const writable = sources.filter(source => source.writable !== false && !source.readonly && source.scope !== 'project');
   const timeoutInvalid = !Number.isInteger(value.mcp.timeoutSeconds) || value.mcp.timeoutSeconds < 1 || value.mcp.timeoutSeconds > 300;
-  const injectionHelp = `${t('仅用于新增连接，详情中可调整。')}${sessionSupported ? '' : ` ${t('宿主不支持会话隔离，暂不能按会话启用。')}`}`;
+  const isolation = sessionIsolationView(sessionSupported, mcpError);
+  const injectionHelp = `${t('仅用于新增连接，详情中可调整。')}${isolation.help ? ` ${isolation.help}` : ''}`;
   useEffect(() => { if (timeoutInvalid) setTab('mcp'); }, [timeoutInvalid, setTab]);
   return <>
     <h3>扩展配置</h3><p className="dialog-description">设置新技能、连接器的默认值及订阅刷新频率。</p>
-    <div className="settings-subtabs" role="tablist" aria-label="扩展配置分类">
-      {(['skills', 'mcp', 'rss'] as const).map((key, i) => <button key={key} type="button" role="tab"
-        id={`wb-extension-tab-${key}`} aria-controls={`wb-extension-panel-${key}`} aria-selected={tab === key}
-        tabIndex={tab === key ? 0 : -1} onClick={() => setTab(key)} onKeyDown={event => {
-          if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-          event.preventDefault();
-          const options = ['skills', 'mcp', 'rss'] as const;
-          const next = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (i + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
-          setTab(options[next]!);
-          (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
-        }}>{key === 'skills' ? '技能' : key === 'mcp' ? '连接器' : '订阅'}</button>)}
-    </div>
+    <SettingsSubtabs scope="extension" idPrefix="wb-extension" label="扩展配置分类" value={tab}
+      options={[{ value: 'skills', label: t('技能') }, { value: 'mcp', label: t('连接器') }, { value: 'rss', label: t('订阅') }]}
+      onChange={setTab}/>
     {error && <p role="alert" className="wb-warning">{error}</p>}
+    {mcpError && <p role="alert" className="wb-warning">{mcpError}<button type="button" disabled={disabled} onClick={() => setAttempt(count => count + 1)}>{t('重试')}</button></p>}
     <div className="settings-subpanel" id="wb-extension-panel-skills" role="tabpanel" aria-labelledby="wb-extension-tab-skills" hidden={tab !== 'skills'}>
       <div className="setting-row"><div><strong>默认安装位置</strong><small>仅用于新增全局技能；项目技能装入对应项目目录。</small></div>
         <Picker label="默认安装位置" value={value.skills.defaultSourceId} disabled={disabled || !writable.length}

@@ -1,4 +1,4 @@
-import { MAX_SKILL_UPLOAD, skillContentSchema, skillNameSchema } from '../shared/skills.js';
+import { MAX_SKILL_UPLOAD, skillContentSchema, skillNameSchema, splitSkillDocument } from '../shared/skills.js';
 import { createHash } from 'node:crypto';
 
 /** 显示名和文件保持原值；宿主调用仍使用兼容的 ASCII 标识。 */
@@ -17,9 +17,8 @@ const documentContent = skillContentSchema;
 /** 目录发现接受常见 YAML 标量及说明块；未知调用策略拒绝解析，避免扩大权限。 */
 export function readSkillDocument(text: string) {
   if (Buffer.byteLength(text) > MAX_SKILL_UPLOAD) throw new Error('技能文件最大 2 MB');
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(text.replace(/^\uFEFF/, '').trim());
-  if (!match) throw new Error('SKILL.md 需要名称、说明 frontmatter 与正文');
-  const lines = match[1]!.split(/\r?\n/), fields = new Map<string, string>();
+  const { frontmatter, body } = splitSkillDocument(text);
+  const lines = frontmatter.split(/\r?\n/), fields = new Map<string, string>();
   const relevant = new Set(['name', 'description', 'model-invocable', 'disable-model-invocation', 'user-invocable']);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -57,11 +56,11 @@ export function readSkillDocument(text: string) {
     if (value !== 'true' && value !== 'false') throw new Error('技能调用策略必须是 true 或 false');
     return value === 'true';
   };
-  const content = documentContent.parse({ name: fields.get('name'), description: fields.get('description'), body: match[2] });
+  const content = documentContent.parse({ name: fields.get('name'), description: fields.get('description'), body });
   const invocationName = skillInvocationName(content.name);
   if (!invocationName) throw new Error('技能名称无法转换为宿主支持的调用名称');
   return {
-    ...content, frontmatter: match[1]!, invocationName,
+    ...content, frontmatter, invocationName,
     invocation: {
       modelInvocable: boolean('model-invocable', true) && !boolean('disable-model-invocation', false),
       userInvocable: boolean('user-invocable', true),

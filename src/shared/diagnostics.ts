@@ -10,25 +10,29 @@ export type DiagnosticCandidate = z.infer<typeof diagnosticCandidate>;
 export interface DiagnosticCheck {
   kind: DiagnosticKind; status: 'ok' | 'error' | 'unsupported'; message?: string;
 }
-export interface HostDiagnosticIssue {
-  kind: DiagnosticRepairKind; sessionId: string; identity: string; path: string;
+/** 宿主诊断与工作台诊断共享的会话定位字段；各侧只补自己的附加字段。 */
+export interface DiagnosticTarget {
+  sessionId?: string; identity?: string; path: string;
   parentSessionId?: string; sizeBytes?: number;
 }
-export interface HostDiagnosis {
-  checks: DiagnosticCheck[]; issues: HostDiagnosticIssue[];
-  repair: { cache: boolean; orphan: boolean; empty?: boolean };
+export interface DiagnosticRepairCapability {
+  cache: boolean; orphan: boolean; empty?: boolean;
 }
-export interface DiagnosticIssue {
+export interface HostDiagnosticIssue extends DiagnosticTarget {
+  kind: DiagnosticRepairKind; sessionId: string; identity: string;
+}
+export interface HostDiagnosis {
+  checks: DiagnosticCheck[]; issues: HostDiagnosticIssue[]; repair: DiagnosticRepairCapability;
+}
+export interface DiagnosticIssue extends DiagnosticTarget {
   id: string; kind: DiagnosticKind; title: string; detail: string;
-  projectId: string | null; projectTitle: string; path: string;
-  sessionId?: string; identity?: string; parentSessionId?: string; sizeBytes?: number;
+  projectId: string | null; projectTitle: string;
   /** 用户会话名称与固定诊断标题分开传递，显示翻译不处理用户数据。 */
   sessionTitle?: string;
   readOnly?: boolean;
 }
 export interface Diagnosis {
-  checkedAt: number; checks: DiagnosticCheck[]; issues: DiagnosticIssue[];
-  repair: { cache: boolean; orphan: boolean; empty?: boolean };
+  checkedAt: number; checks: DiagnosticCheck[]; issues: DiagnosticIssue[]; repair: DiagnosticRepairCapability;
 }
 export const diagnosticRepairResult = z.object({
   succeeded: z.array(z.string()), skipped: z.array(z.string()),

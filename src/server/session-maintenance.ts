@@ -136,27 +136,36 @@ export function createSessionMaintenance(ctx: Context) {
     return row && structuredClone(row);
   };
   // `s.get()` 只说明会话已加载进内存（当前打开的工作区全都在里面），不代表正在使用；
-  // `evict` 走 deleteCore 的 flush→detachEntered 驱逐路径，活动的会话仍由水位判断拒绝。
-  const inactive = async (id: string, coldOnly: boolean, evict = false) => {
+  // `evictLoaded` 走 deleteCore 的 flush→detachEntered 驱逐路径，活动的会话仍由水位判断拒绝。
+  // 三种用法：requireCold=false 只看活动水位；requireCold=true 要求会话未加载；
+  // requireCold=true 且 evictLoaded=true 允许「已加载但空闲」，由调用方先 flush 再驱逐。
+  const inactive = async (id: string, requireCold: boolean, evictLoaded = false) => {
     const s = get<Sessions>('sessions');
     if (!s || typeof ctx.waterfall !== 'function') throw unsupported();
-    if (coldOnly && !evict && s.get(id) !== undefined) return false;
+    if (requireCold && !evictLoaded && s.get(id) !== undefined) return false;
     const activity = await ctx.waterfall('workspace/session-activity', { sessionId: id as never }, () => Promise.resolve([]));
-    return activity.length === 0 && (!coldOnly || evict || s.get(id) === undefined);
+    // 第三个析取项只在「水位判定期间会话又被加载」的竞态窗口里起作用，不能省。
+    return activity.length === 0 && (!requireCold || evictLoaded || s.get(id) === undefined);
   };
   // 已加载但没在跑的会话可以先 flush 再驱逐，重建缓存才能读到日志；
   // 真正在跑的会话仍由水位判断拒绝，不在这里放行。
-  const release = async (id: string) => {
+  /** 驱逐时序只留一份：flush → 复查活动与身份 → detachEntered → p.flush → 复查已卸载。
+   * 失败原因返回给调用方翻译（release 折叠成 false，deleteCore 翻译成具体文案），能力缺失仍就地抛出。 */
+  const evictLoadedSession = async (id: string, live: NonNullable<ReturnType<Sessions['get']>>,
+    options: { precheck: boolean }): Promise<'busy' | 'changed' | 'unreleased' | null> => {
     const s = get<Sessions>('sessions')!, p = get<Persistence>('sessionPersistence')!;
-    const live = s.get(id);
-    if (!live) return true;
     if (!s.flush || !s.liveEntryFor || !s.detachEntered || !p.flush) throw unsupported();
-    if (!await inactive(id, false)) return false;
+    if (options.precheck && !await inactive(id, false)) return 'busy';
     await s.flush(live);
-    if (!await inactive(id, false) || s.get(id) !== live) return false;
+    if (!await inactive(id, false) || s.get(id) !== live) return 'changed';
     s.detachEntered(s.liveEntryFor(live));
     await p.flush();
-    return s.get(id) === undefined;
+    return s.get(id) === undefined ? null : 'unreleased';
+  };
+  const release = async (id: string) => {
+    const live = get<Sessions>('sessions')!.get(id);
+    if (!live) return true;
+    return await evictLoadedSession(id, live, { precheck: true }) === null;
   };
   const sameRow = (a: Row, b: Row) => sessionIdentity(a.header) === sessionIdentity(b.header)
     && a.revision === b.revision && a.header.origin === b.header.origin && a.header.parentSession === b.header.parentSession;
@@ -214,25 +223,35 @@ export function createSessionMaintenance(ctx: Context) {
       targets.set(row.header.id, directory);
     }
     if (options.validate && !await options.validate()) return false;
+    // 提交前再复查一次全集合的身份与冷态：此时还没有任何物理副作用，失败可以整体按「跳过」处理。
     for (const row of ordered) {
       const sessionId = row.header.id, live = s.get(sessionId);
       if (live && sessionIdentity(live.header) !== sessionIdentity(row.header)) return false;
+      const current = await readRow(sessionId);
+      if (current && !sameRow(row, current)) return false;
       if (!await inactive(sessionId, !!options.coldOnly, !!options.evict)) {
         if (options.coldOnly) return false;
         throw new WorkbaseError('running', '会话状态已变化，已停止删除');
       }
+    }
+    const committed: string[] = [];
+    // 已物理删除的会话无法回滚：此后再有变化只能如实报出已完成的部分，不能谎称整体跳过。
+    const stop = (sessionId: string): false => {
+      if (committed.length === 0) return false;
+      throw new WorkbaseError('delete-partial',
+        `已删除 ${committed.join('、')}，${sessionId} 在删除过程中发生变化，请重新检测后重试`);
+    };
+    for (const row of ordered) {
+      const sessionId = row.header.id, live = s.get(sessionId);
       if (live) {
-        if (!s.flush || !s.liveEntryFor || !s.detachEntered || !p.flush) throw unsupported();
-        await s.flush(live);
-        if (!await inactive(sessionId, false) || s.get(sessionId) !== live)
-          throw new WorkbaseError('running', '会话状态已变化，已停止删除');
-        s.detachEntered(s.liveEntryFor(live));
-        await p.flush();
-        if (s.get(sessionId)) throw new WorkbaseError('running', '会话未能释放，已停止删除');
+        // 与 release() 共用同一份驱逐时序；失败原因在这里翻译成阻断文案。
+        const failure = await evictLoadedSession(sessionId, live, { precheck: false });
+        if (failure === 'changed') throw new WorkbaseError('running', '会话状态已变化，已停止删除');
+        if (failure === 'unreleased') throw new WorkbaseError('running', '会话未能释放，已停止删除');
         evicted.add(sessionId);
       }
       const current = await readRow(sessionId);
-      if (current && !sameRow(row, current)) return false;
+      if (current && !sameRow(row, current)) return stop(sessionId);
       await safeDirectory(targets.get(sessionId)!, 3);
       const spill = get<{ root?: string }>('spillStore');
       let spillDirectory: string | undefined;
@@ -241,20 +260,21 @@ export function createSessionMaintenance(ctx: Context) {
         spillDirectory = path.join(spill.root, `session-${createHash('sha256').update(sessionId).digest('hex').slice(0, 12)}`);
         await safeDirectory(spillDirectory);
       }
-      if (!await inactive(sessionId, true) || options.validate && !await options.validate({ evicted: evicted.has(id) })) return false;
+      if (!await inactive(sessionId, true) || options.validate && !await options.validate({ evicted: evicted.has(sessionId) })) return stop(sessionId);
       await options.authorize?.({ sessionId, path: row.header.cwd, identity: sessionIdentity(row.header) });
       // detach 的缓存写入先进入同一表队列；删除在其后持久化，避免重新生成已删除缓存。
       await cache.requireTable().delete(sessionId);
       const finalRow = await readRow(sessionId);
       // 缓存删除后只能复查日志与活动，不能再用刚删掉的空会话投影验证。
-      if (finalRow && !sameRow(current ?? row, finalRow) || !await inactive(sessionId, true)) return false;
+      if (finalRow && !sameRow(current ?? row, finalRow) || !await inactive(sessionId, true)) return stop(sessionId);
       if (options.evict && options.validate
-          && !await options.validate({ evicted: evicted.has(id), cacheRemoved: true })) return false;
+          && !await options.validate({ evicted: evicted.has(sessionId), cacheRemoved: true })) return stop(sessionId);
       await rm(targets.get(sessionId)!, { recursive: true, force: true });
       if (await p.stat(sessionId) !== undefined)
         throw new WorkbaseError('delete-unconfirmed', '日志删除未能确认，列表记录保留以便重试');
       if (spillDirectory) await rm(spillDirectory, { recursive: true, force: true });
       await removeAccounts(sessionId);
+      committed.push(sessionId);
     }
     return true;
   };

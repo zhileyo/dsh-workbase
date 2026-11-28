@@ -61,4 +61,3 @@ export function extractRssContent(html: string, base = '') {
   if (content.text.length < 100) throw new Error('原文未提供可提取的正文，可能需要登录或动态加载');
   return content;
 }
-export function extractRssBody(html: string): string { return extractRssContent(html).text; }

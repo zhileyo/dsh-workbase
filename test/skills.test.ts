@@ -176,3 +176,74 @@ test('队列取消不执行文件操作，已开始事务不因请求取消而�
     await assert.rejects(access(join(f.home, 'skills/cancelled')));
   } finally { release(); await f.close(); }
 });
+
+for (const published of [true, false]) test(`提交结果不确定时可按状态与事务日志重新核对并恢复写入（发布=${published}）`, async () => {
+  const f = await fixture();
+  await f.manager.dispose();
+  let uncertain = false;
+  const fs = {
+    processPathFromHostPath: (value: string) => value,
+    resolve: async (value: string) => value,
+    readText: async (value: string) => {
+      if (uncertain && value.endsWith('state.json')) throw new Error('synthetic readback failure');
+      return readFile(value, 'utf8');
+    },
+    writeText: async (value: string, text: string) => {
+      if (uncertain) {
+        if (published) await writeFile(value, text);
+        throw new Error('synthetic post-write failure');
+      }
+      await mkdir(join(value, '..'), { recursive: true }); await writeFile(value, text);
+    },
+  };
+  const options = { ...f.options, ctx: { get: (name: string) => name === 'fs' ? fs : undefined } as unknown as SkillsContext };
+  f.manager = new SkillsManager(options);
+  try {
+    const saved = await f.manager.handle('save', draft) as { skill: { id: string; version: number } };
+    const write = fs.writeText;
+    fs.writeText = async (value, text) => { uncertain = true; return write(value, text); };
+    await assert.rejects(f.manager.handle('save', { ...draft, id: saved.skill.id,
+      version: saved.skill.version, body: 'synthetic-new' }), /提交结果无法确认/);
+    uncertain = false; fs.writeText = write;
+    await assert.rejects(f.manager.handle('source.rename', { id: 'dsh', name: 'Blocked' }), /提交结果无法确认/);
+    const blocked = await f.manager.handle('snapshot') as { recoverable?: boolean; issue?: string };
+    assert.equal(blocked.recoverable, true, '封锁期间快照必须标出可重新核对');
+    await f.manager.handle('recover');
+    const resumed = await f.manager.handle('snapshot') as { recoverable?: boolean };
+    assert.equal(resumed.recoverable, false, '核对通过后不再标可重新核对');
+    await f.manager.handle('source.rename', { id: 'dsh', name: 'Recovered' });
+    const after = await f.manager.handle('snapshot') as { sources: { id: string; name: string }[] };
+    assert.equal(after.sources.find(source => source.id === 'dsh')?.name, 'Recovered');
+  } finally { await f.close(); }
+});
+
+test('从默认来源导入该来源里已有的技能目录时接管目标，而不是报「已被外部修改」', async () => {
+  const f = await fixture();
+  try {
+    await mkdir(join(f.home, 'skills/existing'), { recursive: true });
+    await writeFile(join(f.home, 'skills/existing/SKILL.md'), '---\nname: existing\ndescription: 已有技能\n---\n\n正文\n');
+    await f.manager.handle('scan');
+    const preview = await f.manager.handle('import.preview', { sourceId: 'dsh' }) as { name: string; duplicate: boolean }[];
+    assert.ok(preview.some(row => row.name === 'existing' && !row.duplicate), '预览应列出该来源里的技能');
+    const result = await f.manager.handle('import.confirm', {
+      fromSourceId: 'dsh', names: ['existing'], scope: 'global', projectIds: [],
+    }) as { receipts: { skill: { installations: { path: string }[] } }[]; error?: string };
+    assert.equal(result.error, undefined, `导入不应失败：${result.error ?? ''}`);
+    assert.equal(result.receipts.length, 1);
+    assert.equal(result.receipts[0]!.skill.installations[0]!.path, join(f.home, 'skills/existing'));
+    assert.match(await readFile(join(f.home, 'skills/existing/SKILL.md'), 'utf8'), /已有技能/);
+  } finally { await f.close(); }
+});
+test('技能来源的文件事件合并成一次失效与刷新，卸载后不再回调', async () => {
+  const { WatchCoalescer } = await import('../src/server/skills.js');
+  let runs = 0;
+  const coalescer = new WatchCoalescer(() => { runs += 1; }, 40);
+  for (let index = 0; index < 8; index++) coalescer.nudge();
+  assert.equal(runs, 0, '事件到达时不立刻重扫');
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(runs, 1, '一串事件只重扫一次');
+  coalescer.nudge();
+  coalescer.dispose();
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.equal(runs, 1, '卸载后不再触发');
+});

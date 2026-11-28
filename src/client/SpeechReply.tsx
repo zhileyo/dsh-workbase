@@ -14,7 +14,8 @@ export function SpeechReply({ sessionId, messageId, playback, component = always
   const playing = playback.isReplyPlaying(sessionId, messageId);
   const label = t(playing ? '停止播报' : '重播回复');
   const reason = playback.error || playback.unavailableReason;
-  return <Tooltip label={reason ? t(reason) : label} side="bottom" openOnClick={!!playback.unavailableReason}>
+  // 与 SpeechControl 一致：播报出错时也允许点击查看原因，不只限未配置。
+  return <Tooltip label={reason ? t(reason) : label} side="bottom" openOnClick={!!reason}>
     <button type="button" className="wb-speech-reply" aria-label={label} aria-pressed={playing}
       aria-disabled={!!playback.unavailableReason || undefined}
       data-unavailable={!!playback.unavailableReason || undefined}

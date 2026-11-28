@@ -5,7 +5,7 @@ import { defaultStatCards, initialState, preferencesSchema } from '../src/shared
 import { extensionConfigSchema } from '../src/shared/extensions.js';
 import { dispatch } from '../src/server/rpc.js';
 import { WorkbaseService } from '../src/server/service.js';
-import { Extensions } from '../src/server/extensions.js';
+import { Extensions, extensionProjects } from '../src/server/extensions.js';
 
 test('旧标准偏好迁移为五张统计卡；七项最多启用六项', () => {
   const old = { running: true, recent: true, pending: true, diagnostic: true };
@@ -64,4 +64,21 @@ test('扩展聚合入口将调用信号传给RSS，排队取消不会丢失', as
   controller.abort();
   await assert.rejects(pending);
   assert.equal(supplied, controller.signal);
+});
+test('扩展侧项目投影与服务端同判据：绑定路径要一致，已迁移的源项目不再可见', () => {
+  const workspace = (id: string, path: string) => ({ id, path, title: id, sessionIds: [] as string[] });
+  const state = (overrides: Record<string, unknown>) => ({
+    bindings: [{ projectId: 'p1', workspaceId: 'w1', path: '/p1', archived: false, agentCanChangeStatus: false,
+      removed: false, retired: false }], migrations: [], ...overrides,
+  }) as unknown as Parameters<typeof extensionProjects>[1];
+
+  const workspaces = [workspace('w1', '/p1')] as unknown as Parameters<typeof extensionProjects>[0];
+  assert.deepEqual(extensionProjects(workspaces, state({})).map(p => p.projectId), ['p1']);
+
+  const moved = [workspace('w1', '/elsewhere')] as unknown as Parameters<typeof extensionProjects>[0];
+  assert.deepEqual(extensionProjects(moved, state({})), [], '路径不一致的绑定不给扩展用');
+
+  const migrated = state({ migrations: [{ kind: 'merge', status: 'completed',
+    source: { projectId: 'p1' }, target: { projectId: 'p2' } }] });
+  assert.deepEqual(extensionProjects(workspaces, migrated), [], '已迁入其它项目的源项目对扩展不可见');
 });

@@ -42,6 +42,15 @@ function draft(name: string, description: string, config: Partial<McpConfig>, un
     ...(issue ? { issue } : {}) };
 }
 
+/** 市场失败的稳定错误类别：界面分类按码判定，用户文案可自由修改而不影响归类。 */
+export type MarketFailureCode = 'status' | 'tooLarge' | 'noBody' | 'badCursor' | 'format';
+export class MarketError extends Error {
+  constructor(readonly code: MarketFailureCode, message: string) {
+    super(message);
+    this.name = 'MarketError';
+  }
+}
+
 function safeLink(value: unknown) {
   try {
     const url = new URL(text(value, 2000));
@@ -171,14 +180,25 @@ export function parseMcpMarket(payload: unknown): McpCandidate[] {
       }
       if (!remotes.length && !packages.length) result.push(draft(name, description, {}));
     }
-  } else throw new Error('市场目录格式不支持');
+  } else throw new MarketError('format', '市场目录格式不支持');
   return result;
+}
+
+/**
+ * 市场来源的协议约束：只接受 HTTPS。
+ * 明文 http 会让目录正文在链路上被篡改后注入连接器配置，因此只对本机回环地址放行，
+ * 便于自建目录在开发机上跑。来源地址与市场请求两处都走这条判定。
+ */
+export function marketSourceAllowed(url: URL): boolean {
+  if (url.protocol === 'https:') return true;
+  if (url.protocol !== 'http:') return false;
+  return ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
 }
 
 export function mcpMarketUrl(value: string, query: string) {
   const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash)
-    throw new Error('市场地址必须是不含凭据的 HTTP/HTTPS 地址');
+  if (!marketSourceAllowed(url) || url.username || url.password || url.hash)
+    throw new Error('市场地址必须是不含凭据的 HTTPS 地址（仅本机回环允许 http）');
   const official = url.origin === 'https://registry.modelcontextprotocol.io';
   if (official && ['/', '/v0.1/servers', '/v0/servers'].includes(url.pathname)) {
     if (url.pathname === '/') url.pathname = '/v0.1/servers';
@@ -192,16 +212,16 @@ export function mcpMarketUrl(value: string, query: string) {
 async function fetchPage(url: URL, signal: AbortSignal): Promise<unknown> {
   signal.throwIfAborted();
   const response = await fetch(url.href, { signal, redirect: 'error' });
-  if (!response.ok) throw new Error(`市场目录 HTTP ${response.status}`);
+  if (!response.ok) throw new MarketError('status', `市场目录 HTTP ${response.status}`);
   if (Number(response.headers.get('content-length') ?? 0) > 2 * 1024 * 1024) {
-    await response.body?.cancel(); throw new Error('市场目录最大 2 MB');
+    await response.body?.cancel(); throw new MarketError('tooLarge', '市场目录最大 2 MB');
   }
-  const reader = response.body?.getReader(); if (!reader) throw new Error('市场目录没有响应内容');
+  const reader = response.body?.getReader(); if (!reader) throw new MarketError('noBody', '市场目录没有响应内容');
   let size = 0; const chunks: Uint8Array[] = [];
   try {
     for (;;) {
       const { done, value } = await reader.read(); if (done) break;
-      size += value.length; if (size > 2 * 1024 * 1024) throw new Error('市场目录最大 2 MB');
+      size += value.length; if (size > 2 * 1024 * 1024) throw new MarketError('tooLarge', '市场目录最大 2 MB');
       chunks.push(value);
     }
   } finally { await reader.cancel(); }
@@ -223,7 +243,7 @@ export async function loadMcpMarket(value: string, query: string, signal: AbortS
     }
     const cursor = object(object(payload)?.metadata)?.nextCursor;
     if (!official || typeof cursor !== 'string' || !cursor) break;
-    if (cursor.length > 4096 || cursors.has(cursor)) throw new Error('市场分页游标无效');
+    if (cursor.length > 4096 || cursors.has(cursor)) throw new MarketError('badCursor', '市场分页游标无效');
     cursors.add(cursor); url.searchParams.set('cursor', cursor); truncated = page === 4;
   }
   return { candidates, truncated };

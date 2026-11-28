@@ -10,6 +10,7 @@ import { lstat, mkdir, realpath, rmdir, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { WorkbaseError } from '../shared/model.js';
+import { hasWindowsIllegalChar, isWindowsReservedName } from '../shared/fs-name.js';
 import { extractConversation } from '../shared/session.js';
 import { z } from 'zod';
 import type { HostPort } from './service.js';
@@ -24,20 +25,52 @@ import { initializeProject, completeProjectInitialization } from './project-init
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths';
 import { saveRuleFiles } from './project-rules.js';
 const titleProjection = z.object({ title: z.string() });
-const runGit = (cwd: string, args: string[]) => new Promise<{ code: number; out: string; err: string }>(resolve => {
+/** 需要编码工具的内置预设：与内置模式文案表里的 id 同批，判断口径只写在这里。 */
+const CODING_TOOL_PRESETS = new Set(['ptc', 'minimal']);
+/**
+ * git 属于外部进程：仓库损坏、网络盘挂起或凭据提示都可能让它永远不退出，
+ * 而分支读取在串行队列里，一次挂起会连带堵住后续待办与快照。
+ */
+const GIT_TIMEOUT_MS = 15_000;
+const runGit = (cwd: string, args: string[], signal?: AbortSignal) => new Promise<{ code: number; out: string; err: string }>(resolve => {
+  if (signal?.aborted) { resolve({ code: -1, out: '', err: '已取消' }); return; }
   const child = spawn('git', args, { cwd, windowsHide: true });
-  let out = '', err = '';
+  let out = '', err = '', settled = false;
+  const finish = (result: { code: number; out: string; err: string }) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+    resolve(result);
+  };
+  const abort = () => { child.kill('SIGKILL'); finish({ code: -1, out, err: '已取消' }); };
+  const timer = setTimeout(() => {
+    child.kill('SIGKILL');
+    finish({ code: -1, out, err: `git 超时（${GIT_TIMEOUT_MS}ms 未退出）` });
+  }, GIT_TIMEOUT_MS);
+  signal?.addEventListener('abort', abort, { once: true });
   child.stdout?.on('data', chunk => { out += String(chunk); });
   child.stderr?.on('data', chunk => { err += String(chunk); });
-  child.on('error', () => resolve({ code: -1, out, err: 'git 命令不可用' }));
-  child.on('close', code => resolve({ code: code ?? -1, out, err }));
+  child.on('error', () => finish({ code: -1, out, err: 'git 命令不可用' }));
+  child.on('close', code => finish({ code: code ?? -1, out, err }));
 });
+/**
+ * 分支读取失败要分两种：git 明确说「不是仓库」才降级成「无分支」；
+ * 未安装、权限拒绝、仓库损坏都必须显式报错，否则界面上只看得到「没有分支」。
+ */
+export function gitHeadVerdict(head: { code: number; out: string; err: string }):
+{ kind: 'ready'; current: string } | { kind: 'absent' } | { kind: 'failed'; message: string } {
+  if (head.code === 0) return { kind: 'ready', current: head.out.trim() };
+  const detail = head.err.trim();
+  if (/not a git repository|不是 ?git ?仓库/i.test(detail)) return { kind: 'absent' };
+  return { kind: 'failed', message: `git 无法读取当前分支：${detail || `退出码 ${head.code}`}` };
+}
 export async function createProjectDirectory(root: string, name: string, initialization?: ProjectInitializationInput) {
   const options = projectInitializationSchema.parse(initialization ?? defaultProjectInitialization());
   if (!root || !path.isAbsolute(root)) throw new WorkbaseError('invalid-root', '请先在设置中配置绝对路径项目根目录');
   if (!name.trim() || name !== name.trim() || name === '.' || name === '..' ||
       /[\\/\u0000-\u001f]/.test(name) ||
-      process.platform === 'win32' && (/[<>:"|?*]/.test(name) || /[. ]$/.test(name) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)))
+      process.platform === 'win32' && (hasWindowsIllegalChar(name) || /[. ]$/.test(name) || isWindowsReservedName(name)))
     throw new WorkbaseError('invalid-name', '项目名称包含非法文件夹字符');
   const canonical = await realpath(root);
   if (!(await stat(canonical)).isDirectory()) throw new WorkbaseError('invalid-root', '项目根目录不是文件夹');
@@ -180,14 +213,16 @@ export function createHost(ctx: Context, openDirectory = runDirectoryOpener): Ho
       const [roster, catalog] = await Promise.all([ctx.agentPresets.remoteExportList(), ctx.sessionController.modelCatalog()]);
       return {
         presets: roster.presets.map(p => {
-          const builtIn = p.name === undefined ? ({
+          // 宿主对内置预设不返回 name；这个标记决定内置文案与编码工具要求，先落成局部变量，避免逐处重复判断。
+          const builtInPreset = p.name === undefined;
+          const builtInText = builtInPreset ? ({
             standard: ['标准模式', '处理代码、文件和资料，适合大多数任务。Agent 会按需使用检索、编辑和终端等工具。'],
             ptc: ['PTC 模式', '包含标准模式的所有能力，更适合批量调用工具，并对结果进行筛选、整理、去重、统计或汇总的任务。'],
             minimal: ['极简模式', 'Agent 使用终端和图片读取工具，并支持上下文压缩，适合测试和对比其基础表现。'],
             cordis: ['创造模式', '用对话定制 DSH：让 Agent 编写插件，添加新功能或界面；也能组合工具和提示词，创建自己的模式。'],
           } as Record<string, [string, string]>)[p.id] : undefined;
-          return { ...p, name: builtIn?.[0] ?? p.name ?? p.id, description: builtIn?.[1] ?? p.description, builtIn: !!builtIn,
-            requiresCodingTools: p.name === undefined && (p.id === 'ptc' || p.id === 'minimal') };
+          return { ...p, name: builtInText?.[0] ?? p.name ?? p.id, description: builtInText?.[1] ?? p.description, builtIn: !!builtInText,
+            requiresCodingTools: builtInPreset && CODING_TOOL_PRESETS.has(p.id) };
         }),
         models: catalog.groups.flatMap(group => group.models.map(model => ({
           provider: group.id, providerName: group.name, id: model.id, name: model.name,
@@ -238,12 +273,14 @@ export function createHost(ctx: Context, openDirectory = runDirectoryOpener): Ho
     },
     async gitBranches(projectPath, signal) {
       // 平台未公开分支接口：直接在项目目录运行 git 读取当前分支与本地分支列表。
-      const head = await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
-      if (head.code !== 0) return { git: false, current: '', branches: [] };
+      const verdict = gitHeadVerdict(await runGit(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD'], signal));
+      if (verdict.kind === 'absent') return { git: false, current: '', branches: [] };
+      if (verdict.kind === 'failed') throw new WorkbaseError('git-failed', verdict.message);
+      const head = { current: verdict.current };
       signal.throwIfAborted();
-      const list = await runGit(projectPath, ['branch', '--format=%(refname:short)']);
+      const list = await runGit(projectPath, ['branch', '--format=%(refname:short)'], signal);
       const branches = list.out.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-      return { git: true, current: head.out.trim(), branches };
+      return { git: true, current: head.current, branches };
     },
   };
 }

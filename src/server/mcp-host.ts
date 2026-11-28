@@ -28,8 +28,16 @@ interface CredentialPort extends McpOAuthVault {
   set(ref: string, value: string): Promise<void>;
   unset(ref: string): Promise<void>;
 }
-function workspaceIdentity(agent: { session: { id: unknown } } | undefined): string | undefined {
+/** 连接器工具按会话身份授权：值来自 agent.session.id，可能命中项目工作区也可能命中其 sessionIds。 */
+function sessionIdentity(agent: { session: { id: unknown } } | undefined): string | undefined {
   return agent ? String(agent.session.id) : undefined;
+}
+/** 只有模块确实不存在时才降级为「宿主没有官方客户端」。 */
+export function isMissingMcpClient(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /Cannot find (package|module) '@deepseek-ai\/dsh-mcp-client'/.test(message);
 }
 export async function createMcpBackend(ctx: Context, verifiedClient?: OfficialClient): Promise<McpBackend> {
   const credentials = ctx.get('credentials') as CredentialPort | undefined;
@@ -53,8 +61,17 @@ export async function createMcpBackend(ctx: Context, verifiedClient?: OfficialCl
     const specifier = '@deepseek-ai/dsh-mcp-client';
     client = verifiedClient ?? await import(specifier) as OfficialClient;
     if (typeof client.Config !== 'function' || typeof client.apply !== 'function'
-      || typeof client.connectionStatusOf !== 'function') return backend;
-  } catch { return backend; }
+      || typeof client.connectionStatusOf !== 'function') {
+      // 包在、但导出契约不符，是升级后的契约变更，不能伪装成「这台宿主没有这个能力」。
+      backend.issue = '官方连接器客户端缺少 Config／apply／connectionStatusOf 导出，契约可能已变更';
+      return backend;
+    }
+  } catch (error) {
+    // 只有「这个包没装」才算宿主没提供官方客户端；装了但加载失败（语法、peer 依赖、初始化抛错）
+    // 必须显式报出来，否则用户看到的是「宿主缺少能力」，永远查不到真正的错误。
+    if (!isMissingMcpClient(error)) throw new Error('官方连接器客户端加载失败', { cause: error });
+    return backend;
+  }
   const tools = ctx.get('tools') as {
     register(definition: ToolDefinition, options?: ToolRegistrationOptions): () => void;
   } | undefined;
@@ -70,10 +87,10 @@ export async function createMcpBackend(ctx: Context, verifiedClient?: OfficialCl
         const remove = tools.register({
           ...definition,
           execute: async (args, execution) => {
-            if (!enabled(workspaceIdentity(execution.agent))) throw new Error('连接器工具未启用或不在当前登记项目范围');
+            if (!enabled(sessionIdentity(execution.agent))) throw new Error('连接器工具未启用或不在当前登记项目范围');
             return definition.execute(args, execution);
           },
-        }, { when: activation => enabled(workspaceIdentity(activation.agent)) });
+        }, { when: activation => enabled(sessionIdentity(activation.agent)) });
         const dispose = () => { definitions.delete(definition.name); disposers.delete(dispose); remove(); };
         disposers.add(dispose);
         return dispose;

@@ -19,6 +19,8 @@ interface Directory {
   workspaceId: string;
   path: string;
   workingDirectory: string | undefined;
+  /** 读取过程本身失败（区别于「读到了但与项目不一致」）：只允许提示重试，不能说成项目换了。 */
+  failed?: boolean;
 }
 export interface SidebarTarget { active: boolean; sessionId?: string; }
 export interface ProjectSidebarPort {
@@ -45,11 +47,15 @@ export function officialProjectSidebarPort(host: {
   if (!layout?.panelInfo?.subscribe || !layout.panelInfo.getSnapshot || !layout.closeRightbar
     || !sessions?.retain || !sessions.refreshProjections || !sessions.list?.subscribe || !sessions.list.getSnapshot
     || !workspaces?.list?.subscribe || !workspaces.list.getSnapshot) return;
+  const findWorkspace = (project: SidebarProject) => {
+    const registry = workspaces.list.getSnapshot();
+    return Array.isArray(registry.items)
+      ? registry.items.find(row => row.workspaceId === project.workspaceId) : undefined;
+  };
   const members = (project: SidebarProject): readonly SessionId[] => {
     const catalog = sessions.list.getSnapshot(), registry = workspaces.list.getSnapshot();
-    if (!Array.isArray(catalog.ids) || !catalog.byId || !Array.isArray(registry.items)
-      || !Array.isArray(registry.archivedSessionIds)) return [];
-    const workspace = registry.items.find(row => row.workspaceId === project.workspaceId);
+    if (!Array.isArray(catalog.ids) || !catalog.byId || !Array.isArray(registry.archivedSessionIds)) return [];
+    const workspace = findWorkspace(project);
     if (!project.available || workspace?.path !== project.path) return [];
     const listed = new Set(catalog.ids), archived = new Set(registry.archivedSessionIds);
     return workspace.sessionIds.filter((id: SessionId) => {
@@ -68,7 +74,7 @@ export function officialProjectSidebarPort(host: {
   const reads = new Map<string, Promise<void>>();
   const currentDirectory = (reference: SidebarReference, project: SidebarProject): Directory => {
     try {
-      const workspace = workspaces.list.getSnapshot().items.find(row => row.workspaceId === project.workspaceId);
+      const workspace = findWorkspace(project);
       const summary = sessions.list.getSnapshot().byId[reference.sessionId];
       const value = reference.binding.session.projections.faceOf('workingDirectory').getSnapshot();
       return {
@@ -77,7 +83,7 @@ export function officialProjectSidebarPort(host: {
         path: workspace?.path ?? '',
         workingDirectory: typeof value === 'string' ? value : undefined,
       };
-    } catch { return { workspaceId: '', path: '', workingDirectory: undefined }; }
+    } catch { return { workspaceId: '', path: '', workingDirectory: undefined, failed: true }; }
   };
   return {
     panel: { getSnapshot: () => layout.panelInfo.getSnapshot().activePanelId,
@@ -117,13 +123,16 @@ export function officialProjectSidebarPort(host: {
   };
 }
 
-/** 一份目录会话引用；已初始化的官方Tab拥有独立保留计数。 */
+/** 一份目录会话引用；已初始化的官方Tab拥有独立保留计数。
+ *  生命周期由四个计数器协同：mounts（已提交的挂载）、holds（Tab级 AbortSignal 保留）、
+ *  detached（控制器已撤下该目标，不再等待新挂载）、disposed（引用已释放，终态一次性）。
+ *  只有 detached 且无挂载、或显式 dispose() 才会真正释放宿主引用。 */
 export class ProjectSidebarView {
   readonly sessionId: string;
   private mounts = 0;
   private holds = 0;
-  private retired = false;
-  private released = false;
+  private detached = false;
+  private disposed = false;
   private stopDirectory: (() => void) | undefined;
   constructor(readonly reference: SidebarReference, readonly project: SidebarProject,
     private readonly onRelease: () => void) {
@@ -137,11 +146,11 @@ export class ProjectSidebarView {
     return () => {
       if (!mounted) return;
       mounted = false; this.mounts--;
-      if (this.retired && !this.mounts) this.dispose();
+      if (this.detached && !this.mounts) this.dispose();
     };
   };
   readonly retainTab = (_tabId: string, signal: AbortSignal): (() => void) => {
-    if (signal.aborted || this.released) return () => {};
+    if (signal.aborted || this.disposed) return () => {};
     this.holds++;
     let held = true;
     const release = () => {
@@ -154,12 +163,12 @@ export class ProjectSidebarView {
     return release;
   };
   retire() {
-    this.retired = true;
+    this.detached = true;
     if (!this.mounts) this.dispose();
   }
   dispose() {
-    if (this.released) return;
-    this.released = true;
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopDirectory?.(); this.stopDirectory = undefined;
     this.reference.release();
   }
@@ -174,7 +183,10 @@ interface Snapshot {
 }
 const sameProject = (a: SidebarProject | null, b: SidebarProject | null) => a === b || !!a && !!b
   && a.projectId === b.projectId && a.workspaceId === b.workspaceId && a.path === b.path && a.available === b.available;
-const directoryMatches = (directory: Directory, project: SidebarProject) => directory.workspaceId === project.workspaceId
+/** 目录核验失败时区分「读不到」与「读到了但不是这个项目」：前者只需重试。 */
+const directoryFailedReason = (directory: Directory) => directory.failed
+  ? '右栏会话目录暂时读取失败，请稍后重试。'
+  : '右栏会话目录与当前项目不一致，请重新打开项目。';const directoryMatches = (directory: Directory, project: SidebarProject) => directory.workspaceId === project.workspaceId
   && directory.path === project.path && directory.workingDirectory === project.path;
 
 /** 项目目标独立于宿主Conversation选择；只复用项目已有会话，不改变Agent目录。 */
@@ -226,9 +238,10 @@ export class ProjectSidebarController {
   private active() {
     return !!this.snapshot.project && this.port.panel.getSnapshot() === 'dsh-workbase' && !this.disposed;
   }
-  private validCurrent() {
+  /** 读快照走已发布的候选集合：重算候选要建集合、过滤并整体排序，不能挂在每次渲染的读路径上。 */
+  private validCurrent(candidates: readonly string[] = this.snapshot.candidates) {
     const view = this.current;
-    return !!view && this.port.candidates(view.project).includes(view.sessionId)
+    return !!view && candidates.includes(view.sessionId)
       && (!this.port.currentDirectory || directoryMatches(this.port.currentDirectory(view.reference, view.project), view.project));
   }
   private emit() { for (const listener of [...this.listeners]) listener(); }
@@ -241,7 +254,7 @@ export class ProjectSidebarController {
     if (this.disposed) return;
     const project = this.snapshot.project;
     const candidates = project?.available ? this.port.candidates(project) : [];
-    const invalid = this.current && !this.validCurrent()
+    const invalid = this.current && !this.validCurrent(candidates)
       || this.pendingSessionId && !candidates.includes(this.pendingSessionId);
     if (invalid) {
       this.generation++; this.openIntent = false; this.pendingSessionId = undefined; this.current = undefined;
@@ -323,7 +336,7 @@ export class ProjectSidebarController {
       if (retained) {
         const directory = await this.port.directory(retained.reference, project);
         if (!live()) return;
-        if (!directoryMatches(directory, project)) throw new Error('右栏会话目录与当前项目不一致，请重新打开项目。');
+        if (!directoryMatches(directory, project)) throw new Error(directoryFailedReason(directory));
         this.current = retained;
         this.pendingSessionId = undefined;
         this.previousSessions.set(this.projectKey(project), id);
@@ -334,7 +347,7 @@ export class ProjectSidebarController {
       if (!live()) return;
       const directory = await this.port.directory(reference, project);
       if (!live()) return;
-      if (!directoryMatches(directory, project)) throw new Error('右栏会话目录与当前项目不一致，请重新打开项目。');
+      if (!directoryMatches(directory, project)) throw new Error(directoryFailedReason(directory));
       if (!this.port.candidates(project).includes(id)) return;
       const view = new ProjectSidebarView(reference, project, () => this.prune());
       reference = undefined; this.current = view; this.views.add(view);

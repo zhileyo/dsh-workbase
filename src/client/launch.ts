@@ -22,7 +22,7 @@ export async function launchMessage(api: ClientPort, memory: UiMemory, input: {
     if (typeof created?.sessionId !== 'string' || !created.sessionId) throw new Error('宿主没有返回有效会话，请重试');
     memory.composer.pending = {
       projectId: input.projectId, sessionId: created.sessionId, provider: input.provider,
-      model: input.model, text: input.text, requestId,
+      model: input.model, text: input.text, requestId, key,
     };
     delete memory.composer.creationRequests[key];
     memory.save();
@@ -37,4 +37,14 @@ export async function launchMessage(api: ClientPort, memory: UiMemory, input: {
   memory.composer.draft = '';
   memory.save();
   return submission.sessionId;
+}
+
+/** 放弃未送达的首条消息：撤掉闩锁并丢弃这次创建请求身份，让用户按当前草稿重新开始。 */
+export function abandonPending(memory: UiMemory) {
+  const pending = memory.composer.pending;
+  if (!pending) return;
+  // 创建请求身份一并丢弃，否则同一项目、模式、模型与文本会复用一个已放弃的会话。
+  if (pending.key && memory.composer.creationRequests[pending.key]) delete memory.composer.creationRequests[pending.key];
+  memory.composer.pending = null;
+  memory.save();
 }

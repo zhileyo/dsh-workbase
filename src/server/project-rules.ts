@@ -1,5 +1,5 @@
 import { constants } from 'node:fs';
-import { lstat, open, realpath, rename, unlink } from 'node:fs/promises';
+import { lstat, link, open, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { WorkbaseError } from '../shared/model.js';
@@ -94,14 +94,17 @@ export async function saveRuleFiles(home: string, previous: ProjectRules, value:
       const identity = await handle.stat();
       await handle.close();
       await check(stage, expected);
-      // 新文件通过硬链接排他创建，不能把预检后创建的外部文件覆盖掉。
+      const record: FileValue = { text, ino: identity.ino, dev: identity.dev, mode: identity.mode };
       if (expected === null) {
-        const { link } = await import('node:fs/promises');
+        // 新文件通过硬链接排他创建，不能把预检后创建的外部文件覆盖掉。
         await link(temp, stage.file);
-        stage.written = { text, ino: identity.ino, dev: identity.dev, mode: identity.mode };
+        // 链接成功后先登记：随后 unlink 临时文件失败时，回滚仍知道这份文件属于本次写入。
+        stage.written = record;
         await unlink(temp);
-      } else await rename(temp, stage.file);
-      stage.written = { text, ino: identity.ino, dev: identity.dev, mode: identity.mode };
+      } else {
+        await rename(temp, stage.file);
+        stage.written = record;
+      }
       const written = await read(stage.file);
       if (!equal(written, stage.written)) throw new WorkbaseError('rules-conflict', '规则保存后被外部修改');
       if (!written) throw new WorkbaseError('rules-conflict', '规则保存后被外部删除');

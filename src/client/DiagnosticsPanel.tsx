@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Snapshot } from '../shared/model.js';
-import { diagnosticRepairResult, type Diagnosis, type DiagnosticCandidate, type DiagnosticRepairKind, type DiagnosticRepairResult } from '../shared/diagnostics.js';
+import { diagnosticRepairResult, type Diagnosis, type DiagnosticCandidate, type DiagnosticKind, type DiagnosticRepairKind, type DiagnosticRepairResult } from '../shared/diagnostics.js';
 import type { ClientPort } from './api.js';
 import { StatsProjectPanel, type StatEntry } from './StatsProjectPanel.js';
 import { Icon, Modal, type Notify } from './ui.js';
 import { errorText, t } from './i18n.js';
+
+/** 四类诊断实体的名称、条目说明与修复动作：每类只在这里出现一次，列表、分组与反馈共用。 */
+const issueKinds = ['directory', 'cache', 'orphan', 'empty'] as const;
+const issueTitles: Record<DiagnosticKind, string> = { directory: '目录异常', cache: '列表缓存', orphan: '孤儿子代理', empty: '空会话' };
+const issueSummaryLabels: Record<DiagnosticKind, string> = { directory: '目录', cache: '缓存', orphan: '孤儿', empty: '空会话' };
+const issueDetails: Record<Exclude<DiagnosticKind, 'orphan'>, string> = { directory: '目录无法访问', cache: '列表缓存不可用', empty: '尚未开始对话' };
+const repairLabels: Record<DiagnosticRepairKind, string> = { cache: '重建列表缓存', orphan: '清理残留', empty: '删除空会话' };
+const repairOutcomeLabels: Record<DiagnosticRepairKind, string> = { cache: '缓存重建', orphan: '残留清理', empty: '空会话删除' };
 
 export function fallbackDiagnosis(snapshot: Snapshot): Diagnosis {
   return {
@@ -21,11 +29,11 @@ export function fallbackDiagnosis(snapshot: Snapshot): Diagnosis {
 }
 export function diagnosticSummary(report: Diagnosis) {
   const count = report.issues.length;
-  const incomplete = (['directory', 'cache', 'orphan', 'empty'] as const)
+  const incomplete = issueKinds
     .some(kind => report.checks.find(c => c.kind === kind)?.status !== 'ok');
   const counts = (kind: string) => report.issues.filter(i => i.kind === kind).length;
-  const detail = ([['directory', '目录'], ['cache', '缓存'], ['orphan', '孤儿'], ['empty', '空会话']] as const)
-    .flatMap(([kind, label]) => counts(kind) ? [`${label} ${counts(kind)}`] : []).join('／');
+  const detail = issueKinds
+    .flatMap(kind => counts(kind) ? [`${t(issueSummaryLabels[kind])} ${counts(kind)}`] : []).join('／');
   return {
     count, state: count ? 'error' : incomplete ? 'unknown' : 'normal',
     detail: count ? `${detail}${incomplete ? ' · 检查未完成' : ''}`
@@ -62,7 +70,7 @@ export async function runDiagnosticRepair(api: Pick<ClientPort, 'call'>, kind: D
 }
 const checkNames = { directory: '目录检查', cache: '列表缓存', orphan: '孤儿子代理', empty: '空会话' };
 export function diagnosticEmptyState(report: Diagnosis, kind?: keyof typeof checkNames) {
-  const kinds = kind ? [kind] : (['directory', 'cache', 'orphan', 'empty'] as const);
+  const kinds = kind ? [kind] : issueKinds;
   const incomplete = kinds.flatMap(key => {
     const check = report.checks.find(check => check.kind === key);
     return check?.status === 'ok' ? [] : [`${checkNames[key]}：${check?.status === 'error' ? '检查失败'
@@ -148,29 +156,31 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject, not
     else void repair(kind, items);
   };
   const unsupported = '宿主缺少诊断修复所需的底层能力，请更新宿主';
-  const entries: StatEntry[] = report.issues.map(issue => {
+  /** 条目与其来源异常按 kind 成对保留，分组时不再按下标回查 report.issues。 */
+  const rows = report.issues.map(issue => {
     const groupId = issue.projectId ?? `unbound:${issue.path}`;
     const title = issue.kind === 'cache'
       ? issue.sessionTitle === undefined ? issue.title : `${issue.sessionTitle} · ${t('列表缓存异常')}`
       : t(issue.title);
-    return {
+    const entry: StatEntry = {
       id: issue.id, title: `${issue.projectTitle} · ${title}`,
-      detail: issue.kind === 'directory' ? '目录无法访问'
-        : issue.kind === 'cache' ? '列表缓存不可用'
-        : issue.kind === 'empty' ? '尚未开始对话'
-        : `母会话缺失 · ${issue.sizeBytes === undefined ? '大小未知' : `${(issue.sizeBytes / 1024).toFixed(1)} KB`}`,
+      detail: issue.kind === 'orphan'
+        ? `母会话缺失 · ${issue.sizeBytes === undefined ? '大小未知' : `${(issue.sizeBytes / 1024).toFixed(1)} KB`}`
+        : issueDetails[issue.kind],
       sessionId: issue.sessionId,
       detailHint: [issue.detail, issue.path, issue.sessionId ? `会话 ${issue.sessionId}` : '',
         issue.parentSessionId ? `母会话 ${issue.parentSessionId}` : ''].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index).join(' · '),
       project: { projectId: groupId, title: issue.projectTitle, path: issue.path },
       actions: issue.kind === 'directory'
         ? issue.projectId ? [{ label: '查看项目', disabled: working || busy, run: () => openProject(issue.projectId!) }] : []
-        : [{ label: issue.kind === 'cache' ? '重建列表缓存' : issue.kind === 'empty' ? '删除空会话' : '清理残留', danger: issue.kind !== 'cache',
+        : [{ label: repairLabels[issue.kind], danger: issue.kind !== 'cache',
           disabled: working || busy || issue.readOnly || !report.repair[issue.kind],
           hint: issue.readOnly ? '项目已归档，恢复后可修复' : report.repair[issue.kind] ? undefined : unsupported,
           run: () => requestRepair(issue.kind as DiagnosticRepairKind, [{ sessionId: issue.sessionId!, identity: issue.identity! }]) }],
     };
+    return { kind: issue.kind, entry };
   });
+  const entries = rows.map(row => row.entry);
   const caches = candidate(report, 'cache'), orphans = candidate(report, 'orphan'), empties = candidate(report, 'empty');
   const orphanIssues = report.issues.filter(i => i.kind === 'orphan');
   const knownSize = orphanIssues.reduce((sum, issue) => sum + (issue.sizeBytes ?? 0), 0);
@@ -198,7 +208,7 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject, not
     {progress && <p className="diagnostic-message" role="status">已处理 {progress.done} / {progress.total}</p>}
     {feedback && <div className="diagnostic-feedback" role="status">
       <p>{t('{p0}：成功 {p1} · 跳过 {p2} · 失败 {p3}', {
-        p0: t(feedback.kind === 'cache' ? '缓存重建' : feedback.kind === 'empty' ? '空会话删除' : '残留清理'),
+        p0: t(repairOutcomeLabels[feedback.kind]),
         p1: feedback.result.succeeded.length, p2: feedback.result.skipped.length, p3: feedback.result.failures.length,
       })}</p>
       {!!feedback.result.failures.length && <details><summary>失败详情</summary>
@@ -209,16 +219,16 @@ export function DiagnosticsPanel({ report, api, busy, onReport, openProject, not
     <StatsProjectPanel entries={entries} empty={working ? progress ? '正在处理…' : '正在检查…' : error ? '最近操作失败' : emptyState.title}
       emptyDetail={working ? '完成后将更新检查结果' : error ? '当前保留上次检查结果，请重新检查' : emptyState.detail}
       resultHeader={(category, count) => <div className="diagnostic-list-header">
-        <strong>{category ? { directory: '目录异常', cache: '列表缓存', orphan: '孤儿子代理', empty: '空会话' }[category] : '全部异常'} · {count}</strong>
+        <strong>{category ? issueTitles[category as DiagnosticKind] : '全部异常'} · {count}</strong>
         {(category === null || category === 'empty') && !!empties.length && <button type="button" className="danger"
           disabled={working || busy || !report.repair.empty}
           title={report.repair.empty ? '删除所有项目中的可清理空会话，不受搜索条件影响' : unsupported}
           onClick={() => requestRepair('empty', empties)}>{category === 'empty' ? '删除全部' : '删除全部空会话'}（{empties.length}）</button>}
       </div>}
-      categories={(['directory', 'cache', 'orphan', 'empty'] as const).map(kind => {
+      categories={issueKinds.map(kind => {
         const state = diagnosticEmptyState(report, kind);
-        return { id: kind, title: { directory: '目录异常', cache: '列表缓存', orphan: '孤儿子代理', empty: '空会话' }[kind],
-          entries: entries.filter((_, index) => report.issues[index]?.kind === kind),
+        return { id: kind, title: issueTitles[kind],
+          entries: rows.filter(row => row.kind === kind).map(row => row.entry),
           empty: working ? progress ? '正在处理…' : '正在检查…' : error ? '最近操作失败' : state.title,
           emptyDetail: working ? '完成后将更新检查结果' : error ? '当前保留上次检查结果，请重新检查' : state.detail,
         };

@@ -3,8 +3,8 @@ import { access, lstat, mkdir, readFile, readdir, realpath, stat } from 'node:fs
 import { constants, watch, type FSWatcher } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { z } from 'zod';
-import { isModelInvocable, isUserInvocable, type SkillProvider, type SkillRegistry, type SkillLookupOptions, type SkillDefinition, type SkillCandidate,
-  type SkillCatalogSnapshot, type SkillViewOptions } from '@deepseek-ai/dsh-skill';
+import type { SkillProvider, SkillRegistry, SkillLookupOptions, SkillDefinition, SkillCandidate,
+  SkillCatalogSnapshot, SkillViewOptions } from '@deepseek-ai/dsh-skill';
 import type { FileSystem } from '@deepseek-ai/dsh-fs';
 import type { SandboxProvider } from '@deepseek-ai/dsh-sandbox';
 import {
@@ -13,7 +13,8 @@ import {
   type SkillReceipt, type SkillsSummary,
 } from '../shared/skills.js';
 import { absent, atomicJson, canonicalDirectory, contained, digest, exists, fileTransaction, readBundle, recoverTransaction, safePath,
-  MAX_SKILL_BYTES, localSkillFileOperations, SkillCommitUncertainError, type SkillFileOperations, type FilePlan, type SkillBundle } from './skills-files.js';
+  MAX_SKILL_BYTES, MAX_SKILL_FILES, SKILL_IMPORT_LIMIT_MESSAGE, localSkillFileOperations, SkillCommitUncertainError,
+  type SkillFileOperations, type FilePlan, type SkillBundle } from './skills-files.js';
 import { sandboxSkillFileOperations } from './skills-sandbox.js';
 import { fetchSkillCatalog, fetchSkillResource } from './skills-network.js';
 import { canonicalSkillMarketUrl, skillMarketKind, loadSkillMarket, readMarketSkill, readMarketZip, marketSkillMarkdown, marketSkillArchiveUrl } from './skills-market.js';
@@ -21,8 +22,11 @@ import { readSkillRepository, type RepositorySkill } from './skills-repository.j
 import { SkillsHost } from './skills-host.js';
 import { readSkillDocument, skillInvocationName } from './skills-document.js';
 
-export interface SkillsProject { projectId: string; path: string; title: string; available: boolean; archived: boolean }
-export interface SkillsContext {
+/** 宿主把调用策略挂在候选对象上；这里只读字段，保持对 @deepseek-ai/dsh-skill 的类型依赖，不引入运行时值导入。 */
+const isModelInvocable = (skill: { invocation: { modelInvocable: boolean } }) => skill.invocation.modelInvocable;
+const isUserInvocable = (skill: { invocation: { userInvocable: boolean } }) => skill.invocation.userInvocable;
+
+export interface SkillsProject { projectId: string; path: string; title: string; available: boolean; archived: boolean }export interface SkillsContext {
   get(name: 'skills'): SkillRegistry | undefined;
   get(name: 'fs'): FileSystem | undefined;
   get(name: 'sandbox'): SandboxProvider | undefined;
@@ -83,6 +87,7 @@ export class SkillsManager {
   private initialized = false;
   private initializing?: Promise<void>;
   private watchers = new Map<string, FSWatcher>();
+  private watchCoalescer?: WatchCoalescer;
   private queue: Promise<unknown> = Promise.resolve();
   private closing = false;
   private commitUncertain = false;
@@ -192,14 +197,14 @@ export class SkillsManager {
       try { actual = await readState(); }
       catch (readError) {
         this.commitUncertain = true;
-        this.viewIssue = '技能提交结果无法确认，禁止继续操作；请重新初始化以核对状态与事务日志';
+        this.viewIssue = '技能提交结果无法确认，禁止继续操作；请重新核对状态与事务日志';
         throw new SkillCommitUncertainError(new AggregateError([error, readError]));
       }
       // 只有完整新状态相同才能确认提交，完整旧状态相同才能回滚。
       if (actual !== text) {
         if (actual === previous) throw error;
         this.commitUncertain = true;
-        this.viewIssue = '技能提交结果无法确认，禁止继续操作；请重新初始化以核对状态与事务日志';
+        this.viewIssue = '技能提交结果无法确认，禁止继续操作；请重新核对状态与事务日志';
         throw new SkillCommitUncertainError(error);
       }
     }
@@ -209,7 +214,30 @@ export class SkillsManager {
     this.host.refresh();
   }
   private assertWritableState() {
-    if (this.commitUncertain) throw new Error('技能提交结果无法确认，禁止继续操作；请重新初始化以核对状态与事务日志');
+    if (this.commitUncertain) throw new Error('技能提交结果无法确认，禁止继续操作；请重新核对状态与事务日志');
+  }
+  // 提交结果不确定时唯一的放行入口：按磁盘上的状态文件与事务日志重跑一次初始化核对，
+  // 核对通过才恢复写入；仍读不出或与事务记录不符则继续封锁，不能靠重启才解脱。
+  private recoverCommit(signal?: AbortSignal): Promise<SkillsSnapshot> {
+    const task = this.queue.then(async () => {
+      if (this.closing) throw new Error('技能模块已卸载');
+      signal?.throwIfAborted();
+      const uncertain = this.commitUncertain;
+      if (!uncertain) return this.snapshotNow();
+      this.initialized = false;
+      this.initializing = undefined;
+      this.viewIssue = undefined;
+      this.commitUncertain = false;
+      try { await this.initialize(); }
+      catch (error) {
+        this.commitUncertain = true;
+        this.viewIssue = `技能提交结果仍无法确认：${message(error)}`;
+        throw error;
+      }
+      return this.snapshotNow();
+    });
+    this.queue = task.catch(() => undefined);
+    return task;
   }
   private async projects() { return [...await this.options.projects()]; }
   private async allSources() {
@@ -256,11 +284,12 @@ export class SkillsManager {
     return readFile(path, 'utf8');
   }
   handle(method: string, input: unknown = {}, signal?: AbortSignal): Promise<unknown> {
-    // 页面先展示当前已提交状态；不能排在慢的目录生效检查或写事务之后。
+    // 页面先展示当前已提交状态；不能排在慢的目录生效检查或写事务之后（snapshot 因此不进下面的串行队列）。
     if (method === 'snapshot') return this.readSnapshot(signal);
+    // 恢复核对本身就是「先读盘再决定能否写」，不能被 assertWritableState 拦在前面。
+    if (method === 'recover') return this.recoverCommit(signal);
     return this.serial(async () => {
       switch (method) {
-        case 'snapshot': return this.snapshotNow();
         case 'summary': await this.scan(); return this.summaryNow();
         case 'reveal-staging': {
           const path = join(this.directory, 'disabled');
@@ -349,15 +378,14 @@ export class SkillsManager {
   summary(): Promise<SkillsSummary> { return this.serial(async () => { await this.scan(); return this.summaryNow(); }); }
   private summaryNow(): SkillsSummary {
     const usable = this.state.skills.filter(row => !row.deletedAt && row.effective === 'effective' && !row.issue);
+    const confirmed = this.checkedAt !== null;
+    // 同一批去重口径只算一次；count／global 同一事实、issues 复用 errors，避免返回对象里并存恒等字段。
     const global = new Set(usable.filter(row => row.scope === 'global').map(row => row.invocationName ?? row.name)).size;
     const project = new Set(usable.filter(row => row.scope === 'project').map(row => row.id)).size;
     const errors = this.state.skills.filter(row => !row.deletedAt && row.issue && row.effective !== 'pending').length
       + this.state.sources.filter(row => row.issue).length;
-    return { count: this.checkedAt === null ? null : global, detail: this.checkedAt === null ? `技能生效尚未确认 · 异常 ${errors}` : `项目 ${project} · 异常 ${errors}`, errors,
-      global: this.checkedAt === null ? null : global,
-      project: this.checkedAt === null ? null : new Set(usable.filter(row => row.scope === 'project').map(row => row.id)).size,
-      issues: errors,
-      checkedAt: this.checkedAt };
+    return { count: confirmed ? global : null, detail: confirmed ? `项目 ${project} · 异常 ${errors}` : `技能生效尚未确认 · 异常 ${errors}`,
+      errors, global: confirmed ? global : null, project: confirmed ? project : null, issues: errors, checkedAt: this.checkedAt };
   }
   private async snapshotNow(): Promise<SkillsSnapshot> {
     const sources = await this.allSources();
@@ -368,7 +396,7 @@ export class SkillsManager {
         hasMore: this.marketPage.signature === this.marketSignature() && this.marketPage.cursors.size > 0 },
       summary: this.summaryNow(), disabledDirectory: join(this.directory, 'disabled'), stagingPath: join(this.directory, 'disabled'),
       legacyStagedCount: this.state.skills.filter(row => !row.deletedAt && row.installations.some(entry => contained(join(this.directory, 'disabled'), entry.path))).length,
-      issue: this.viewIssue ?? this.host.failure });
+      issue: this.viewIssue ?? this.host.failure, recoverable: this.commitUncertain });
   }
   private find(id: string) {
     const row = this.state.skills.find(skill => skill.id === id && !skill.deletedAt);
@@ -393,10 +421,8 @@ export class SkillsManager {
       throw new Error('应用范围包含未登记、不可用或已归档项目');
     return row.projectIds.map(id => ({ path: join(projects.find(project => project.projectId === id)!.path, '.dsh/skills', row.name), projectId: id }));
   }
-  private async installationPaths(row: SkillRecord) {
-    return this.targetPaths(row);
-  }
-  private async save(input: z.infer<typeof skillSaveSchema>, importedBundle?: SkillBundle, marketInstruction?: string): Promise<SkillReceipt> {
+  private async save(input: z.infer<typeof skillSaveSchema>, importedBundle?: SkillBundle, marketInstruction?: string,
+    adopt?: { path: string; digest: string }): Promise<SkillReceipt> {
     skillScopeSchema.parse(input);
     const previous = input.id ? this.owned(input.id) : undefined;
     if (previous && input.version !== previous.version) throw new Error('技能版本已变化，草稿已保留，请重新读取');
@@ -409,7 +435,7 @@ export class SkillsManager {
       projectIds: [...new Set(input.projectIds)], enabled: input.enabled ?? previous?.enabled ?? this.options.config().defaultEnabled,
       installedAt: previous?.installedAt ?? Date.now(), owner: 'workbase', installations: [], files: [],
     };
-    const paths = await this.installationPaths(row);
+    const paths = await this.targetPaths(row);
     const oldBundle = previous ? await readBundle(this.bundlePath(previous.id)) : new Map<string, Buffer>();
     // 目录由工作台创建后才归本模块拥有；关联文件保持原样，正文单独更新。
     const bundle: SkillBundle = new Map(importedBundle ?? oldBundle);
@@ -422,7 +448,10 @@ export class SkillsManager {
     row.installations = paths.map(path => ({ ...path, digest: sum }));
     const plans: FilePlan[] = [];
     for (const target of row.installations) plans.push({ path: target.path, next: bundle,
-      expected: previous?.installations.find(old => old.path === target.path)?.digest });
+      // 导入的正是来源里已有的那个目录时没有任何既往摘要，用预览时记下的现有内容摘要做接管凭证；
+      // 其它「目标已存在却没有既往摘要」的情况仍由事务预检拒绝，避免覆盖别人的同名技能。
+      expected: previous?.installations.find(old => old.path === target.path)?.digest
+        ?? (previous || adopt?.path !== target.path ? undefined : adopt.digest) });
     for (const old of previous?.installations ?? []) {
       if (!row.installations.some(target => target.path === old.path)) plans.push({ path: old.path, expected: old.digest });
     }
@@ -603,9 +632,8 @@ export class SkillsManager {
           duplicate: this.state.skills.some(old => old.owner === 'workbase' && !old.deletedAt && old.name === row.name) };
       }));
     }
-    const candidates = value.text !== undefined ? parseSkillUpload(value.text)
-      : value.sourceId ? (await this.discoverSource((await this.allSources()).find(source => source.id === value.sourceId)
-        ?? (() => { throw new Error('仅扫描已登记技能来源'); })())).map(row => editable(row)) : [];
+    // 仓库地址与来源两条分支各自提前返回，「三者恰取一个」的守卫也已排除空输入，这里只剩上传文本。
+    const candidates = parseSkillUpload(value.text!);
     const seen = new Set(this.state.skills.filter(row => !row.deletedAt).map(row => row.name));
     return candidates.map(row => {
       const duplicate = seen.has(row.name); seen.add(row.name);
@@ -631,6 +659,7 @@ export class SkillsManager {
       if (this.state.skills.some(old => !old.deletedAt && old.name === row.name && (!source || old.owner === 'workbase'))) { skipped.push(row.name); continue; }
       try {
         let bundle = preview?.rows.find(candidate => candidate.content.name === row.name)?.bundle;
+        let adopt: { path: string; digest: string } | undefined;
         if (source) {
           const imported = row as SkillRecord;
           const path = imported.installations[0]!.path;
@@ -638,13 +667,15 @@ export class SkillsManager {
           bundle = await readBundle(path);
           if (imported.issue || this.importDigests.get(`${source.id}\0${row.name}`) !== digest(bundle))
             throw new Error('目录候选已变化或解析失败，请重新预览');
+          // 从来源导入来源里已有的那个目录，就是把这个目录接手过来。
+          adopt = { path, digest: this.importDigests.get(`${source.id}\0${row.name}`)! };
         }
         if (bundle) {
           files += bundle.size; bytes += [...bundle.values()].reduce((sum, data) => sum + data.length, 0);
-          if (files > 500 || bytes > 20 * 1024 * 1024) throw new Error('技能导入最多 500 个文件、20 MB');
+          if (files > MAX_SKILL_FILES || bytes > MAX_SKILL_BYTES) throw new Error(SKILL_IMPORT_LIMIT_MESSAGE);
         }
         receipts.push(await this.save({ name: row.name, description: row.description, body: row.body, enabled: row.enabled, frontmatter: row.frontmatter,
-          scope: value.scope, projectIds: value.projectIds, sourceId: value.sourceId }, bundle));
+          scope: value.scope, projectIds: value.projectIds, sourceId: value.sourceId }, bundle, undefined, adopt));
       }
       catch (error) { return { receipts, skipped, error: message(error), failedName: row.name, snapshot: await this.snapshotNow() }; }
     }
@@ -986,6 +1017,7 @@ export class SkillsManager {
   async dispose() {
     if (this.closing) { await this.queue; return; }
     this.closing = true; this.abort.abort(new Error('技能模块已卸载'));
+    this.watchCoalescer?.dispose(); this.watchCoalescer = undefined;
     for (const watcher of this.watchers.values()) watcher.close(); this.watchers.clear();
     this.host.dispose(); await this.queue;
     this.repositoryPreviews.clear(); this.importDigests.clear();
@@ -996,19 +1028,43 @@ export class SkillsManager {
     const sourceRoots = (await this.allSources()).map(source => source.path);
     const roots = [...new Set([...sourceRoots, ...rows.flatMap(row => row.realInstructionPath
       && !sourceRoots.some(root => contained(root, row.realInstructionPath!)) ? [dirname(row.realInstructionPath)] : [])])];
-    // 全局和各项目查询共享监听；不因某次较窄视图删除其他视图的监听。
-    for (const path of roots.slice(0, 256)) {
-      if (!await exists(path)) continue;
+    // 每个根都要 stat + realpath + 权限探测，逐个等会让扫描时间随来源数叠加；先并行解析，再串行建监听。
+    const resolved = await Promise.all(roots.slice(0, 256).map(async path => {
       try {
+        if (!await exists(path)) return null;
         const target = await realpath(path);
-        if (this.watchers.has(target)) continue;
-        if (this.watchers.size >= 256) { this.viewIssue = '技能来源监听达到上限，请扫描确认文件变化'; break; }
         await this.permission([...new Set([path, target])], 'read');
-        const watcher = watch(target, { recursive: true, persistent: false }, () => { this.invalidateDiscovery(); this.host.refresh(); });
-        watcher.on('error', error => { this.viewIssue = `技能来源监听失败：${message(error)}`; this.invalidateDiscovery(); this.host.refresh(); });
-        this.watchers.set(target, watcher);
+        return { path, target };
+      } catch (error) { this.viewIssue = `技能来源监听不可用：${message(error)}`; return null; }
+    }));
+    // 全局和各项目查询共享监听；不因某次较窄视图删除其他视图的监听。
+    for (const item of resolved) {
+      if (!item || this.watchers.has(item.target)) continue;
+      if (this.watchers.size >= 256) { this.viewIssue = '技能来源监听达到上限，请扫描确认文件变化'; break; }
+      try {
+        const watcher = watch(item.target, { recursive: true, persistent: false }, () => this.changed());
+        watcher.on('error', error => { this.viewIssue = `技能来源监听失败：${message(error)}`; this.changed(); });
+        this.watchers.set(item.target, watcher);
       } catch (error) { this.viewIssue = `技能来源监听不可用：${message(error)}`; }
     }
+    this.watchCoalescer ??= new WatchCoalescer(() => { this.invalidateDiscovery(); this.host.refresh(); });
+  }
+  /** 一次保存会连发多个文件事件：合并成一次失效与一次刷新，避免每个事件都重扫全部来源。 */
+  private changed() { this.watchCoalescer?.nudge(); }
+}
+/** 文件监听的合并器：只保留一次尾随触发，卸载后不再回调。 */
+export class WatchCoalescer {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private disposed = false;
+  constructor(private readonly run: () => void, private readonly delay = 150) {}
+  nudge() {
+    if (this.disposed || this.timer !== undefined) return;
+    this.timer = setTimeout(() => { this.timer = undefined; this.run(); }, this.delay);
+    this.timer.unref?.();
+  }
+  dispose() {
+    this.disposed = true;
+    if (this.timer !== undefined) { clearTimeout(this.timer); this.timer = undefined; }
   }
 }
 function message(error: unknown) { return error instanceof Error ? error.message : String(error); }

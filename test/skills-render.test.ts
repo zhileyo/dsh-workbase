@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { toggleSkillScope } from '../src/shared/skills.js';
 
 const panel = readFileSync(new URL('../src/client/SkillsPanel.tsx', import.meta.url), 'utf8');
+const panelUtils = readFileSync(new URL('../src/client/panel-utils.ts', import.meta.url), 'utf8');
 const scope = readFileSync(new URL('../src/client/ScopePicker.tsx', import.meta.url), 'utf8');
 const prototype = readFileSync(new URL('../docs/ui/ui-directions.html', import.meta.url), 'utf8');
 test('技能面板完全沿用原型类名与共用 Modal Picker IconButton', () => {
@@ -37,6 +38,7 @@ test('技能页签、上传过期读取、来源输入法与读屏关联保留',
   assert.match(panel, /revision !== requestRevision\.current/);
   assert.match(panel, /renameComposing\.current \|\| busy/);
   assert.match(panel, /row\.owner !== 'workbase'/);
-  assert.match(panel, /active\?\.isConnected && document\.activeElement === document\.body/);
-  assert.match(panel, /active\.focus\(\{ preventScroll: true \}\)/);
+  // 焦点恢复已随动作包装器提炼进 panel-utils（usePanelAction→restorePanelFocus），断言随实现走。
+  assert.match(panelUtils, /active\?\.isConnected && document\.activeElement === document\.body/);
+  assert.match(panelUtils, /active\.focus\(\{ preventScroll: true \}\)/);
 });

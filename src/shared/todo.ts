@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const prioritySchema = z.enum(['high', 'medium', 'low']).nullable();
 export const priorityLabels = { high: '高', medium: '中', low: '低' };
+/** 展示文案与语言无关地按优先级键取，翻译与比较都不依赖中文显示值。 */
+export const priorityBadgeLabels: Record<'high' | 'medium' | 'low', string> = { high: '高优先级', medium: '中优先级', low: '低优先级' };
 export const MAX_TODO_IMAGES = 10;
 export const MAX_TODO_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_TODO_ATTACHMENTS = MAX_TODO_IMAGES;
@@ -30,3 +32,5 @@ export const todoFilterSchema = z.object({
   query: z.string().trim().max(500).optional(), priority: prioritySchema.optional(),
 }).strict();
 export type TodoFilter = z.infer<typeof todoFilterSchema>;
+/** 待办组合主键的唯一构造：项目与待办标识编码成存储内的去重键，键规则只在这里定义。 */
+export const todoKey = (projectId: string, id: string) => JSON.stringify([projectId, id]);

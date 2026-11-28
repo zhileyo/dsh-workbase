@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { parseSkillUpload, type SkillContent } from '../shared/skills.js';
-import { MAX_SKILL_BYTES, MAX_SKILL_FILES, type SkillBundle } from './skills-files.js';
+import { MAX_SKILL_BYTES, MAX_SKILL_FILES, SKILL_IMPORT_LIMIT_MESSAGE, type SkillBundle } from './skills-files.js';
 import { fetchSkillResource } from './skills-network.js';
 
 type FetchResource = typeof fetchSkillResource;
@@ -43,11 +43,11 @@ export async function readSkillRepository(value: string, signal: AbortSignal, fe
       if (!safe(file.path) || !safe(relative) || !['100644', '100755'].includes(file.mode) || file.type !== 'blob')
         throw new Error('仓库技能拒绝越界路径、符号链接或子模块');
       if (++count > MAX_SKILL_FILES || bytes + (file.size ?? 0) > MAX_SKILL_BYTES)
-        throw new Error('技能导入最多 500 个文件、20 MB');
+        throw new Error(SKILL_IMPORT_LIMIT_MESSAGE);
       const data = await fetchResource(`https://raw.githubusercontent.com/${owner}/${repo}/${commit}/${file.path.split('/').map(encodeURIComponent).join('/')}`,
         signal, 0, MAX_SKILL_BYTES - bytes);
       bytes += data.length;
-      if (bytes > MAX_SKILL_BYTES) throw new Error('技能导入最多 500 个文件、20 MB');
+      if (bytes > MAX_SKILL_BYTES) throw new Error(SKILL_IMPORT_LIMIT_MESSAGE);
       bundle.set(relative, data);
     }
     const contents = parseSkillUpload(bundle.get('SKILL.md')!.toString('utf8'));

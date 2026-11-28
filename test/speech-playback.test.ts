@@ -160,3 +160,59 @@ test('自动播放受阻保留可重播正文；关闭配置停止并丢弃等�
     else Reflect.deleteProperty(globalThis, 'Audio');
   }
 });
+
+test('取消回执失败不淹掉后续播报，新流照常发起请求', async () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'AudioContext');
+  Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: class {
+    state = 'running'; currentTime = 0;
+    async resume() {}
+    async close() {}
+    createBuffer(_channels: number, length: number) { return { getChannelData: () => new Float32Array(length) }; }
+    createBufferSource() { return { connect() {}, start() {}, stop() {}, buffer: null, onended: null }; }
+  } });
+  try {
+    let fetches = 0;
+    const request = (async (_input: unknown, init: any) => {
+      fetches++;
+      const signal: AbortSignal = init.signal;
+      let delivered = false;
+      const body = { getReader() { return {
+        read: () => {
+          if (!delivered) {
+            delivered = true;
+            return Promise.resolve({ value: new TextEncoder().encode('{"event":"ready","id":"11111111-1111-4111-8111-111111111111"}\n'), done: false });
+          }
+          return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true }));
+        },
+        cancel: async () => {}, releaseLock() {} }; } };
+      return { ok: true, body };
+    }) as any;
+    const playback = new SpeechPlayback(async command => {
+      if (command.op === 'speech-stream-cancel') throw new Error('取消回执失败');
+      return null;
+    }, request);
+    playback.configure({ config: { ...defaultSpeech(), enabled: true, provider: 'deepseek' }, available: true, hasKey: true, version: 'v1' });
+    playback.streamAction({ kind: 'text', attempt: 'a1', text: '第一段' }, 's');
+    await tick(); await tick();
+    assert.equal(fetches, 1, '首条流应发起请求');
+    playback.stop();
+    await tick(); await tick();
+    playback.replay();
+    await tick(); await tick();
+    assert.equal(fetches, 2, '取消回执失败后新的流仍要发起请求');
+    playback.stop();
+    await tick();
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'AudioContext', original);
+    else delete (globalThis as any).AudioContext;
+  }
+});
+test('重播索引按会话保留最近若干条回复，不随会话长度无限增长', () => {
+  const playback = new SpeechPlayback(async () => new Promise(() => {}));
+  playback.configure({ ...enabled, config: { ...defaultSpeech(), provider: 'compatible', enabled: false, endpoint: 'https://example.com/speech' } });
+  const message = (id: string) => ({ type: 'event', event: { type: 'assistant/message', data: { message: { id, content: [{ type: 'text', text: id }] } } } });
+  playback.updateReplies('s', Array.from({ length: 300 }, (_, index) => message(`m${index}`)));
+  assert.equal(playback.reply('s', 'm0'), '', '过旧的回复不再常驻内存');
+  assert.equal(playback.reply('s', 'm299'), 'm299');
+  assert.equal(playback.reply('s', 'm100'), 'm100', '窗口内的回复仍可重播');
+});

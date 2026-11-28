@@ -68,6 +68,8 @@ export function apply(ctx: Context) {
   let storage: Storage | undefined;
   try { storage = window.localStorage; } catch { /* 隐私模式仍可使用工作台。 */ }
   const memory = new UiMemory(storage);
+  // 落盘合并写入后，页面隐藏时补一次立即写，避免丢掉最后一次草稿。
+
   const sidebarPort = officialProjectSidebarPort(ctx);
   const projectSidebar = sidebarPort ? new ProjectSidebarController(sidebarPort) : undefined;
   if (projectSidebar) {
@@ -312,47 +314,41 @@ export function apply(ctx: Context) {
     }
     return null;
   };
+  /**
+   * 待办附件与图片四个端点的公共骨架：拼 query → fetch → 统一 ok 检查与错误抛出。
+   * 四个方法只声明各自的路径、请求体与返回解析，失败文案按端点传入，不再各抄一遍检查。
+   */
+  const fetchTodoResource = async (path: string, query: URLSearchParams, init: RequestInit, failLabel: string) => {
+    const response = await fetch(`api/workbase/${path}?${query}`, init);
+    if (!response.ok) {
+      const result = await response.json().catch(() => null) as { message?: string } | null;
+      throw new Error(result?.message ?? `${failLabel}（${response.status}）`);
+    }
+    return response;
+  };
   const api: ClientPort = {
     projectSidebar,
     async uploadTodoAttachment(todo, file) {
       const query = new URLSearchParams({ projectId: todo.projectId, id: todo.id, expectedVersion: String(todo.version), name: file.name });
-      const response = await fetch(`api/workbase/todo-attachment?${query}`, {
-        method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file,
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(result?.message ?? `附件上传失败（${response.status}）`);
-      }
+      const response = await fetchTodoResource('todo-attachment', query,
+        { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file }, '附件上传失败');
       return await response.json() as Todo;
     },
     async readTodoAttachment(todo, attachment, signal) {
       const query = new URLSearchParams({ projectId: todo.projectId, id: todo.id, attachmentId: attachment.attachmentId });
-      const response = await fetch(`api/workbase/todo-attachment/content?${query}`, { signal });
-      if (!response.ok) {
-        const result = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(result?.message ?? `附件读取失败（${response.status}）`);
-      }
+      const response = await fetchTodoResource('todo-attachment/content', query, { signal }, '附件读取失败');
       return response.blob();
     },
     renderMarkdown: text => <MarkdownText text={text} labels={{ code: { copyLabel: '复制', copiedLabel: '已复制' }, footnotes: '脚注' }}/>,
     async uploadTodoImage(todo, file) {
       const query = new URLSearchParams({ projectId: todo.projectId, id: todo.id, expectedVersion: String(todo.version) });
-      const response = await fetch(`api/workbase/todo-image?${query}`, {
-        method: 'POST', headers: { 'Content-Type': file.type }, body: file,
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(result?.message ?? `图片上传失败（${response.status}）`);
-      }
+      const response = await fetchTodoResource('todo-image', query,
+        { method: 'POST', headers: { 'Content-Type': file.type }, body: file }, '图片上传失败');
       return await response.json() as Todo;
     },
     async readTodoImage(todo, image, signal) {
       const query = new URLSearchParams({ projectId: todo.projectId, id: todo.id, attachmentId: image.attachmentId });
-      const response = await fetch(`api/workbase/todo-image/content?${query}`, { signal });
-      if (!response.ok) {
-        const result = await response.json().catch(() => null) as { message?: string } | null;
-        throw new Error(result?.message ?? `图片读取失败（${response.status}）`);
-      }
+      const response = await fetchTodoResource('todo-image/content', query, { signal }, '图片读取失败');
       return response.blob();
     },
     async openTodoSession(todo, preset) {

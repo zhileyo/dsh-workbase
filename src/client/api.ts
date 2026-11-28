@@ -3,6 +3,7 @@ import { RPC_CHANNEL, RPC_ENDPOINT, EXTENSIONS_ENDPOINT, ASSISTANT_ENDPOINT } fr
 import { RULES_ENDPOINT, MESSAGE_ENDPOINT, MAX_RULES_REQUEST_BYTES, MAX_MESSAGE_REQUEST_BYTES, MAX_RPC_REQUEST_BYTES } from '../shared/project-rules.js';
 import type { ExtensionModule } from '../shared/extensions.js';
 import { preferencesSchema, type Preferences, type Snapshot } from '../shared/model.js';
+import { t } from './i18n.js';
 import type { ReactNode } from 'react';
 import type { DraftSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type { Todo } from '../shared/model.js';
@@ -65,22 +66,61 @@ export interface RpcPort {
   call(channel: string, endpoint: string, payload: unknown, signal?: AbortSignal): Promise<
     { ok: true; value: unknown } | { ok: false; error: { message: string } }>;
 }
+/** 真实的 UTF-8 字节数，超限即停，不做多余的整串遍历。 */
+const utf8Bytes = (text: string, limit: number): number => {
+  let total = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) total += 1;
+    else if (code < 0x800) total += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length && (text.charCodeAt(index + 1) & 0xfc00) === 0xdc00) {
+      total += 4;
+      index += 1;
+    } else total += 3;
+    if (total > limit) return total;
+  }
+  return total;
+};
+/** 信封占位标识：宿主按 method 分发并把 rpcId 原样回填，从不校验其唯一性，所以客户端统一用这个常量。 */
+const PLACEHOLDER_RPC_ID = '00000000-0000-4000-8000-000000000000';
+/**
+ * 信封的固定开销（类型、rpcId、method 与 payload 两侧的标点）：只算一次，不为每次请求再拼一整串信封。
+ * 骨架里 payload 是空字符串（两个引号），真实信封里由 payload 的 JSON 正文替代，因此减 2。
+ */
+const ENVELOPE_BYTES = utf8Bytes(JSON.stringify({
+  type: 'client-request', rpcId: PLACEHOLDER_RPC_ID, method: '', payload: '',
+}), Number.MAX_SAFE_INTEGER) - 2;/**
+ * 判断一次请求是否还装得下。每个 UTF-16 单元最多占 6 字节（BMP 3 字节、孤立代理被 JSON 转义成 6 个 ASCII 字符），
+ * 先用这个上界排除绝大多数请求，只有接近上限才逐字符精确计数；信封按字节常量加回，不再复制整份请求体。
+ */
+export const fitsRequestLimit = (command: Command, method: string, limit: number): boolean => {
+  const payload = JSON.stringify(command);
+  if (payload.length * 6 + ENVELOPE_BYTES + method.length <= limit) return true;
+  return ENVELOPE_BYTES + method.length + utf8Bytes(payload, limit) <= limit;
+};
+/** op 到端点的归属：一个 op 只登记一次，请求上限再按端点查表，新增端点不必改两条链。 */
+const ENDPOINT_BY_OP: Partial<Record<Command['op'], string>> = {
+  extensions: EXTENSIONS_ENDPOINT,
+  'personal-save': ASSISTANT_ENDPOINT,
+  'speech-save': ASSISTANT_ENDPOINT,
+  'speech-synthesize': ASSISTANT_ENDPOINT,
+  'speech-stream-text': ASSISTANT_ENDPOINT,
+  'speech-stream-cancel': ASSISTANT_ENDPOINT,
+  'rules-save': RULES_ENDPOINT,
+  settings: RULES_ENDPOINT,
+  'submit-message': MESSAGE_ENDPOINT,
+};
+const LIMIT_BY_ENDPOINT: Record<string, number> = {
+  [RULES_ENDPOINT]: MAX_RULES_REQUEST_BYTES,
+  [MESSAGE_ENDPOINT]: MAX_MESSAGE_REQUEST_BYTES,
+  [ASSISTANT_ENDPOINT]: MAX_MESSAGE_REQUEST_BYTES,
+  [EXTENSIONS_ENDPOINT]: 3 * 1024 * 1024,
+};
 export function caller(rpc: RpcPort) {
   return async (command: Command, signal?: AbortSignal) => {
-    const endpoint = command.op === 'extensions' ? EXTENSIONS_ENDPOINT :
-      ['personal-save', 'speech-save', 'speech-synthesize', 'speech-stream-text', 'speech-stream-cancel'].includes(command.op) ? ASSISTANT_ENDPOINT :
-      command.op === 'rules-save' || command.op === 'settings' ? RULES_ENDPOINT :
-      command.op === 'submit-message' ? MESSAGE_ENDPOINT : RPC_ENDPOINT;
-    const limit = endpoint === RULES_ENDPOINT ? MAX_RULES_REQUEST_BYTES : endpoint === MESSAGE_ENDPOINT || endpoint === ASSISTANT_ENDPOINT ? MAX_MESSAGE_REQUEST_BYTES :
-      endpoint === EXTENSIONS_ENDPOINT ? 3 * 1024 * 1024 : MAX_RPC_REQUEST_BYTES;
-    const body = JSON.stringify({ type: 'client-request', rpcId: '00000000-0000-4000-8000-000000000000', method: endpoint, payload: command });
-    let bytes = 0;
-    for (const character of body) {
-      const point = character.codePointAt(0)!;
-      bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
-      if (bytes > limit) break;
-    }
-    if (bytes > limit) throw new Error('请求内容超过传输上限，请缩短内容后重试');
+    const endpoint = ENDPOINT_BY_OP[command.op] ?? RPC_ENDPOINT;
+    const limit = LIMIT_BY_ENDPOINT[endpoint] ?? MAX_RPC_REQUEST_BYTES;
+    if (!fitsRequestLimit(command, endpoint, limit)) throw new Error('请求内容超过传输上限，请缩短内容后重试');
     const result = await rpc.call(RPC_CHANNEL, endpoint, command, signal);
     if (!result.ok) throw new Error(result.error.message);
     return result.value;
@@ -88,8 +128,22 @@ export function caller(rpc: RpcPort) {
 }
 export const extensionCall = async <T = unknown>(api: ClientPort, module: ExtensionModule, method: string, input?: unknown, signal?: AbortSignal): Promise<T> =>
   await api.call({ op: 'extensions', module, method, ...(input !== undefined ? { input } : {}) }, signal) as T;
+/**
+ * 宿主为工作区与会话标题准备了中文兜底（「默认工作区」「新会话」「未命名会话」）；
+ * 界面语言由客户端决定，读入时统一过一遍译文，别让服务端硬编码的中文绕过翻译链。
+ */
+const localizedSnapshot = (snapshot: Snapshot): Snapshot => ({
+  ...snapshot,
+  projects: snapshot.projects.map(project => ({
+    ...project,
+    title: t(project.title),
+    sessions: project.sessions.map(session => ({ ...session, title: t(session.title) })),
+  })),
+  conflicts: snapshot.conflicts.map(conflict => ({ ...conflict, title: t(conflict.title) })),
+});
+
 export const readSnapshot = async (api: ClientPort, signal?: AbortSignal): Promise<Snapshot> =>
-  await api.call({ op: 'snapshot' }, signal) as Snapshot;
+  localizedSnapshot(await api.call({ op: 'snapshot' }, signal) as Snapshot);
 export interface DetailMemory {
   draft: string; search: string; tab: 'sessions' | 'todos';
   sessions: number; pending: number; done: number;
@@ -101,10 +155,14 @@ export class UiMemory {
   private savedTheme: Preferences['theme'] | null = null;
   composer = { draft: '', projectId: '', preset: '', model: '', branch: '', worktree: false,
     creationRequests: {} as Record<string, string>,
+    /** 工作区+预设 → 已创建的原生会话；随 composer 一起持久化，重挂载后复用同一会话。 */
+    nativeHandoffs: {} as Record<string, string>,
     nativeWorkspaceId: '', nativeSessionId: '', nativePreset: '', nativeArmed: false, nativeDraft: null as DraftSnapshot | null, pending: null as null | {
-    projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string;
+    projectId: string; sessionId: string; provider: string; model: string; text: string; requestId: string; key?: string;
   } };
   targetTodo?: string;
+
+  private lastWritten = '';
   constructor(private readonly storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>) {
     try {
       const key = 'dsh-workbase-ui-v2';
@@ -118,6 +176,7 @@ export class UiMemory {
           raw = inherited;
         }
       }
+      this.lastWritten = raw ?? '';
       const saved = JSON.parse(raw ?? 'null');
       const theme = preferencesSchema.shape.theme.safeParse(saved?.theme);
       if (theme.success) this.savedTheme = theme.data;
@@ -145,9 +204,15 @@ export class UiMemory {
     this.savedTheme = value;
     this.save();
   }
-  save() {
-    try { this.storage?.setItem('dsh-workbase-ui-v2', JSON.stringify({ ...this.values, extensions: this.extensions, theme: this.savedTheme, composer: this.composer, details: Object.fromEntries(this.details) })); }
-    catch { /* 浏览器存储受限时仍保留本次会话草稿。 */ }
+  save() { this.write(); }
+  flush() { this.write(); }
+  private write() {
+    try {
+      const text = JSON.stringify({ ...this.values, extensions: this.extensions, theme: this.savedTheme, composer: this.composer, details: Object.fromEntries(this.details) });
+      if (text === this.lastWritten) return;
+      this.lastWritten = text;
+      this.storage?.setItem('dsh-workbase-ui-v2', text);
+    } catch { /* 浏览器存储受限时仍保留本次会话草稿。 */ }
   }
   private track(detail: DetailMemory) {
     return new Proxy(detail, { set: (target, key, value) => { Reflect.set(target, key, value); this.save(); return true; } });

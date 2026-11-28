@@ -84,6 +84,15 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
     return (cache.coldSnapshot(handle.header, handle.inheritedEventCount, events).values as
       { sessionListMetadata?: unknown } | undefined)?.sessionListMetadata;
   };
+  /** 三条判定路径共用的候选构造：identity 的字段构成只在这里拼，检测与复查才能得到同一结果。 */
+  const emptyCandidate = (h: Header, row: z.infer<typeof storedSchema>[number],
+    witness: readonly unknown[]): HostDiagnosticIssue => ({
+    kind: 'empty', sessionId: h.id, identity: JSON.stringify([identity(h), ...witness]), path: h.cwd ?? '',
+    ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }),
+  });
+  /** 空会话的官方投影判定：blank 且没有首轮提示；两条路径共用，避免判定口径分叉。 */
+  const isBlank = (metadata: { blank: boolean; lastPromptAt: number | null }) =>
+    metadata.blank && metadata.lastPromptAt === null;
   const emptyIssue = async (row: z.infer<typeof storedSchema>[number], parents: ReadonlySet<string>,
     signal: AbortSignal, index?: Map<string, BlankState>): Promise<HostDiagnosticIssue | undefined> => {
     signal.throwIfAborted();
@@ -93,24 +102,20 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
       // 宿主不认识的会话宁可不报；blank 来自宿主投影，running 才是「正在使用」。
       const state = index.get(h.id);
       if (!state || state.running) return;
-      if (state.blank) return { kind: 'empty', sessionId: h.id,
-        identity: JSON.stringify([identity(h), state.updatedAt]), path: h.cwd ?? '',
-        ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
+      if (state.blank) return emptyCandidate(h, row, [state.updatedAt]);
       // 宿主冷列表在缓存缺失时保守显示非空；缓存已证明非空的会话直接跳过，
       // 其余按官方冷读折叠完整日志复核，折叠结果由官方回写缓存行。
-      // 空会话的 updatedAt 即 createdAt，这里与索引路径的身份保持一致。
       const cached = emptyMetadata.safeParse((get<Cache>('sessionProjectionCache')?.cachedSnapshot(h)?.values as
         { sessionListMetadata?: unknown } | undefined)?.sessionListMetadata);
-      if (cached.success && (!cached.data.blank || cached.data.lastPromptAt !== null)) return;
+      if (cached.success && !isBlank(cached.data)) return;
       const folded = await foldEmptyMetadata(h, signal);
       if (folded === undefined) return;
       const metadata = emptyMetadata.safeParse(folded);
       if (!metadata.success)
         throw new WorkbaseError('unknown-empty', `会话 ${h.id} 缺少可用的官方空会话投影`);
-      if (!metadata.data.blank || metadata.data.lastPromptAt !== null) return;
-      return { kind: 'empty', sessionId: h.id,
-        identity: JSON.stringify([identity(h), h.createdAt]), path: h.cwd ?? '',
-        ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
+      if (!isBlank(metadata.data)) return;
+      // 空会话的 updatedAt 即 createdAt，这里与索引路径的身份保持一致。
+      return emptyCandidate(h, row, [h.createdAt]);
     }
     const sessions = get<Sessions>('sessions'), cache = get<Cache>('sessionProjectionCache');
     if (!sessions || !cache || typeof ctx.waterfall !== 'function')
@@ -123,13 +128,11 @@ export function createDiagnostics(ctx: Context, maintenance = createSessionMaint
     const metadata = emptyMetadata.safeParse((snapshot?.values as { sessionListMetadata?: unknown } | undefined)?.sessionListMetadata);
     if (!metadata.success)
       throw new WorkbaseError('unknown-empty', `会话 ${h.id} 缺少可用的官方空会话投影`);
-    if (!metadata.data.blank || metadata.data.lastPromptAt !== null) return;
+    if (!isBlank(metadata.data)) return;
     const asOfSeq = (snapshot as { asOfSeq?: number })?.asOfSeq;
     if (row.eventCount !== undefined && asOfSeq !== row.eventCount - 1)
       throw new WorkbaseError('stale-empty', `会话 ${h.id} 的官方空会话投影尚未覆盖当前日志`);
-    return { kind: 'empty', sessionId: h.id,
-      identity: JSON.stringify([identity(h), row.revision ?? null, asOfSeq ?? null]),
-      path: h.cwd ?? '', ...(row.sizeBytes === undefined ? {} : { sizeBytes: row.sizeBytes }) };
+    return emptyCandidate(h, row, [row.revision ?? null, asOfSeq ?? null]);
   };
   const diagnostics = {
     sessionDeletionIdentity: (id: string) => maintenance.deletionIdentity(id),

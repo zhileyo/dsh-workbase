@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
-import type { PluginUpdateController, UpdateItem, UpdateStep } from './plugin-update.js';
+import { isFailedApplication, type PluginUpdateController, type UpdateItem, type UpdateStep } from './plugin-update.js';
 import { errorText, useWorkbaseLocale } from './i18n.js';
 
 export interface UpdateVisibility {
@@ -35,14 +35,39 @@ function tone(status: UpdateItem['status']) {
 function stepTone(item: UpdateItem, step: UpdateStep, index: number) {
   if (item.status === 'updating') return index === item.steps.length - 1 ? 'ongoing' as const : 'done' as const;
   if (!item.result) return 'idle' as const;
-  const failed = (application: string) => ['failed', 'cancelled'].includes(application);
   const result = item.result;
   const error = step === 'checking' ? result.step === 'check'
     : step === 'removing' ? result.step === 'remove'
-    : step === 'installing' ? failed(result.result.application)
-    : result.restore !== undefined && failed(result.restore.application);
+    : step === 'installing' ? isFailedApplication(result.result)
+    : result.restore !== undefined && isFailedApplication(result.restore);
   return error ? 'error' as const : 'done' as const;
 }
+interface MutationLike {
+  type: string;
+  target: unknown;
+  addedNodes?: ArrayLike<unknown>;
+  removedNodes?: ArrayLike<unknown>;
+}
+const closestToolbar = (node: unknown) => {
+  const element = node as { closest?: (selector: string) => unknown } | null;
+  return typeof element?.closest === 'function' && element.closest('[data-plugin-toolbar]') !== null;
+};
+const containsToolbar = (node: unknown) => {
+  const element = node as { querySelector?: (selector: string) => unknown } | null;
+  return typeof element?.querySelector === 'function' && element.querySelector('[data-plugin-toolbar]') !== null;
+};
+/** 只有工具栏自身范围内的变化才值得重新定位，会话流式输出等无关变更不该触发全文档重扫。 */
+export function anchorMutationRelevant(record: MutationLike): boolean {
+  if (record.type === 'attributes') return closestToolbar(record.target);
+  const nodes = [...Array.from(record.addedNodes ?? []), ...Array.from(record.removedNodes ?? [])];
+  return nodes.some(node => closestToolbar(node) || containsToolbar(node)
+    || closestToolbar((node as { parentElement?: unknown } | null)?.parentElement));
+}
+/** 官方工具栏里带加载态标记的按钮就是「正在检查/更新」的刷新按钮；
+ *  排除自己插入的入口，避免锚点定位把更新入口本身当成刷新按钮。
+ *  对应选择器 button[aria-busy]:not(.wb-plugin-update-trigger)——按属性存在匹配，不限取值。 */
+const isToolbarRefreshButton = (button: HTMLButtonElement) =>
+  button.hasAttribute('aria-busy') && !button.classList.contains('wb-plugin-update-trigger');
 /** 不覆盖官方 main 面板；在官方工具栏各测量／绘制副本中插入同宽入口。 */
 export function PluginUpdate({ controller, visibility }: { controller: PluginUpdateController; visibility: UpdateVisibility }) {
   useWorkbaseLocale();
@@ -55,10 +80,15 @@ export function PluginUpdate({ controller, visibility }: { controller: PluginUpd
   useEffect(() => {
     if (!visible) return;
     let mounts: { node: HTMLElement; refresh: HTMLButtonElement }[] = [];
+    let writing = false;
+    let scheduled = false;
     const sync = () => {
+      writing = true;
+      queueMicrotask(() => { writing = false; });
       const next: typeof mounts = [];
       for (const toolbar of document.querySelectorAll<HTMLElement>('[data-plugin-toolbar]')) {
-        const refresh = toolbar.querySelector<HTMLButtonElement>('button[aria-busy]:not(.wb-plugin-update-trigger)');
+        const refresh = Array.from(toolbar.querySelectorAll<HTMLButtonElement>('button'))
+          .find(isToolbarRefreshButton);
         if (!refresh) continue;
         let before: HTMLElement = refresh;
         while (before.parentElement && before.parentElement !== toolbar) before = before.parentElement;
@@ -78,7 +108,14 @@ export function PluginUpdate({ controller, visibility }: { controller: PluginUpd
         : mounts.map(mount => ({ node: mount.node, disabled: mount.refresh.disabled, buttonClass: mount.refresh.className,
           labelClass: mount.refresh.lastElementChild?.tagName === 'SPAN' ? mount.refresh.lastElementChild.className : '' })));
     };
-    const observer = new MutationObserver(sync);
+    const observer = new MutationObserver(records => {
+      // 自身插入／搬移锚点产生的记录不再回到 sync，避免自己触发自己多跑一轮。
+      if (writing) return;
+      if (!records.some(anchorMutationRelevant)) return;
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => { scheduled = false; sync(); });
+    });
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] });
     sync();
     return () => { observer.disconnect(); for (const mount of mounts) mount.node.remove(); setAnchors([]); };

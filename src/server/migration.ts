@@ -20,16 +20,33 @@ export async function migrationPreview(state: State, workspaces: HostWorkspace[]
   if (!source) throw new WorkbaseError('not-found', '项目不存在');
   if (migrationTarget(state, source.projectId))
     throw new WorkbaseError('migrated', '项目已迁入其他项目，请在目标项目查看迁移记录');
-  const canonical = async (path: string) => { try { return await realpath(path); } catch { return path; } };
-  const paths = new Map<string, string>();
-  for (const path of new Set([...state.bindings.map(b => b.path), ...workspaces.map(w => w.path), ...state.pendingImports.map(p => p.path)]))
-    paths.set(path, await canonical(path));
+  // 只有明确的ENOENT可以降级成字面量比较（目录本来就不存在）；权限拒绝、符号链接环、
+  // 非目录等错误必须阻断，否则同一个真实目录会被判成不同目录而放行迁移。
+  const blockers: string[] = [];
+  let unresolved = false;
+  const canonical = async (path: string) => {
+    try { return await realpath(path); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return path;
+      unresolved = true;
+      return path;
+    }
+  };
+  const listed = [...new Set([...state.bindings.map(b => b.path), ...workspaces.map(w => w.path), ...state.pendingImports.map(p => p.path)])];
+  // 每个路径一次 realpath，逐个等会让预览随项目数线性变慢；并行解析后仍按原顺序建表。
+  const resolvedPaths = await Promise.all(listed.map(canonical));
+  const paths = new Map(listed.map((path, index) => [path, resolvedPaths[index]!]));
   signal.throwIfAborted();
+  if (unresolved) blockers.push('目录或路径无法核实');
   const candidates = state.bindings.filter(b => paths.get(b.path) === directory);
   const targets = candidates.filter(b => b.projectId !== source.projectId);
   const target = targets[0];
   const peers = workspaces.filter(w => paths.get(w.path) === directory);
-  const blockers: string[] = target ? [] : [MIGRATION_UNAVAILABLE], notices: string[] = [];
+  // 目标目录没有已登记项目：阻断语义与能力缺失不同，但文案暂与 MIGRATION_UNAVAILABLE
+  // 共用（test/migration.test.ts:40 按原文断言）；测试解禁后此处应换成独立的文案常量。
+  const targetMissingBlocker = MIGRATION_UNAVAILABLE;
+  if (!target) blockers.push(targetMissingBlocker);
+  const notices: string[] = [];
   const check = async (binding: Binding, label: string, isSource = false) => {
     if (migrationTarget(state, binding.projectId)) blockers.push(`${label}已迁入其他项目`);
     if (binding.archived) blockers.push(`${label}已归档`);

@@ -15,6 +15,32 @@ export interface SpeechVault {
 }
 const versionOf = (record: unknown) => record === undefined || record === null ? null
   : createHash('sha256').update(JSON.stringify(record)).digest('hex');
+/**
+ * 供应商策略表：是否支持流式通道、是否必须带密钥、请求体字段与字节上限都从这里取。
+ * 两条链路（openStream／synthesize）只查表，不再各自判断 provider；新增供应商只加一行。
+ */
+interface SpeechStrategy {
+  /** 是否支持官方流式播报通道。 */
+  stream: boolean;
+  /** 没有密钥时这条链路是否不可用。 */
+  requiresKey: boolean;
+  body(config: SpeechConfig, text: string): Record<string, unknown>;
+  /** 请求体字节上限；超出时用 message 报错，没有上限的供应商不写这项。 */
+  bodyLimit?: { bytes: number; message: string };
+}
+const strategies: Record<SpeechConfig['provider'], SpeechStrategy> = {
+  deepseek: {
+    stream: true,
+    requiresKey: true,
+    body: (config, text) => ({ text, voice_id: config.voice, format: 'wav', filter_markdown: config.filterMarkdown }),
+    bodyLimit: { bytes: 64 * 1024, message: '官方播报请求超过 64KiB 限制' },
+  },
+  compatible: {
+    stream: false,
+    requiresKey: false,
+    body: (config, text) => ({ model: config.model, voice: config.voice, speed: config.speed, input: text, response_format: 'mp3' }),
+  },
+};
 
 /** 官方凭据记录事务保存配置及密钥；密钥不进入工作台快照或导出。 */
 export class Speech {
@@ -36,10 +62,11 @@ export class Speech {
       if (this.disposed) throw new WorkbaseError('unavailable', '语音播报尚未就绪');
       if (versionOf(raw) !== version) throw new WorkbaseError('conflict', '播报配置已在外部修改，请重新读取后保存');
       const record = raw == null ? undefined : storedSchema.parse(raw);
-      if (!record || (!record.payload.config.enabled && !manual) || record.payload.config.provider !== 'deepseek')
+      const config = record?.payload.config, strategy = config ? strategies[config.provider] : undefined;
+      if (!record || !config || !strategy || (!config.enabled && !manual) || !strategy.stream)
         throw new WorkbaseError('unavailable', '官方流式播报未启用');
-      const { config } = record.payload, key = this.boundKey(record);
-      if (!key.trim()) throw new WorkbaseError('invalid', '请配置 DeepSeek API Key 后启用官方播报');
+      const key = this.boundKey(record);
+      if (strategy.requiresKey && !key.trim()) throw new WorkbaseError('invalid', '请配置 DeepSeek API Key 后启用官方播报');
       const stream = new SpeechStream(config.voice, config.filterMarkdown, key, signal, this.socketFactory,
         () => { if (this.stream === stream) this.stream = undefined; });
       this.stream = stream;
@@ -79,7 +106,7 @@ export class Speech {
       const credentialScope = speechCredentialScope(checked);
       const retained = before && speechCredentialScope(before.payload.config) === credentialScope ? this.boundKey(before) : '';
       const next = { kind: 'grant', payload: { config: checked, credentialScope, key: clearKey ? '' : key || retained } };
-      if (checked.enabled && checked.provider === 'deepseek' && !next.payload.key.trim())
+      if (checked.enabled && strategies[checked.provider].requiresKey && !next.payload.key.trim())
         throw new WorkbaseError('invalid', '请配置 DeepSeek API Key 后启用官方播报');
       saved = next;
       return saved;
@@ -105,14 +132,12 @@ export class Speech {
       if (!record.payload.config.endpoint) throw new WorkbaseError('invalid', '请填写播报服务地址');
       const invalidText = speechTextError(record.payload.config, text);
       if (invalidText) throw new WorkbaseError('invalid', invalidText);
-      const { config } = record.payload, key = this.boundKey(record);
-      if (config.provider === 'deepseek' && !key.trim())
+      const { config } = record.payload, key = this.boundKey(record), strategy = strategies[config.provider];
+      if (strategy.requiresKey && !key.trim())
         throw new WorkbaseError('invalid', '请配置 DeepSeek API Key 后启用官方播报');
-      const body = JSON.stringify(config.provider === 'deepseek'
-        ? { text, voice_id: config.voice, format: 'wav', filter_markdown: config.filterMarkdown }
-        : { model: config.model, voice: config.voice, speed: config.speed, input: text, response_format: 'mp3' });
-      if (config.provider === 'deepseek' && Buffer.byteLength(body) > 64 * 1024)
-        throw new WorkbaseError('invalid', '官方播报请求超过 64KiB 限制');
+      const body = JSON.stringify(strategy.body(config, text));
+      if (strategy.bodyLimit && Buffer.byteLength(body) > strategy.bodyLimit.bytes)
+        throw new WorkbaseError('invalid', strategy.bodyLimit.message);
       const response = await this.request(config.endpoint, { method: 'POST', redirect: 'error',
         signal: combined,
         headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },

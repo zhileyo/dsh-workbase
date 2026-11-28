@@ -9,10 +9,12 @@ interface Versions {
   status: 'listed' | 'refused'; installed?: string; registry?: string | null; reason?: string;
   versions?: { version: string; bundle: boolean; prerelease?: boolean; deprecated?: string; incompatible?: unknown }[];
 }
-interface Change {
+export interface Change {
   application: string; error?: { diagnostic?: string; code?: string };
   packageResult?: { output?: string };
 }
+/** Change.application 落在这些值即批次未成功（cancelled 同样按失败呈现）；组件侧 stepTone 复用。 */
+export const isFailedApplication = (change: Change) => ['failed', 'cancelled'].includes(change.application);
 interface UpdateResult { from: string; to: string; step: 'check' | 'remove' | 'install'; result: Change; restore?: Change }
 export type UpdateStep = 'checking' | 'removing' | 'installing' | 'restoring';
 export interface UpdateProgress { requestId: string; step: UpdateStep }
@@ -51,7 +53,6 @@ export function pluginUpdateSession(scope?: object): PluginUpdateSession {
   if (record) record[sessionKey] = session;
   return session;
 }
-const failed = (change: Change) => ['failed', 'cancelled'].includes(change.application);
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 const reason = (change: Change) => change.error?.diagnostic ?? change.error?.code ?? '宿主未能完成操作';
 const stepOrder: UpdateStep[] = ['checking', 'removing', 'installing', 'restoring'];
@@ -117,11 +118,15 @@ export class PluginUpdateController {
       // 官方库存同时包含宿主自带与未安装目录项，批量操作仅面向用户profile安装。
       const installed = bundles.value.filter(bundle => bundle.installed === true
         && bundle.availability === 'profile' && bundle.official === false);
-      this.publish({ items: installed.map(bundle => ({ ...bundle, steps: [],
-        status: registryUpdateAvailable(bundle) ? 'waiting' : 'skipped',
-        detail: registryUpdateAvailable(bundle) ? '等待检查' : bundle.update === 'git'
-          ? 'Git 来源请在官方插件页选择提交更新' : '当前安装来源不支持在线更新',
-      })) });
+      const items: UpdateItem[] = installed.map(bundle => {
+        const updatable = registryUpdateAvailable(bundle);
+        return { ...bundle, steps: [],
+          status: updatable ? 'waiting' : 'skipped',
+          detail: updatable ? '等待检查' : bundle.update === 'git'
+            ? 'Git 来源请在官方插件页选择提交更新' : '当前安装来源不支持在线更新',
+        };
+      });
+      this.publish({ items });
       for (const bundle of installed.filter(registryUpdateAvailable)) {
         if (this.disposed) return;
         this.item(bundle.name, { status: 'checking', detail: '正在检查新版本' });
@@ -166,16 +171,16 @@ export class PluginUpdateController {
         if (result.step === 'remove') steps.add('removing');
         if (result.step === 'install') steps.add('installing');
         if (result.restore) steps.add('restoring');
-        const unsuccessful = result.step !== 'install' || failed(result.result);
+        const unsuccessful = result.step !== 'install' || isFailedApplication(result.result);
         const restart = result.result.application === 'restart-required';
         const detail = unsuccessful ? result.restore
-          ? failed(result.restore) ? `更新失败，恢复旧版本也失败：${reason(result.restore)}`
+          ? isFailedApplication(result.restore) ? `更新失败，恢复旧版本也失败：${reason(result.restore)}`
             : `更新失败，已恢复 ${result.from}：${reason(result.result)}`
           : `更新失败：${reason(result.result)}`
           : restart ? `已更新至 ${result.to}，重启 Harness 后生效` : `已更新至 ${result.to}`;
         this.item(target.name, { status: unsuccessful ? 'failed' : restart ? 'restart' : 'updated',
           detail, result, steps: stepOrder.filter(step => steps.has(step)),
-          output: [result.result, result.restore].find(change => change && failed(change) && change.packageResult?.output)?.packageResult?.output });
+          output: [result.result, result.restore].find(change => change && isFailedApplication(change) && change.packageResult?.output)?.packageResult?.output });
       } catch (error) {
         this.item(target.name, { status: 'unknown', detail: `更新结果未确认：${message(error)}` });
         this.publish({ error: `连接中断，已停止后续更新。请刷新插件页核对实际版本：${message(error)}` });

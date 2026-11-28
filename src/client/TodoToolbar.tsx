@@ -13,6 +13,12 @@ export interface TodoToolbarProps {
   onFullCreate?(): void;
 }
 
+/** 优先级与字符串选择器之间的边界转换：null 哨兵用 ''；'all' 与键值原样通过。 */
+const priorityToPickerValue = (value: Priority | 'all'): string => value ?? '';
+const isPriority = (value: string): value is Exclude<Priority, null> => value in priorityLabels;
+const pickerValueToPriority = (value: string): Priority | 'all' =>
+  value === '' ? null : isPriority(value) ? value : 'all';
+
 /** 添加草稿与查询分开保存，模式切换只改变展示值。 */
 export function TodoToolbar(props: TodoToolbarProps) {
   const [search, setSearch] = useState(false);
@@ -98,7 +104,7 @@ export function TodoToolbar(props: TodoToolbarProps) {
         <button type="button" className="todo-full-create" aria-hidden={search} tabIndex={search ? -1 : undefined}
           disabled={blocked || search || props.archived || !props.onFullCreate} onClick={props.onFullCreate}><Icon name="plus"/>完整新建</button>
         {search && <Picker variant="todo-filter" label="筛选优先级" title="筛选优先级"
-          disabled={blocked} value={props.priority ?? ''} onChange={value => props.onPriorityChange((value || null) as Priority | 'all')}
+          disabled={blocked} value={priorityToPickerValue(props.priority)} onChange={value => props.onPriorityChange(pickerValueToPriority(value))}
           renderValue={() => props.priority === 'all' ? '全部' : props.priority ? t(priorityLabels[props.priority]) : '未设置'}
           options={[{ value: 'all', label: '全部' }, { value: '', label: '未设置' },
             ...Object.entries(priorityLabels).map(([value, label]) => ({ value, label: t(label) }))]}/>}

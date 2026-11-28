@@ -20,8 +20,12 @@ export function todoFetchRoutes(service: WorkbaseService) {
 const scopeSchema = z.object({
   projectId: z.string().min(1).max(200), id: z.string().min(1).max(200),
 });
-/** 由 Connection 精确路由完成所有者鉴权，二进制正文单独限制，不扩大 JSON RPC 上限。 */
-export async function handleTodoImage(service: WorkbaseService, request: Request, generic = false) {
+/** 附件类型即语义：image 走待办图片校验，attachment 走通用附件；两个入口各自可读，不再用布尔开关切换。 */
+type TodoAttachmentKind = 'image' | 'attachment';
+const isGeneric = (kind: TodoAttachmentKind) => kind === 'attachment';
+// 由 Connection 精确路由完成所有者鉴权，二进制正文单独限制，不扩大 JSON RPC 上限。
+async function handleTodoUpload(service: WorkbaseService, request: Request, kind: TodoAttachmentKind) {
+  const generic = isGeneric(kind);
   try {
     const query = Object.fromEntries(new URL(request.url).searchParams);
     const scope = scopeSchema.parse(query);
@@ -65,4 +69,9 @@ export async function handleTodoImage(service: WorkbaseService, request: Request
     return Response.json({ message: error instanceof z.ZodError ? '附件参数不合法' : error instanceof Error ? error.message : '附件操作失败' }, { status });
   }
 }
-export const handleTodoAttachment = (service: WorkbaseService, request: Request) => handleTodoImage(service, request, true);
+export async function handleTodoImage(service: WorkbaseService, request: Request) {
+  return handleTodoUpload(service, request, 'image');
+}
+export async function handleTodoAttachment(service: WorkbaseService, request: Request) {
+  return handleTodoUpload(service, request, 'attachment');
+}

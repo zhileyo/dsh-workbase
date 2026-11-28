@@ -4,10 +4,28 @@ import { extensionCall, type ClientPort, type UiMemory } from './api.js';
 import { Icon, IconButton, Modal, ModalFlow, Picker, FormField, usePanelSnapshot, type Notify, type ModalState } from './ui.js';
 import { RssMenu, type RssMenuItem } from './rss-menu.js';
 import { rssReadingMarkdown } from './rss-reading.js';
+import { downloadBlob, restorePanelFocus } from './panel-utils.js';
+import { nextTabIndex } from './roving.js';
 import { errorText, languageTag, statusText, t } from './i18n.js';
 import type { Project } from '../shared/model.js';
-import { RSS_LIMITS, rssContentTags, safeRssUrl, rssOriginalUrl, rssNavigationGroups as orderedRssGroups, type RssContentNode, type RssArticle, type RssArticleQuery, type RssFeed, type RssSnapshot, type RssOpmlPreview, type RssRecommendation, type RssRefreshResult } from '../shared/rss.js';
+import { RSS_LIMITS, RSS_RESERVED_GROUP_NAMES, rssGroupNameReserved, rssContentTags, safeRssUrl, rssOriginalUrl, rssNavigationGroups as orderedRssGroups, type RssContentNode, type RssArticle, type RssArticleQuery, type RssFeed, type RssSnapshot, type RssOpmlPreview, type RssRecommendation, type RssRefreshResult } from '../shared/rss.js';
 
+/** 轮询投影不含正文；同一篇文章（id + sequence 未变）保留已读到的正文与结构化正文。 */
+export function keepArticleBodies(previous: readonly RssArticle[], next: readonly RssArticle[]): RssArticle[] {
+  const known = new Map(previous.map(article => [`${article.id}\u0000${article.sequence}`, article]));
+  return next.map(article => {
+    const mine = known.get(`${article.id}\u0000${article.sequence}`);
+    if (!mine || article.body) return article;
+    return { ...article, body: mine.body, ...(mine.bodyContent ? { bodyContent: mine.bodyContent } : {}), ...(mine.bodySource ? { bodySource: mine.bodySource } : {}) };
+  });
+}
+/** 保留名是协议内固定分组的名字；用户当前语言看到的译名同样不该被新分组占用。 */
+export function rssGroupNameConflict(name: string, groups: readonly { id: string; name: string }[], currentId: string): boolean {
+  if (!name || name.length > 80) return true;
+  if (groups.some(group => group.id !== currentId && group.name === name)) return true;
+  if (rssGroupNameReserved(name)) return true;
+  return RSS_RESERVED_GROUP_NAMES.some(item => t(item) === name);
+}
 type GroupDraft = { id: string; value: string; error: string };
 type MoveInput = { kind: 'feed' | 'group'; id: string; targetId?: string; groupId?: string; position?: 'before' | 'after' };
 type FeedDraft = { name: string; url: string; groupId: string; enabled: boolean; trusted: boolean; revision?: number };
@@ -85,8 +103,15 @@ export function RssArticleList({ snapshot, query, onRead, onFeed }: {
   const feeds = new Map(snapshot.feeds.filter(f => (!query.feedId || f.id === query.feedId) && (query.groupId === undefined || f.groupId === query.groupId)).map(f => [f.id, f]));
   const terms = (query.query ?? '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   // 统计时间范围只作用于首页统计卡的数字，订阅列表始终显示缓存文章（含停用源与更早的文章）。
-  const articles = snapshot.articles.filter(a => feeds.has(a.feedId) && terms.every(term => (a.title + ' ' + a.summary + ' ' + feeds.get(a.feedId)!.name).toLocaleLowerCase().includes(term)))
-    .sort((a, b) => b.publishedAt - a.publishedAt || b.sequence - a.sequence);
+  const articles: RssArticle[] = [];
+  for (const article of snapshot.articles) {
+    // 拼全文再小写是整条文章一次的事；放进 terms.every 里会按「文章 × 关键词」重复做同样的转换。
+    const feed = feeds.get(article.feedId);
+    if (!feed) continue;
+    const text = `${article.title} ${article.summary} ${feed.name}`.toLocaleLowerCase();
+    if (terms.every(term => text.includes(term))) articles.push(article);
+  }
+  articles.sort((a, b) => b.publishedAt - a.publishedAt || b.sequence - a.sequence);
   if (!articles.length) return <div className="integration-empty" role="status"><Icon name="rss"/><strong>{terms.length ? '没有匹配的文章' : feeds.size ? '暂无缓存文章' : '暂无订阅'}</strong><p>{terms.length ? '试试其他关键词，或清空搜索。' : '添加订阅后可刷新文章，暂停更新的来源保留缓存。'}</p></div>;
   return <>{articles.map(a => <article className="rss-article-row" key={a.id} data-i-row={a.id}>
     <button type="button" className="rss-article-open" aria-label={`阅读 ${a.title}`} onClick={() => onRead(a)}><strong className="rss-article-title">{a.title}</strong><span className="rss-article-summary">{a.summary || '此来源未提供摘要'}</span></button>
@@ -262,24 +287,33 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
   const scrollRestore = useRef(true);
   const initialRecentView = useRef(recentDays !== undefined);
   const readingReturn = useRef<Detail | null>(null), origin = useRef<HTMLElement | null>(null);
+  const inFlight = useRef<AbortController | undefined>(undefined);
   const [foldValues, setFoldValues] = useState<Record<string, boolean>>({});
   const foldWrites = useRef(new Map<string, { desired: boolean; saved: boolean }>());
   const snapshotRef = useRef(snapshot);
   const newFeedNavigation = useRef('');
   snapshotRef.current = snapshot;
-  const applySnapshot = useCallback((value: RssSnapshot) => { snapshotRef.current = value; setSnapshot(value); }, [setSnapshot]);
-  const load = useCallback(async () => {
+  const applySnapshot = useCallback((value: RssSnapshot, light = false) => {
+    // 轮询只带回列表投影；已读到的正文按 id + sequence 保留，避免每 5 秒把正文冲掉再重取。
+    const previous = light && snapshotRef.current ? snapshotRef.current.articles : null;
+    const next = previous ? { ...value, articles: keepArticleBodies(previous, value.articles) } : value;
+    snapshotRef.current = next; setSnapshot(next);
+  }, [setSnapshot]);
+  const load = useCallback(async (light = false) => {
     const revision = ++request.current;
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
     try {
-      const data = await extensionCall<RssSnapshot>(api, 'rss', 'snapshot');
-      if (alive.current && revision === request.current) applySnapshot(data);
-    } catch (e) { if (alive.current && revision === request.current) setError(failure(e)); }
+      const data = await extensionCall<RssSnapshot>(api, 'rss', 'snapshot', light ? { light: true } : {}, controller.signal);
+      if (alive.current && revision === request.current) applySnapshot(data, light);
+    } catch (e) { if (alive.current && revision === request.current && !controller.signal.aborted) setError(failure(e)); }
   }, [api, applySnapshot]);
   useEffect(() => {
     alive.current = true; void load();
     const off = api.subscribe(() => { void load(); });
-    const timer = setInterval(() => { void load(); }, 5000);
-    return () => { alive.current = false; request.current++; off(); clearInterval(timer); };
+    const timer = setInterval(() => { if (document.visibilityState !== 'hidden') void load(true); }, 5000);
+    return () => { alive.current = false; request.current++; inFlight.current?.abort(); off(); clearInterval(timer); };
   }, [api, load]);
   useEffect(() => {
     Object.assign(remembered, { tab, groupId, feedId, query, groupDraft: draft });
@@ -338,6 +372,7 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
   const selectFeed = (id: string) => { setFeedId(id); if (id) setGroupId(snapshot?.feeds.find(f => f.id === id)?.groupId); if (records.current) records.current.scrollTop = 0; remembered.scroll = 0; };
   const perform = async (method: string, input?: unknown) => {
     if (writeBusy.current) throw new Error('RSS 操作正在保存，请稍后重试');
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     writeBusy.current = true; setBusy(true); setError('');
     try {
       const value = await extensionCall<unknown>(api, 'rss', method, input);
@@ -353,15 +388,20 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
       await load();
       return value;
     } catch (e) { if (alive.current) { setError(failure(e)); } throw e; }
-    finally { writeBusy.current = false; if (alive.current) setBusy(false); }
+    finally {
+      writeBusy.current = false;
+      if (alive.current) {
+        setBusy(false);
+        // 焦点恢复与技能／连接器面板共用同一份策略（panel-utils 的 restorePanelFocus）。
+        restorePanelFocus(alive, active);
+      }
+    }
   };
   const download = async (input?: unknown) => {
     try {
       const text = await extensionCall<string>(api, 'rss', 'opml.export', input);
       if (!alive.current) return;
-      const url = URL.createObjectURL(new Blob([text], { type: 'text/x-opml;charset=utf-8' }));
-      const link = document.createElement('a'); link.href = url; link.download = 'subscriptions.opml'; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(new Blob([text], { type: 'text/x-opml;charset=utf-8' }), 'subscriptions.opml');
       notify?.('订阅导出已发起', 'success');
     } catch (e) { setError(failure(e)); }
   };
@@ -434,7 +474,7 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
     if (!current || savingGroup.current) return;
     if (cancel) { pendingGroupEdit.current = undefined; remembered.groupDraft = undefined; setDraft(undefined); return; }
     const name = current.value.trim();
-    if (!name || name.length > 80 || snapshot?.groups.some(g => g.id !== current.id && g.name === name) || ['全部订阅', '默认分组', '未分组'].includes(name)) {
+    if (rssGroupNameConflict(name, snapshot?.groups ?? [], current.id)) {
       pendingGroupEdit.current = undefined;
       setDraft({ ...current, error: '请输入不重复的分组名称（1–80 字符）。' }); return;
     }
@@ -475,6 +515,8 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
   const article = snapshot?.articles.find(a => a.id === detail?.id);
   const scoped = snapshot?.feeds.find(f => f.id === feedId);
   const loading = !snapshot, refreshing = refreshRequests > 0 || !!snapshot?.refreshing.length;
+  // 推荐列表的搜索词只小写一次，不跟着每一项重复做。
+  const queryText = query.toLocaleLowerCase();
   const scope = scoped?.name || snapshot?.groups.find(g => g.id === groupId)?.name || (groupId === '' ? '默认分组' : '全部文章');
   return <ModalFlow embedded={embedded} onModalState={onModalState} main={
     <Modal title="工作台概览" drawer className="stats-drawer" busy={busy} onClose={() => { rememberScroll(); onClose(); }}>
@@ -482,7 +524,7 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
         <div className="integration-heading"><h3>RSS 订阅</h3>{tab === 'subscriptions' && <button type="button" disabled={loading} onClick={() => void download()}><Icon name="archive"/>导出订阅</button>}<button type="button" className="primary" onClick={() => open({ kind: 'create' })}><Icon name="plus"/>添加订阅</button>
           {onSettings && <IconButton name="settings" label="订阅设置" outlined disabled={busy} onClick={() => { rememberScroll(); onSettings(); }}/>}</div>
         <p className="integration-caption">按分组管理订阅，阅读最新文章，发现推荐来源。</p>
-        <div className="settings-subtabs" role="tablist" aria-label="RSS 订阅二级菜单">{(['subscriptions', 'catalog'] as const).map((value, index) => <button type="button" role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => switchTab(value)} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const next = e.key === 'Home' ? 'subscriptions' : e.key === 'End' ? 'catalog' : index ? 'subscriptions' : 'catalog'; switchTab(next); (e.currentTarget.parentElement?.children[next === 'catalog' ? 1 : 0] as HTMLElement)?.focus(); } }}>{value === 'subscriptions' ? '我的订阅' : '推荐订阅'}</button>)}</div>
+        <div className="settings-subtabs" role="tablist" aria-label="RSS 订阅二级菜单">{(['subscriptions', 'catalog'] as const).map((value, index) => <button type="button" role="tab" aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => switchTab(value)} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const keys = ['subscriptions', 'catalog'] as const; const target = nextTabIndex(e.key, index, keys.length); const next = keys[target]!; switchTab(next); (e.currentTarget.parentElement?.children[target] as HTMLElement)?.focus(); } }}>{value === 'subscriptions' ? '我的订阅' : '推荐订阅'}</button>)}</div>
         {error && <p className="integration-form-error" role="alert">{errorText(error)}<button type="button" onClick={() => { setError(''); void load(); }}>重新读取</button></p>}
         {undo.map(item => <div className="integration-status-line" role="status" key={item.token}>已取消订阅「{item.name}」，30 秒内可撤销。<button type="button" disabled={busy} onClick={() => void perform('feed.undo', { token: item.token }).catch(() => {})}>撤销</button></div>)}
         {loading ? <div className="integration-empty" role="status">正在读取订阅…</div> : <div className="integration-workspace" data-grouped={tab === 'subscriptions' ? 'true' : 'false'}>
@@ -493,7 +535,7 @@ export function RssPanel({ api, onClose, memory, navigation: overviewNavigation,
             onRenameFeed={(feed, name) => perform('feed.update', { id: feed.id, revision: feed.revision, name })}/></div>}
           <div className="integration-main"><div className={tab === 'subscriptions' ? 'rss-toolbar' : 'integration-toolbar'}><label className="stats-group-search"><Icon name="search"/><input type="search" aria-label={`搜索${scope}的标题、摘要和来源`} placeholder={tab === 'subscriptions' ? '搜索标题、摘要、来源' : '搜索推荐来源'} value={query} onChange={e => setQuery(e.target.value)}/></label>{tab === 'subscriptions' && <><button type="button" aria-busy={refreshing} disabled={refreshing} title="刷新当前范围文章" aria-label="刷新当前范围文章" onClick={() => void refresh({ ...(groupId !== undefined ? { groupId } : {}), ...(feedId ? { feedId } : {}) })}><Icon name="refresh"/></button>{scoped && <RssMenu label={`${scoped.name}的订阅操作`} className="" items={feedItems(scoped, snapshot, action, input => action('move', input))}/>}</>}</div>
             <div className="integration-records" tabIndex={0} ref={records} aria-label="订阅文章列表" onScroll={rememberScroll}>
-              {tab === 'subscriptions' ? <RssArticleList snapshot={snapshot} query={{ groupId, feedId, query }} onRead={a => open({ kind: 'read', id: a.id })} onFeed={selectFeed}/> : snapshot.recommendations.filter(r => (r.name + ' ' + t(r.description)).toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(r => <Recommendation key={r.id} value={r} subscribed={snapshot.feeds.some(f => f.url === r.url)} onAdd={() => { remembered.drafts.create = { ...blankDraft(), name: r.name, url: r.url }; open({ kind: 'create', recommendation: true }); }}/>)}
+              {tab === 'subscriptions' ? <RssArticleList snapshot={snapshot} query={{ groupId, feedId, query }} onRead={a => open({ kind: 'read', id: a.id })} onFeed={selectFeed}/> : snapshot.recommendations.filter(r => (r.name + ' ' + t(r.description)).toLocaleLowerCase().includes(queryText)).map(r => <Recommendation key={r.id} value={r} subscribed={snapshot.feeds.some(f => f.url === r.url)} onAdd={() => { remembered.drafts.create = { ...blankDraft(), name: r.name, url: r.url }; open({ kind: 'create', recommendation: true }); }}/>)}
             </div>
           </div>
         </div>}
@@ -606,7 +648,10 @@ function RssEditor({ api, snapshot, detail, source, remembered, busy, onMode, on
     {showAddNavigation && <nav className="integration-detail-nav" role="tablist" aria-label="添加订阅方式" onKeyDown={e => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) || busy) return;
       e.preventDefault();
-      const next = e.key === 'Home' ? 'create' : e.key === 'End' ? 'import' : detail.kind === 'create' ? 'import' : 'create';
+      const modes = ['create', 'import'] as const;
+      // 该导航只在添加订阅（create/import）时渲染；其他 kind 不会到这里，越界回退到首项。
+      const current = Math.max(0, modes.findIndex(mode => mode === detail.kind));
+      const next = modes[nextTabIndex(e.key, current, modes.length)]!;
       switchMode(next); document.getElementById(`integration-rss-add-${next}`)?.focus();
     }}>{(['create', 'import'] as const).map(kind => <button type="button" id={`integration-rss-add-${kind}`} role="tab" aria-controls="integration-rss-add-pane" tabIndex={detail.kind === kind ? 0 : -1} aria-selected={detail.kind === kind} key={kind} disabled={busy} onClick={() => switchMode(kind)}><Icon name={kind === 'create' ? 'rss' : 'archive'}/>{kind === 'create' ? '添加订阅' : '导入订阅'}</button>)}</nav>}
     <div className="integration-detail-main">

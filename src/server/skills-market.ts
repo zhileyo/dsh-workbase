@@ -3,7 +3,7 @@ import { inflateRawSync } from 'node:zlib';
 import { z } from 'zod';
 import { normalizeSkillMarketUrl, parseSkillUpload, skillMarkdown, type SkillMarketItem, type SkillMarketSource, type SkillContent } from '../shared/skills.js';
 import { fetchSkillCatalog } from './skills-network.js';
-import { MAX_SKILL_BYTES, MAX_SKILL_FILES, type SkillBundle } from './skills-files.js';
+import { MAX_SKILL_BYTES, MAX_SKILL_FILES, SKILL_LIMIT_MESSAGE, type SkillBundle } from './skills-files.js';
 import { readSkillDocument } from './skills-document.js';
 
 type FetchText = (url: string, signal: AbortSignal) => Promise<string>;
@@ -48,9 +48,9 @@ function checksum(bytes: Buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-/** 搜索只加载目录元信息，正文及关联文件在详情打开后读取。 */
+/** 搜索只加载目录元信息，正文及关联文件在详情打开后读取。「还能再翻页」只由 next 表达。 */
 export async function loadSkillMarket(source: SkillMarketSource, query: string, signal: AbortSignal, fetchText: FetchText = fetchSkillCatalog,
-  continuation?: string): Promise<{ rows: SkillMarketItem[]; truncated: boolean; next?: string }> {
+  continuation?: string): Promise<{ rows: SkillMarketItem[]; next?: string }> {
   const kind = skillMarketKind(source.url);
   if (kind === 'skillhub') {
     const url = new URL(canonicalSkillMarketUrl(source.url));
@@ -77,21 +77,20 @@ export async function loadSkillMarket(source: SkillMarketSource, query: string, 
         description: label(row.description_zh, label(row.description)) });
     }
     const more = values.length > 0 && typeof data?.total === 'number' && data.total > page * 24;
-    return { rows, truncated: more, next: more ? String(page + 1) : undefined };
+    return { rows, next: more ? String(page + 1) : undefined };
   }
   if (kind === 'custom') {
     const content = parseSkillUpload(await fetchText(source.url, signal));
     return { rows: content.filter(row => `${row.name} ${row.description}`.toLowerCase().includes(query.toLowerCase()))
-      .map(row => ({ ...row, id: marketId(source, row.name), marketSourceId: source.id })), truncated: false };
+      .map(row => ({ ...row, id: marketId(source, row.name), marketSourceId: source.id })) };
   }
-  if (kind === 'skillsh' && !query) return { rows: [], truncated: false };
+  if (kind === 'skillsh' && !query) return { rows: [] };
   const url = new URL(kind === 'skillsh' ? 'https://skills.sh/api/search'
     : query ? 'https://clawhub.ai/api/v1/search' : 'https://clawhub.ai/api/v1/skills');
   if (query) url.searchParams.set('q', query);
   if (kind === 'clawhub') { url.searchParams.set('limit', query ? '100' : '10'); if (!query) url.searchParams.set('sort', 'downloads'); }
   if (continuation && kind === 'clawhub' && !query) url.searchParams.set('cursor', continuation);
   const rows: SkillMarketItem[] = [], seen = new Set<string>();
-  let truncated = false;
   let next: string | undefined;
   {
     const payload = record(JSON.parse(await fetchText(url.href, signal)));
@@ -126,10 +125,10 @@ export async function loadSkillMarket(source: SkillMarketSource, query: string, 
     const cursor = payload?.nextCursor;
     if (kind === 'clawhub' && !query && typeof cursor === 'string' && cursor) {
       if (cursor.length > 4096 || cursor === continuation) throw new Error('技能市场分页游标无效');
-      next = cursor; truncated = true;
+      next = cursor;
     }
   }
-  return { rows, truncated, next };
+  return { rows, next };
 }
 
 export function addMarketFile(bundle: SkillBundle, path: string, data: Buffer) {
@@ -138,7 +137,7 @@ export function addMarketFile(bundle: SkillBundle, path: string, data: Buffer) {
     || [...bundle.keys()].some(key => key.startsWith(`${path}/`) || path.startsWith(`${key}/`)))
     throw new Error('市场技能包含非法、重复或嵌套文件路径');
   if (bundle.size >= MAX_SKILL_FILES || [...bundle.values()].reduce((sum, value) => sum + value.length, data.length) > MAX_SKILL_BYTES)
-    throw new Error('技能最多 500 个文件、20 MB');
+    throw new Error(SKILL_LIMIT_MESSAGE);
   bundle.set(path, data);
 }
 
@@ -168,7 +167,7 @@ export function readMarketZip(bytes: Buffer): SkillBundle {
     const localNameSize = bytes.readUInt16LE(local + 26), start = local + 30 + localNameSize + bytes.readUInt16LE(local + 28);
     if (start + compressed > directory || bytes.subarray(local + 30, local + 30 + localNameSize).toString('utf8') !== filename)
       throw new Error('市场技能 ZIP 文件越界');
-    total += size; if (total > MAX_SKILL_BYTES) throw new Error('技能最多 500 个文件、20 MB');
+    total += size; if (total > MAX_SKILL_BYTES) throw new Error(SKILL_LIMIT_MESSAGE);
     const packed = bytes.subarray(start, start + compressed);
     const data = method === 8 ? inflateRawSync(packed, { maxOutputLength: Math.max(1, size) }) : packed;
     if (data.length !== size || checksum(data) !== crc) throw new Error('市场技能 ZIP 文件校验失败');

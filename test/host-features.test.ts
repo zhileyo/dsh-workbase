@@ -70,14 +70,18 @@ test('新建目录不覆盖已有文件，非法名称与未配置根目录被�
 
 test('全文检索只返回当前项目主会话，宿主上限必须标明部分结果', async () => {
   let state = initialState();
+  let sessionReads = 0, diagnoses = 0;
   const host: HostPort = {
     workspaces: async () => [{ workspaceId: 'w', path: '/项目', title: '项目', available: true, sessionIds: ['s'] }],
-    sessions: async () => [{ sessionId: 's', title: '会话', archived: false, running: false, updatedAt: 10 }],
+    sessions: async () => { sessionReads++; return [{ sessionId: 's', title: '会话', archived: false, running: false, updatedAt: 10 }]; },
+    diagnose: (async (signal: AbortSignal) => { diagnoses++; signal.throwIfAborted(); return null as never; }) as unknown as HostPort['diagnose'],
     rename: async () => {},
     search: async () => ({ items: [{ sessionId: 's', snippet: '真实正文' }, { sessionId: 'other', snippet: '不可访问' }], hasMore: true }),
   };
   const service = new WorkbaseService({ get: () => state, set: async next => { state = next; } }, host, () => 'p');
   const result = await service.searchSessions('正文', new AbortController().signal);
+  assert.equal(sessionReads, 0, '检索不为了取可见集合去读全量会话');
+  assert.equal(diagnoses, 0, '检索不触发宿主诊断');
   assert.equal(result.items.length, 1);
   assert.equal(result.items[0]!.snippet, '真实正文');
   assert.equal(result.hasMore, true);

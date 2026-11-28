@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { hasWindowsIllegalChar, isWindowsReservedName } from './fs-name.js';
 
 export const MAX_SKILL_UPLOAD = 2 * 1024 * 1024;
 /** 显示名同时用于目录名称；只保留文件系统和资源长度约束。 */
 export const skillNameSchema = z.string().trim().min(1).max(100).refine(name =>
-  !name.startsWith('.') && !/[\\/:*?"<>|\x00-\x1f\x7f]|[. ]$/.test(name)
-  && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)
+  !name.startsWith('.') && !/[\\/\x00-\x1f\x7f]|[. ]$/.test(name)
+  && !hasWindowsIllegalChar(name) && !isWindowsReservedName(name)
   && new TextEncoder().encode(name).length <= 240,
   '技能名称不可包含路径分隔符、控制字符或系统保留名称，最多 100 个字符／240 字节');
 export const skillContentSchema = z.object({
@@ -52,6 +53,7 @@ export interface SkillsSnapshot {
   marketSources: SkillMarketSource[]; market: SkillMarketItem[];
   marketPage?: { query: string; token: string; hasMore: boolean };
   summary: SkillsSummary; disabledDirectory: string; stagingPath: string; legacyStagedCount?: number; issue?: string;
+  recoverable?: boolean;
 }
 export interface SkillReceipt {
   skill: SkillRecord; saved: true; effective: NonNullable<SkillRecord['effective']>; message: string;
@@ -66,6 +68,12 @@ export function skillMarkdown(skill: Pick<SkillContent, 'name' | 'description' |
   const metadata = retained.length ? `${retained.join('\n')}\n` : '';
   return `---\nname: ${JSON.stringify(skill.name)}\ndescription: ${JSON.stringify(skill.description)}\n${metadata}---\n\n${skill.body}\n`;
 }
+/** SKILL.md 的公共文档边界：剥 BOM 与首尾空白后切出 frontmatter 与正文；目录发现与上传两条解析入口共用同一判定。 */
+export function splitSkillDocument(text: string): { frontmatter: string; body: string } {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(text.replace(/^\uFEFF/, '').trim());
+  if (!match) throw new Error('SKILL.md 需要名称、说明 frontmatter 与正文');
+  return { frontmatter: match[1]!, body: match[2]! };
+}
 /** 上传格式明确限定为原型中的标量 frontmatter；复杂 YAML 不猜测解析结果。 */
 export function parseSkillUpload(text: string): SkillContent[] {
   if (new TextEncoder().encode(text).length > MAX_SKILL_UPLOAD) throw new Error('技能文件最大 2 MB');
@@ -74,10 +82,9 @@ export function parseSkillUpload(text: string): SkillContent[] {
     const parsed = z.object({ version: z.literal(1), skills: z.array(skillContentSchema).max(200) }).parse(JSON.parse(content));
     return parsed.skills;
   }
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(content);
-  if (!match) throw new Error('SKILL.md 需要名称、说明 frontmatter 与正文');
+  const { frontmatter, body } = splitSkillDocument(content);
   const fields = new Map<string, string>();
-  for (const line of match[1]!.split(/\r?\n/)) {
+  for (const line of frontmatter.split(/\r?\n/)) {
     if (!line.trim() || line.trimStart().startsWith('#')) continue;
     const field = /^([a-zA-Z][\w-]*):[ \t]*(.*)$/.exec(line);
     if (!field) throw new Error('上传 frontmatter 仅支持单行标量，请使用技能 JSON 上传复杂内容');
@@ -91,7 +98,7 @@ export function parseSkillUpload(text: string): SkillContent[] {
     if (/^[>|&*!{[]/.test(value)) throw new Error('不支持此 YAML 标量，请使用单行说明或技能 JSON');
     return value.replace(/\s+#.*$/, '').trim();
   };
-  return [skillContentSchema.parse({ name: scalar('name'), description: scalar('description'), body: match[2], frontmatter: match[1] })];
+  return [skillContentSchema.parse({ name: scalar('name'), description: scalar('description'), body, frontmatter })];
 }
 export function toggleSkillScope(values: readonly string[], value: string): string[] {
   if (value === 'global') return values.includes('global') ? [] : ['global'];

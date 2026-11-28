@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UiMemory, type ClientPort } from '../src/client/api.js';
-import { launchMessage } from '../src/client/launch.js';
+import { abandonPending, launchMessage } from '../src/client/launch.js';
 import type { Command } from '../src/shared/commands.js';
 import { commandSchema } from '../src/shared/commands.js';
 
@@ -89,4 +89,26 @@ test('本机搜索词、草稿及分组滚动跨重新初始化恢复，首页�
   assert.equal('homeScroll' in restored, false);
   assert.equal(restored.detail('p').draft, '待办草稿');
   assert.equal(restored.detail('p').done, 320);
+});
+
+test('未送达的首条消息可以放弃并重新开始，放弃后按当前草稿重建会话', async () => {
+  const memory = new UiMemory();
+  memory.composer.draft = '原文';
+  const calls: Command[] = [];
+  const created = ['s-1', 's-2'];
+  const api = { call: async (command: Command) => {
+    calls.push(command);
+    if (command.op === 'begin-session') return { sessionId: created.shift() };
+    throw new Error('网络断开');
+  } } as ClientPort;
+  const input = { projectId: 'p', preset: 'coding', provider: 'provider', model: 'model', text: '原文' };
+  await assert.rejects(launchMessage(api, memory, input, () => '22222222-2222-4222-8222-222222222222'), /断开/);
+  assert.equal(memory.composer.pending?.sessionId, 's-1');
+  abandonPending(memory);
+  assert.equal(memory.composer.pending, null);
+  assert.deepEqual(Object.keys(memory.composer.creationRequests), []);
+  await assert.rejects(launchMessage(api, memory, { ...input, text: '改过的文本' }), /断开/);
+  const resumed = memory.composer.pending as unknown as { sessionId: string; text: string } | null;
+  assert.equal(resumed?.sessionId, 's-2');
+  assert.equal(resumed?.text, '改过的文本');
 });

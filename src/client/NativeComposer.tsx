@@ -28,8 +28,9 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
   interface SessionReferenceSourceMap { workbaseComposer: unknown; }
 }
 
-/** textarea 是展开的剪贴板文本；宿主 TokenSpan 中每个引用／命令／引用块只占一位。 */
-function composerInsertionRange(draft: DraftSnapshot, start: number, end: number) {
+/** textarea 是展开的剪贴板文本；宿主 TokenSpan 中每个引用／命令／引用块只占一位。
+ * 导出给用例：偏移换算错一格的表现就是「插入位置错位」或「插入被静默拒绝」。 */
+export function composerInsertionRange(draft: DraftSnapshot, start: number, end: number) {
   const atoms = [...draft.references, ...(draft.quotes ?? []),
     ...(draft.command ? [{ offset: 0, length: draft.command.token.trimEnd().length }] : [])]
     .filter(atom => atom.length > 0).sort((a, b) => a.offset - b.offset);
@@ -235,6 +236,17 @@ export function composerFileRejection(files: readonly File[], attachments: reado
     return `图片总大小不能超过 ${limits.maxMessageImageBytes} 字节`;
   return null;
 }
+/**
+ * 命令菜单定位分两步：positionPopup 同一趟里既写 maxHeight 又算上下位置，而菜单要先按可用空间定高、
+ * 再把自身高度收进 400px，然后按收窄后的实际高度重新裁定展开方向。两次调用不是冗余——
+ * 合成一次会让面板按收窄前的高度选边，出现跳动。
+ */
+const placeCommandPopup = (panel: HTMLElement, trigger: HTMLElement) => {
+  positionPopup(panel, trigger, 'left', 640);
+  panel.style.setProperty('--wb-command-max-height', `${Math.min(400, parseFloat(panel.style.maxHeight))}px`);
+  // 菜单原先只向上展开；独立浮层的空间由此处重新裁定。
+  positionPopup(panel, trigger, 'left', 640);
+};
 /** 宿主重启、换 profile 或会话被删除后，页面记忆里的身份不再存在；这类失败可以换新会话恢复。 */
 export function staleSessionError(error: unknown) {
   const text = error instanceof Error ? error.message : String(error ?? '');
@@ -247,7 +259,7 @@ export async function prepareNativeComposer(ctx: Context, memory: UiMemory, work
   activationDraft?: string): Promise<SessionReference> {
   signal.throwIfAborted();
   const saved = memory.composer;
-  const pending = (saved as typeof saved & { nativeHandoffs?: Record<string, string> }).nativeHandoffs ??= {};
+  const pending = saved.nativeHandoffs;
   const key = JSON.stringify([workspaceId, preset]);
   const previous = pending[key] ?? (saved.nativeWorkspaceId === workspaceId && saved.nativePreset === preset ? saved.nativeSessionId : '');
   const creations = nativeCreations.get(memory) ?? new Map<string, Promise<string>>();
@@ -375,12 +387,7 @@ export function ComposerMenu({ ctx, memory, workspaceId, preset, disabled, model
   useLayoutEffect(() => {
     const panel = popup.current, trigger = button.current;
     if (!panel || !trigger) return;
-    const place = () => {
-      positionPopup(panel, trigger, 'left', 640);
-      panel.style.setProperty('--wb-command-max-height', `${Math.min(400, parseFloat(panel.style.maxHeight))}px`);
-      // 菜单原先只向上展开；独立浮层的空间由此处重新裁定。
-      positionPopup(panel, trigger, 'left', 640);
-    };
+    const place = () => placeCommandPopup(panel, trigger);
     const sync = () => {
       const open = !!panel.querySelector('[data-trigger-menu]');
       setMenuOpen(open);

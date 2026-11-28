@@ -81,7 +81,7 @@ export async function apply(ctx: Context) {
     return () => { personal.active = false; dispose(); };
   });
   await personal.list().catch(() => { /* 文件冲突在设置读取时明确反馈，不能阻塞插件。 */ });
-  const extensions = new Extensions(ctx, resolveDshHome(), host, () => domain.global.get().bindings,
+  const extensions = new Extensions(ctx, resolveDshHome(), host, () => domain.global.get(),
     () => domain.global.get().preferences.extensionConfig);
   ctx.effect(() => () => extensions.dispose());
   const startupKey = Symbol.for('dsh-workbase.backup-startup');
@@ -118,11 +118,11 @@ export async function apply(ctx: Context) {
     // 精确Fetch路由由Connection强制只允许owner；沿用官方RPC线上封装。
     fetch: request => handleRequest(service, request, extensions),
   }));
-  ctx.effect(() => ctx.connection.fetch.register({
-    path: `${RPC_CHANNEL}/${EXTENSIONS_ENDPOINT}`, methods: ['POST'], requestBody: 'streaming',
-    fetch: request => handleRequest(service, request, extensions, true),
-  }));
-  for (const [endpoint, route] of [[RULES_ENDPOINT, 'rules'], [MESSAGE_ENDPOINT, 'message'], [ASSISTANT_ENDPOINT, 'assistant']] as const)
+  // 专用端点按通道标签登记：端点路径与允许的 op 由同一份标签表派生。
+  for (const [endpoint, route] of [
+    [EXTENSIONS_ENDPOINT, 'extensions'], [RULES_ENDPOINT, 'rules'],
+    [MESSAGE_ENDPOINT, 'message'], [ASSISTANT_ENDPOINT, 'assistant'],
+  ] as const)
     ctx.effect(() => ctx.connection.fetch.register({
       path: `${RPC_CHANNEL}/${endpoint}`, methods: ['POST'], requestBody: 'streaming',
       fetch: request => handleRequest(service, request, extensions, route),

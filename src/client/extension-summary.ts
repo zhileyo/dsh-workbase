@@ -3,7 +3,7 @@ import { extensionCall, type ClientPort } from './api.js';
 import type { ExtensionModule } from '../shared/extensions.js';
 
 export type ExtensionSummary = { count: number | null; detail: string; errors: number };
-export type SummaryState = { status: 'loading' } | { status: 'ready'; value: ExtensionSummary } | { status: 'error'; message: string };
+export type SummaryState = { status: 'loading' } | { status: 'ready'; value: ExtensionSummary; stale?: boolean } | { status: 'error'; message: string };
 // 数字为 null 表示技能生效尚未由宿主确认（见 SkillsManager.summaryNow）。首轮常撞上宿主目录未就绪，
 // 等下一次 15 秒轮询会让统计卡长时间留「—」，因此对「未确认」按短退避重试，确认后回到常规轮询。
 const RETRY_DELAYS = [400, 800, 1600, 3200, 5000] as const;
@@ -20,10 +20,12 @@ const rememberSummary = (api: ClientPort, module: ExtensionModule, days: number,
   summaries.set(keyOf(module, days), value);
 };
 const confirmedCount = (state: SummaryState | undefined) => state?.status === 'ready' && state.value.count !== null ? state.value : undefined;
+/** 统计卡覆盖的扩展模块集合：缓存播种与轮询都从这一份清单取，新增模块改这里即可。 */
+const SUMMARY_MODULES = ['skills', 'mcp', 'rss'] as const satisfies readonly ExtensionModule[];
 export function useExtensionSummaries(api: ClientPort, enabled: Record<ExtensionModule, boolean>, days: number) {
   const [values, setValues] = useState<Partial<Record<ExtensionModule, SummaryState>>>(() => {
     const seeded: Partial<Record<ExtensionModule, SummaryState>> = {};
-    for (const module of ['skills', 'mcp', 'rss'] as const) {
+    for (const module of SUMMARY_MODULES) {
       const value = enabled[module] ? cachedSummary(api, module, days) : undefined;
       if (value) seeded[module] = { status: 'ready', value };
     }
@@ -32,7 +34,7 @@ export function useExtensionSummaries(api: ClientPort, enabled: Record<Extension
   useEffect(() => {
     const controller = new AbortController();
     const generations: Record<ExtensionModule, number> = { skills: 0, mcp: 0, rss: 0 };
-    const modules = (['skills', 'mcp', 'rss'] as const).filter(module => enabled[module]);
+    const modules = SUMMARY_MODULES.filter(module => enabled[module]);
     setValues(previous => {
       let next = previous;
       for (const module of modules) {
@@ -59,15 +61,21 @@ export function useExtensionSummaries(api: ClientPort, enabled: Record<Extension
           if (controller.signal.aborted || generations[module] !== generation) return;
           rememberSummary(api, module, days, value);
           setValues(previous => {
-            // 这一轮宿主还没确认生效时保留上一次确认的数字，别让卡片在两次读数之间退回「—」。
-            if (value.count === null && confirmedCount(previous[module])) return previous;
+            // 这一轮宿主还没确认生效时保留上一次确认的数字，别让卡片在两次读数之间退回「—」，
+            // 但必须标成过期：卡片不能无限期显示陈旧数字而看不出异常。
+            if (value.count === null && confirmedCount(previous[module])) {
+              return { ...previous, [module]: { status: 'ready', value: confirmedCount(previous[module])!, stale: true } };
+            }
             return { ...previous, [module]: { status: 'ready', value } };
           });
         }).catch(error => {
           if (controller.signal.aborted || generations[module] !== generation) return;
           setValues(previous => {
-            // 读失败同样不撤下已经确认过的数字，保持卡片稳定，等下一次轮询再试。
-            if (confirmedCount(previous[module])) return previous;
+            // 读失败同样不撤下已经确认过的数字，保持卡片稳定，等下一次轮询再试；
+            // 同样标成过期，让首页按异常色提示读数可能已陈旧。
+            if (confirmedCount(previous[module])) {
+              return { ...previous, [module]: { status: 'ready', value: confirmedCount(previous[module])!, stale: true } };
+            }
             return { ...previous, [module]: { status: 'error', message: error instanceof Error ? error.message : '读取失败' } };
           });
         }).finally(() => {

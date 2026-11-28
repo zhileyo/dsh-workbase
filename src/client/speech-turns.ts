@@ -1,9 +1,9 @@
-type Entry = { type: string; event: { type: string; seq: number; data: unknown } };
+import { assistantMessageText, type SpeechEntry } from '../shared/speech.js';
 /** 仅接收新实时事件；历史replace/prepend由调用方排除。 */
 export class SpeechTurns {
   private latest = new Map<number, string>();
   private seen = new Set<number>();
-  accept(entry: Entry): string | undefined {
+  accept(entry: SpeechEntry): string | undefined {
     if (entry.type !== 'event') return;
     const { type, seq } = entry.event;
     if (this.seen.has(seq)) return;
@@ -13,10 +13,7 @@ export class SpeechTurns {
       message?: { content?: readonly { type: string; text?: string }[] }; reason?: { kind?: string } };
     if (typeof data.turn !== 'number') return;
     if (type === 'assistant/message') {
-      const blocks = data.message?.content ?? [];
-      const text = !data.interrupted && !blocks.some(block => block.type === 'tool-call')
-        ? blocks.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n').trim() : '';
-      this.latest.set(data.turn, text || '');
+      this.latest.set(data.turn, assistantMessageText(data.interrupted, data.message?.content) || '');
       if (this.latest.size > 32) this.latest.delete(this.latest.keys().next().value!);
     }
     if (type !== 'turn/end') return;

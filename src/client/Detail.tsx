@@ -3,9 +3,13 @@ import type { Command } from '../shared/commands.js';
 import { defaultDetail, emptyMark, type HostSession, type Project, type Snapshot, type Todo } from '../shared/model.js';
 import type { ClientPort, UiMemory } from './api.js';
 import { dateText, folderName, Icon, IconButton, Menu, Picker, Tabs } from './ui.js';
-import { priorityLabels, todoAttachments, type Priority } from '../shared/todo.js';
+import { priorityBadgeLabels, priorityLabels, todoAttachments, type Priority } from '../shared/todo.js';
 import { TodoToolbar } from './TodoToolbar.js';
+import { projectMenuItems } from './project-menu.js';
 import { t } from './i18n.js';
+
+/** 待办行内变量的名字就是 t，这里固定住 i18n 的 t，避免被同名的待办参数遮蔽。 */
+const priorityBadge = (priority: NonNullable<Priority>) => t(priorityBadgeLabels[priority]);
 
 export interface DetailProps {
   project: Project; snapshot: Snapshot; api: ClientPort; memory: UiMemory; busy: boolean;
@@ -88,7 +92,7 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
       </button>
       <div className="wb-todo-body todo-copy">
         <button type="button" className="wb-todo-title todo-title wb-ellipsis" disabled={busy} title={p.archived ? `${t.title}（项目已归档，仅可查看）` : t.title} onClick={() => edit(t)}>{t.title}</button>
-        <div className="todo-meta-line">{t.priority && <span className={`todo-priority ${t.priority}`}>{priorityLabels[t.priority] === '高' ? '高优先级' : priorityLabels[t.priority] === '中' ? '中优先级' : '低优先级'}</span>}
+        <div className="todo-meta-line">{t.priority && <span className={`todo-priority ${t.priority}`}>{priorityBadge(t.priority)}</span>}
           <div className="todo-meta" title={`${t.creator === 'agent' ? 'Agent' : '用户'} 创建 · ${dateText(t.updatedAt)}`}>{t.creator === 'agent' ? 'Agent' : '用户'} 创建 · {dateText(t.updatedAt)}</div>
           {todoAttachments(t).length > 0 && <span className="todo-attachment-count" role="img" aria-label={`${todoAttachments(t).length} 个附件`} title={`${todoAttachments(t).length} 个附件`}><Icon name="paperclip" size={12}/><span aria-hidden="true">{todoAttachments(t).length}<span className="todo-attachment-unit"> 个附件</span></span></span>}</div>
       </div>
@@ -100,21 +104,15 @@ export function Detail({ project: p, snapshot, api, memory, busy, mutate, run, n
     <div className="wb-detail-heading detail-project-line"><nav className="breadcrumb" aria-label="项目导航"><button type="button" className="flat" onClick={() => navigate(null)}>主页</button><span className="breadcrumb-divider"><Icon name="chevron"/></span><span className="detail-project-symbol"><Icon name="folder"/></span>
       <button type="button" className="wb-project-title detail-project-name" title={p.archived ? `${p.title} · 已归档` : `${p.title} · 点击重命名`} onClick={p.archived ? undefined : () => rename(p)}><span>{p.title}</span>{!p.archived && <Icon name="pencil"/>}</button></nav>
       <div className="heading-actions">
-      <Menu label="项目更多操作" disabled={busy} items={p.archived ? [
-        { label: p.mark.favorite ? '取消收藏' : '收藏项目', action: () => void mutate({ op: 'mark', projectId: p.projectId, field: 'favorite', value: !p.mark.favorite }) },
-        { label: '打开目录', action: () => { void api.revealDirectory(p.projectId).then(ok => { if (!ok) notify('暂时无法打开目录，请复制路径后手动打开'); }); } },
-        { label: '复制路径', action: () => void run(() => navigator.clipboard.writeText(p.path), '完整路径已复制') },
-        { label: '恢复项目', action: () => void mutate({ op: 'archive-project', projectId: p.projectId, archived: false }) },
-      ] : [
-        { label: '重命名', action: () => rename(p) },
-        { label: p.mark.favorite ? '取消收藏' : '收藏项目', action: () => void mutate({ op: 'mark', projectId: p.projectId, field: 'favorite', value: !p.mark.favorite }) },
-        { label: '打开目录', action: () => { void api.revealDirectory(p.projectId).then(ok => { if (!ok) notify('暂时无法打开目录，请复制路径后手动打开'); }); } },
-        { label: '复制路径', action: () => void run(() => navigator.clipboard.writeText(p.path), '完整路径已复制') },
-        { label: '项目迁移', separatorBefore: true, action: () => migration?.(p, false) },
-        { label: '迁移记录', action: () => migration?.(p, true) },
-        { label: '归档项目', action: () => void mutate({ op: 'archive-project', projectId: p.projectId, archived: true }) },
-        { label: '移除项目', action: () => removeProject(p), danger: true },
-      ]}/></div>
+      <Menu label="项目更多操作" disabled={busy} items={projectMenuItems(p, {
+        favorite: (project, value) => { void mutate({ op: 'mark', projectId: project.projectId, field: 'favorite', value }); },
+        openDirectory: project => { void api.revealDirectory(project.projectId).then(ok => { if (!ok) notify('暂时无法打开目录，请复制路径后手动打开'); }); },
+        rename,
+        removeProject,
+        archive: (project, archived) => { void mutate({ op: 'archive-project', projectId: project.projectId, archived }); },
+        migration: (project, records) => migration?.(project, records),
+        copyPath: project => { void run(() => navigator.clipboard.writeText(project.path), '完整路径已复制'); },
+      })}/></div>
     </div>
     <div className="wb-detail-context detail-project-info"><div className="detail-project-context">
       <div className="theme-select-project-switch"><Picker variant="project-switch" label={`切换项目，当前 ${p.title}，目录 ${p.path}`} value={p.projectId} onChange={navigate} disabled={busy} title={p.path}

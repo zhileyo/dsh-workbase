@@ -1,8 +1,11 @@
 import type { Command } from '../shared/commands.js';
-import { defaultSpeech, speechTextError, type SpeechStatus, type SpeechAudio } from '../shared/speech.js';
+import { assistantMessageText, defaultSpeech, speechTextError, type SpeechReplyEntry,
+  type SpeechStatus, type SpeechAudio } from '../shared/speech.js';
 import { errorText } from './i18n.js';
 import { ClientSpeechStream } from './speech-stream.js';
 import type { SpeechAction } from './speech-stream-turns.js';
+/** 每个会话保留的可重播回复条数；长会话正文全量驻留会随使用时长线性膨胀。 */
+const MAX_REPLIES = 200;
 
 export class SpeechPlayback {
   status: SpeechStatus = { config: defaultSpeech(), available: false, hasKey: false, version: null };
@@ -19,14 +22,18 @@ export class SpeechPlayback {
   private audio?: HTMLAudioElement;
   private url?: string;
   private finish?: () => void;
-  private generation = 0;
+  /** 播报世代：每次 stop 递增，用于丢弃过期流/音频的回调结果。 */
+  private playbackEpoch = 0;
   private listeners = new Set<() => void>();
-  private revision = 0;
-  private statusEpoch = 0;
+  /** 通知序号：useSyncExternalStore 的快照值，只增不回退。 */
+  private notifyRevision = 0;
+  /** 配置轮询世代：refresh 在途时 configure 递增，过期回执直接丢弃。 */
+  private pollEpoch = 0;
   private stream?: ClientSpeechStream;
   private streamRelease?: Promise<void>;
   private attempt?: string;
-  private muted?: string;
+  /** 最近一次失败后静默的 attempt，防止同一条自动播报反复报错刷屏。 */
+  private mutedAttempt?: string;
   private suppressed = new Set<string>();
   constructor(private readonly send: (command: Command, signal?: AbortSignal) => Promise<unknown>,
     private readonly streamRequest?: typeof fetch) {}
@@ -56,12 +63,12 @@ export class SpeechPlayback {
       this.stop(); this.session = session; this.attempt = action.attempt; this.last = '';
     }
     this.last += `${this.last ? '\n' : ''}${action.text}`;
-    if (action.attempt === this.muted) { this.changed(); return; }
+    if (action.attempt === this.mutedAttempt) { this.changed(); return; }
     if (!this.stream) this.beginStream();
     this.stream?.push(action.text);
   }
   private beginStream(manual = false) {
-    const generation = this.generation;
+    const playbackEpoch = this.playbackEpoch;
     this.playing = true; this.error = ''; this.changed();
     try {
       const release = this.streamRelease;
@@ -72,25 +79,25 @@ export class SpeechPlayback {
       };
       const stream = this.stream = new ClientSpeechStream(this.send, this.status.version, request, undefined, manual);
       void stream.done.catch(error => {
-        if (generation === this.generation) {
+        if (playbackEpoch === this.playbackEpoch) {
           this.error = errorText(error instanceof Error ? error.message : '语音播报失败');
-          this.muted = this.attempt;
+          this.mutedAttempt = this.attempt;
         }
       }).finally(() => {
-        if (generation === this.generation) {
+        if (playbackEpoch === this.playbackEpoch) {
           this.stream = undefined; this.playing = false; this.manual = false; this.manualReply = undefined; this.changed();
         }
       });
     } catch (error) {
       this.error = errorText(error instanceof Error ? error.message : '语音播报失败');
-      this.playing = false; this.manual = false; this.manualReply = undefined; this.muted = this.attempt; this.changed();
+      this.playing = false; this.manual = false; this.manualReply = undefined; this.mutedAttempt = this.attempt; this.changed();
     }
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  getSnapshot = () => this.revision;
-  private changed() { this.revision++; for (const listener of this.listeners) listener(); }
+  getSnapshot = () => this.notifyRevision;
+  private changed() { this.notifyRevision++; for (const listener of this.listeners) listener(); }
   configure(value: SpeechStatus) {
-    this.statusEpoch++;
+    this.pollEpoch++;
     if (value.version !== this.status.version || value.config.enabled !== this.status.config.enabled) this.stop();
     this.status = value; this.changed();
   }
@@ -115,7 +122,7 @@ export class SpeechPlayback {
     } finally { this.saving = false; this.changed(); }
   }
   reply(session: string, id: string) { return this.replies.get(session)?.get(id) ?? ''; }
-  updateReplies(session: string, entries: readonly { type: string; event: { type: string; data: unknown } }[], replace = false) {
+  updateReplies(session: string, entries: readonly SpeechReplyEntry[], replace = false) {
     const replies = replace ? new Map<string, string>() : this.replies.get(session) ?? new Map<string, string>();
     for (const entry of entries) {
       if (entry.type !== 'event' || entry.event.type !== 'assistant/message') continue;
@@ -124,10 +131,14 @@ export class SpeechPlayback {
       } } | null;
       const message = data?.message;
       if (!message?.id) continue;
-      const blocks = message.content ?? [];
-      const text = !data?.interrupted && !blocks.some(block => block.type === 'tool-call')
-        ? blocks.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n').trim() : '';
+      const text = assistantMessageText(data?.interrupted, message.content);
       if (text) replies.set(message.id, text); else replies.delete(message.id);
+    }
+    // 长会话的回复全文不该永久驻留：只保留最近若干条供重播，淘汰按插入顺序。
+    while (replies.size > MAX_REPLIES) {
+      const oldest = replies.keys().next();
+      if (oldest.done) break;
+      replies.delete(oldest.value);
     }
     this.replies.set(session, replies); this.changed();
   }
@@ -150,12 +161,12 @@ export class SpeechPlayback {
     this.playText(text, session, id);
   }
   async refresh() {
-    const epoch = this.statusEpoch;
+    const epoch = this.pollEpoch;
     try {
       const value = await this.send({ op: 'speech-status' }) as SpeechStatus;
-      if (epoch === this.statusEpoch) this.configure(value);
+      if (epoch === this.pollEpoch) this.configure(value);
     } catch (error) {
-      if (epoch !== this.statusEpoch) return;
+      if (epoch !== this.pollEpoch) return;
       this.error = errorText(error instanceof Error ? error.message : '播报配置读取失败'); this.changed();
     }
   }
@@ -180,32 +191,34 @@ export class SpeechPlayback {
     } else { this.queue.push({ text, session }); void this.drain(); }
   }
   stop(clearLast = false) {
-    this.muted = this.attempt;
+    this.mutedAttempt = this.attempt;
     if (this.stream) {
       const released = this.stream.stop();
-      this.streamRelease = Promise.all([this.streamRelease, released]).then(() => {});
-      void this.streamRelease.catch(() => {});
+      // 取消回执失败只影响这一条流：等待链条必须恒为 fulfilled，否则新流会在 beginStream 的
+      // await release 处永久被拒，一次取消失败就淹掉此后全部播报。
+      this.streamRelease = Promise.all([this.streamRelease ?? Promise.resolve(), released]
+        .map(item => item.catch(() => {}))).then(() => {});
     }
     this.stream = undefined;
-    this.generation++; this.queue = [];
+    this.playbackEpoch++; this.queue = [];
     this.controller?.abort(); this.controller = undefined;
     this.audio?.pause(); this.audio = undefined; this.finish?.(); this.finish = undefined;
     if (this.url) URL.revokeObjectURL(this.url);
     this.url = undefined; this.playing = false;
     this.manual = false; this.manualReply = undefined; this.session = undefined;
-    if (clearLast) { this.last = ''; this.attempt = undefined; this.muted = undefined; this.suppressed.clear(); }
+    if (clearLast) { this.last = ''; this.attempt = undefined; this.mutedAttempt = undefined; this.suppressed.clear(); }
     this.changed();
   }
   private async drain() {
     if (this.playing || !this.queue.length) return;
     const { text, session } = this.queue.shift()!;
     this.session = session;
-    const generation = this.generation;
+    const playbackEpoch = this.playbackEpoch;
     const controller = this.controller = new AbortController();
     this.playing = true; this.last = text; this.error = ''; this.changed();
     try {
       const result = await this.send({ op: 'speech-synthesize', text, ...(this.manual ? { manual: true } : {}) }, controller.signal) as SpeechAudio;
-      if (generation !== this.generation) return;
+      if (playbackEpoch !== this.playbackEpoch) return;
       const bytes = Uint8Array.from(atob(result.data), c => c.charCodeAt(0));
       const url = this.url = URL.createObjectURL(new Blob([bytes], { type: result.mime }));
       const audio = this.audio = new Audio(url);
@@ -216,11 +229,11 @@ export class SpeechPlayback {
         void audio.play().catch(() => reject(new Error('自动播放受阻，请点击重播')));
       });
     } catch (error) {
-      if (generation !== this.generation) return;
+      if (playbackEpoch !== this.playbackEpoch) return;
       this.error = errorText(error instanceof Error ? error.message : '语音播报失败');
       this.queue = [];
     } finally {
-      if (generation === this.generation) {
+      if (playbackEpoch === this.playbackEpoch) {
         this.audio?.pause(); this.audio = undefined; this.finish = undefined;
         if (this.url) URL.revokeObjectURL(this.url);
         this.url = undefined; this.controller = undefined; this.playing = false;

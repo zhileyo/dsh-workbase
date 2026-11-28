@@ -4,6 +4,9 @@ import { basename, dirname, join, relative, resolve, isAbsolute, sep } from 'nod
 
 export const MAX_SKILL_FILES = 500;
 export const MAX_SKILL_BYTES = 20 * 1024 * 1024;
+/** 限额提示与限额判断共用同一组常量：改上限只改上面两行，文案随之更新。 */
+export const SKILL_LIMIT_MESSAGE = `技能最多 ${MAX_SKILL_FILES} 个文件、${MAX_SKILL_BYTES / (1024 * 1024)} MB`;
+export const SKILL_IMPORT_LIMIT_MESSAGE = `技能导入最多 ${MAX_SKILL_FILES} 个文件、${MAX_SKILL_BYTES / (1024 * 1024)} MB`;
 export type SkillBundle = Map<string, Buffer>;
 export const absent = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'ENOENT';
 export const digest = (bundle: SkillBundle) => {
@@ -51,25 +54,32 @@ export async function readBundle(path: string): Promise<SkillBundle> {
     if (info.isDirectory()) {
       for (const entry of await readdir(current)) await visit(join(current, entry), name ? `${name}/${entry}` : entry, depth + 1);
     } else if (info.isFile()) {
-      if (result.size >= MAX_SKILL_FILES || (bytes += info.size) > MAX_SKILL_BYTES) throw new Error('技能最多 500 个文件、20 MB');
+      if (result.size >= MAX_SKILL_FILES || (bytes += info.size) > MAX_SKILL_BYTES) throw new Error(SKILL_LIMIT_MESSAGE);
       result.set(name || 'SKILL.md', await readFile(current));
     } else throw new Error('技能目录仅接受普通文件');
   }
   await visit(path, '', 0);
   return result;
 }
+/** 关联文件必须落在技能目录内；本地写入与沙箱写入共用这一条判定。 */
+export function bundleTarget(root: string, name: string) {
+  const target = join(root, name);
+  if (!contained(root, target) || !name || name.includes('\\')) throw new Error('关联文件路径越界');
+  return target;
+}
+/** 原子写入的临时路径；本地写入与沙箱子进程共用同一命名规则。 */
+export const temporaryPath = (path: string) => `${path}.${randomUUID()}.tmp`;
 export async function writeBundle(path: string, bundle: SkillBundle) {
   await safePath(path); await mkdir(path, { recursive: true, mode: 0o700 });
   for (const [name, data] of bundle) {
-    const target = join(path, name);
-    if (!contained(path, target) || !name || name.includes('\\')) throw new Error('关联文件路径越界');
+    const target = bundleTarget(path, name);
     await mkdir(dirname(target), { recursive: true, mode: 0o700 });
     await writeFile(target, data, { flag: 'wx', mode: 0o600 });
   }
 }
 export async function atomicJson(path: string, value: unknown, exclusive = false) {
   await safePath(path); await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.${randomUUID()}.tmp`;
+  const temp = temporaryPath(path);
   try {
     const handle = await open(temp, 'wx', 0o600);
     try { await handle.writeFile(JSON.stringify(value)); await handle.sync(); } finally { await handle.close(); }
@@ -88,6 +98,11 @@ export interface SkillFileOperations {
 export const localSkillFileOperations: SkillFileOperations = { writeBundle, atomicJson, rename, remove: rm };
 interface JournalRow { path: string; backup: string; stage: string; hadOriginal: boolean; prepared?: boolean; digest?: string }
 interface Journal { id: string; rows: JournalRow[] }
+/** 备份与暂存路径的唯一公式：写入侧生成、恢复侧校验都调用它，命名变更无法只改一半。 */
+export function journalPaths(id: string, path: string) {
+  const base = join(dirname(path), `.wb-${id}-${basename(path)}`);
+  return { backup: `${base}.backup`, stage: `${base}.stage` };
+}
 /** 写入可能已发布但无法读回确认，禁止回滚或删除恢复日志。 */
 export class SkillCommitUncertainError extends Error {
   constructor(cause: unknown) {
@@ -111,8 +126,7 @@ export async function fileTransaction(root: string, plans: FilePlan[], commit: (
     if (hadOriginal) {
       if (!plan.expected || digest(await readBundle(plan.path)) !== plan.expected) throw new Error('技能文件已被外部修改或目标同名冲突，请重新扫描');
     } else if (plan.expected) throw new Error('原技能文件已消失，请重新扫描');
-    rows.push({ path: plan.path, backup: join(dirname(plan.path), `.wb-${id}-${basename(plan.path)}.backup`),
-      stage: join(dirname(plan.path), `.wb-${id}-${basename(plan.path)}.stage`), hadOriginal,
+    rows.push({ path: plan.path, ...journalPaths(id, plan.path), hadOriginal,
       digest: plan.next ? digest(plan.next) : undefined });
   }
   let journalWritten = false;
@@ -175,10 +189,10 @@ export async function recoverTransaction(root: string, committedId?: string,
     || !Array.isArray(journal.rows)) throw new Error('技能事务恢复日志损坏');
   for (const row of journal.rows) {
     if (!row || typeof row.path !== 'string' || !isAbsolute(row.path) || typeof row.hadOriginal !== 'boolean'
-      || (row.digest !== undefined && !/^[a-f0-9]{64}$/.test(row.digest))
-      || row.backup !== join(dirname(row.path), `.wb-${journal.id}-${basename(row.path)}.backup`)
-      || row.stage !== join(dirname(row.path), `.wb-${journal.id}-${basename(row.path)}.stage`))
+      || (row.digest !== undefined && !/^[a-f0-9]{64}$/.test(row.digest)))
       throw new Error('技能事务日志路径无效');
+    const paths = journalPaths(journal.id, row.path);
+    if (row.backup !== paths.backup || row.stage !== paths.stage) throw new Error('技能事务日志路径无效');
     await safePath(row.path); await safePath(row.backup); await safePath(row.stage);
   }
   const files = await operations?.([path, ...journal.rows.flatMap(row => [row.path, row.backup, row.stage])])

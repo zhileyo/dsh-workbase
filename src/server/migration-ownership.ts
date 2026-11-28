@@ -17,14 +17,23 @@ export function projectWorkspaces(state: State, workspaces: HostWorkspace[]): Ho
     if (ids.has(owner.sessionId)) throw new WorkbaseError('binding-conflict', '迁移会话归属重复');
     ids.add(owner.sessionId);
   }
+  // 每个工作区都重扫全部归属与绑定是 O(工作区 × 归属 × 绑定)；先把有效绑定与归属各做成一次索引。
+  const key = (item: { projectId: string; workspaceId: string; path: string }) =>
+    `${item.projectId}\u0000${item.workspaceId}\u0000${item.path}`;
+  const bindings = new Set(state.bindings.filter(b => !b.retired && !b.removed).map(key));
+  const owned = new Map<string, string[]>();
+  for (const owner of state.sessionOwnership) {
+    if (!bindings.has(key(owner))) continue;
+    const slot = owner.workspaceId + '\u0000' + owner.path;
+    const listed = owned.get(slot);
+    if (listed) listed.push(owner.sessionId);
+    else owned.set(slot, [owner.sessionId]);
+  }
   return workspaces.map(workspace => ({
     ...workspace,
     sessionIds: [...new Set([
       ...workspace.sessionIds.filter(id => !ids.has(id)),
-      ...state.sessionOwnership.filter(owner => owner.workspaceId === workspace.workspaceId && owner.path === workspace.path
-        && state.bindings.some(b => b.projectId === owner.projectId && b.workspaceId === workspace.workspaceId
-          && b.path === workspace.path && !b.retired && !b.removed))
-        .map(owner => owner.sessionId),
+      ...owned.get(workspace.workspaceId + '\u0000' + workspace.path) ?? [],
     ])],
   }));
 }

@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } fro
 import { Button, Input, Menu, IconChevronDownOutlineRegular, SettingsForm, SettingsFormModel, SettingsValueField, settingsTextField,
   type SettingsFieldSpec, type SettingsFieldState, type SettingsFormScope, type SettingsFormShell } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client';
-import { useWorkbaseLocale, t } from './i18n.js';
+import { useWorkbaseLocale, t, errorText } from './i18n.js';
 import { ansiKeys, colorKeys, flavours, resolveTerminalColors, terminalPaletteSchema, defaultTerminalColors,
   type TerminalColors, type TerminalPalette } from '../shared/terminal-palette.js';
 
@@ -50,7 +50,8 @@ const activeSession = (list: SessionListState) => {
 };
 
 // 官方动作返回 void，以官方发布的 saving/failed/dirty 确认结果，未知结果停止后续写入。
-function saveOfficial(face: OfficialShellFace, signal: AbortSignal): Promise<void> {
+// 导出给用例：三条收尾路径（确认成功／abort／超时未确认）只能靠直接驱动这个函数覆盖。
+export function saveOfficial(face: OfficialShellFace, signal: AbortSignal): Promise<void> {
   const store = face.hooks.shellCard;
   if (signal.aborted) return Promise.reject(new Error('cancelled'));
   if (!store.getSnapshot().dirty) return Promise.resolve();
@@ -114,11 +115,26 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
   const [error, setError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [shellSaveFailed, setShellSaveFailed] = useState(false);
+  /** 默认 Shell 保存失败的原始消息；文案与 entry.tsx 的 verified port 同源，经 errorText 出词典。 */
+  const [shellSaveError, setShellSaveError] = useState('');
   const [saved, setSaved] = useState(false);
-  const lifetime = useMemo(() => new AbortController(), [model, official]);
+  const [lifetime, setLifetime] = useState(() => new AbortController());
   const busy = useRef(false);
-  useEffect(() => () => { lifetime.abort(); model.dispose(); }, [model, lifetime]);
+  const mounted = useRef(false);
+  // 取消只作用于在途请求：放弃草稿、宿主能力替换后都要换一个新信号，
+  // 否则 save()/download() 的 aborted 守卫会把此后所有保存变成无声空操作。
+  const resetLifetime = () => {
+    setLifetime(current => { current.abort(); return new AbortController(); });
+    busy.current = false;
+    setSaving(false); setDownloading(false); setDownloadFailed(false);
+    setFailed(false); setShellSaveError(''); setSaved(false);
+  };
+  useEffect(() => () => lifetime.abort(), [lifetime]);
+  useEffect(() => () => model.dispose(), [model]);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    setLifetime(current => { current.abort(); return new AbortController(); });
+  }, [model, official]);
   useEffect(() => {
     setOpen(false); setResult(undefined); setDraft(undefined); setError(false);
     if (!port || !sessionId) { setLoading(false); return; }
@@ -142,9 +158,11 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
   const paletteInvalid = !!paletteDraft && (!terminalPaletteSchema.safeParse(paletteDraft).success
     || paletteDraft.mode !== 'follow' && !resolveTerminalColors(paletteDraft));
   const invalid = command.invalid || state.shell.invalid || shellDirty && !choice || paletteInvalid;
+  /** 任何一次编辑都要收起上一次的「已保存／保存失败」回执，避免旧结果留在新草稿旁边。 */
+  const clearSavedState = () => { setFailed(false); setSaved(false); };
   const save = async () => {
     if (busy.current || locked || !writable || invalid || lifetime.signal.aborted) return;
-    busy.current = true; setSaving(true); setFailed(false); setShellSaveFailed(false); setSaved(false);
+    busy.current = true; setSaving(true); setFailed(false); setShellSaveError(''); setSaved(false);
     try {
       if (!isLive()) throw new Error('cancelled');
       await saveOfficial(official, lifetime.signal);
@@ -164,15 +182,15 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
         if (!canChoose || !choice || !current || !port || terminal.getSnapshot() !== port
           || activeSession(sessions.getSnapshot()) !== sessionId) throw new Error('shell');
         try { port.selectShell(choice.path); }
-        catch (error) { setShellSaveFailed(true); throw error; }
+        catch (error) { setShellSaveError(error instanceof Error ? error.message : String(error)); throw error; }
         setResult({ ...current, selectedShell: choice.path });
       }
       setSaved(true);
     } catch { if (!lifetime.signal.aborted) setFailed(true); }
     finally { busy.current = false; if (!lifetime.signal.aborted) setSaving(false); }
   };
-  const edit = (field: string, text: string) => { setFailed(false); setSaved(false); actions.edit(field, text); };
-  const editPalette = (value: TerminalPalette) => { setPaletteDraft(value); setFailed(false); setSaved(false); };
+  const edit = (field: string, text: string) => { clearSavedState(); actions.edit(field, text); };
+  const editPalette = (value: TerminalPalette) => { setPaletteDraft(value); clearSavedState(); };
   const download = async () => {
     if (locked || lifetime.signal.aborted) return;
     setDownloading(true); setDownloadFailed(false); setSaved(false);
@@ -189,7 +207,7 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
       dirty: command.dirty || state.shell.dirty || shellDirty || paletteDirty, invalid: invalid || !writable, saving: locked,
       failed: failed || command.failed || state.shell.failed }}
       onSave={() => { void save(); }} onDiscard={() => {
-        lifetime.abort(); actions.discard(); official.discard(); setPaletteDraft(paletteBaseline);
+        resetLifetime(); actions.discard(); official.discard(); setPaletteDraft(paletteBaseline);
       }} labels={{ unavailable: '当前宿主未提供终端服务。', readOnly: '当前配置为只读。',
         saveFailed: '部分设置可能已保存，未保存草稿已保留，请重试。', save: '保存', saving: '正在保存…' }}>
       <h4>交互终端</h4>
@@ -205,7 +223,7 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
       <div className="wb-terminal-value-field"><SettingsValueField id={`${id}-size`} label="字体大小" hint="10–20 px，默认 13 px；留空恢复默认。"
         invalidLabel="请输入 10–20 之间的整数。" {...state.size} numeric overriddenLabel="已自定义" resetLabel="恢复默认"
         disabled={!state.shell.available || !state.shell.writable || locked}
-        onEdit={text => edit('terminalFontSize', text)} onReset={() => { setFailed(false); setSaved(false); actions.resetField('terminalFontSize'); }}/></div>
+        onEdit={text => edit('terminalFontSize', text)} onReset={() => { clearSavedState(); actions.resetField('terminalFontSize'); }}/></div>
       {paletteDraft && <PaletteFields value={paletteDraft} disabled={locked} supported={paletteSupported}
         onEdit={editPalette} onDownload={() => { void download(); }} downloading={downloading} downloadFailed={downloadFailed}/>}
       {paletteInvalid && <p className="wb-terminal-error" role="alert">请输入完整的六位十六进制颜色，或先下载 Catppuccin 色板。</p>}
@@ -224,14 +242,14 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
           <Menu open={open && canChoose && !locked} portal autoFocus minWidthFromAnchor selectedId={draft}
             className="wb-terminal-picker" listClassName="wb-terminal-shell-menu"
             items={current?.shells.map(shell => ({ id: shell.path, label: `${shell.name} · ${shell.path}` })) ?? []}
-            onClose={() => setOpen(false)} onSelect={path => { setDraft(path); setFailed(false); setShellSaveFailed(false); setSaved(false); setOpen(false); }}
+            onClose={() => setOpen(false)} onSelect={path => { setDraft(path); setShellSaveError(''); clearSavedState(); setOpen(false); }}
             anchor={<Button variant="outline" disabled={!canChoose || locked} aria-label="默认 Shell" aria-haspopup="menu"
               aria-expanded={open && canChoose} onClick={() => setOpen(value => !value)}>{choice?.name ?? t('选择 Shell')}</Button>}/>
           {!canChoose && <p className="wb-terminal-description">{!port ? t('当前宿主未提供终端服务。')
             : !sessionId ? t('请先打开一个会话，再返回此页选择默认 Shell。')
             : loading ? t('正在读取可用 Shell…') : error ? t('读取 Shell 失败，请重试。') : t('当前会话环境没有可用 Shell。')}</p>}
           {error && <Button variant="outline" disabled={locked} onClick={() => setAttempt(value => value + 1)}>重试</Button>}
-          {shellSaveFailed && <p className="wb-terminal-error" role="alert">默认 Shell 未能保存在当前浏览器，请检查存储权限或空间后重试。</p>}
+          {shellSaveError && <p className="wb-terminal-error" role="alert">{errorText(shellSaveError)}</p>}
         </div>
       </div>
       <h4 className="wb-terminal-command-heading">命令执行限制</h4>
@@ -240,8 +258,8 @@ export function TerminalSettings({ theme, terminal, sessions, official, official
         overriddenLabel={officialText('overridden')} resetLabel={officialText('reset')}
         invalidLabel={officialText('invalidNumber')} numeric {...command[field]}
         disabled={!command.available || !command.writable || locked}
-        onEdit={text => { setFailed(false); setSaved(false); official.edit(field, text); }}
-        onReset={() => { setFailed(false); setSaved(false); official.resetField(field); }}/></div>)}
+        onEdit={text => { clearSavedState(); official.edit(field, text); }}
+        onReset={() => { clearSavedState(); official.resetField(field); }}/></div>)}
       {saved && <p className="wb-terminal-description" role="status">设置已保存。</p>}
     </SettingsForm>
   </section>;
@@ -318,21 +336,22 @@ function FontPicker({ id, value, disabled, onEdit }: {
   const [fonts, setFonts] = useState<string[]>();
   const [status, setStatus] = useState<'idle' | 'loading' | 'failed' | 'unsupported'>('idle');
   const mounted = useRef(true);
-  const request = useRef(false);
+  /** 本机字体请求是否在途：在途或已有结果时不重复发起 queryLocalFonts。 */
+  const fontsLoading = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const expand = () => {
     if (disabled) return;
     setOpen(true); setQuery('');
-    if (fonts || request.current) return;
+    if (fonts || fontsLoading.current) return;
     const local = window as unknown as { queryLocalFonts?: () => Promise<{ family: string }[]> };
     if (!local.queryLocalFonts) { setStatus('unsupported'); return; }
-    request.current = true; setStatus('loading');
+    fontsLoading.current = true; setStatus('loading');
     void local.queryLocalFonts().then(rows => {
       if (mounted.current) {
         setFonts([...new Set(rows.map(row => row.family).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
         setStatus('idle');
       }
-    }, () => { if (mounted.current) setStatus('failed'); }).finally(() => { request.current = false; });
+    }, () => { if (mounted.current) setStatus('failed'); }).finally(() => { fontsLoading.current = false; });
   };
   const filtered = (fonts ?? []).filter(font => font.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <>

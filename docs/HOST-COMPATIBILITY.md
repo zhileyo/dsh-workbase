@@ -87,7 +87,7 @@ Forge 面板的 `requestWorktree` 登记请求，在首条消息进入队列后�
 | 终端显示与默认Shell | 公开侧栏显示插槽、官方`TerminalView.mount/connect`和`webTerminals.selectShell`；跟随／停用渲染原官方组件，已结束终端重新挂载时补取完整快照；Shell保存后只读核对官方浏览器偏好键`dsh.terminal.shell` | `attach`首帧完整screen与已结束终端保留、挂载／卸载、不可用反馈、官方偏好键及读写失败语义；官方`selectShell`返回void、`launchShells`可兜底首项，二者都不能单独证明持久化成功 |
 | 备份与事务恢复 | 工作台自实现归档；替换业务状态仍经官方存储 | 新增官方快照／事务接口是否满足校验、加密回滚和并发保护 |
 | 技能安装、编辑与恢复 | 官方FileSystem仍无目录提交API。受限同宿主映射通过已加载的官方`sandbox.confine(argv, policy)`约束目录变更；每次限定父目录，缺失目录逐级临时授权现有父目录，完整约束才执行，数据经stdin传递。既有事务保留摘要、独占日志、反向回滚及初始化恢复，状态通过官方`fs.writeText`提交；写后抛错读回完整新旧状态确认，未知结果保留文件和日志 | `processPathFromHostPath`必须映射同宿主路径；`confine`的argv及full enforcement、workspaceRoot必须存在、Node／Electron子进程、目录移动和二进制保留、状态写后检查抛错和读取失败。拒绝、只读、partial、不可映射和回滚失败无无约束降级；不把单文件moveFile当成目录事务 |
-| 插件在线更新 | 官方 `remote.pluginManager`；同一窗口保存批次数据及首次启动选择，热重载后复用；在途请求沿用官方Promise结果，不增加远程恢复接口 | `listBundles/listVersions/updateBundle`、`BundleInfo`返回字段、类型契约指纹和进度事件；新版`update=registry`优先，旧版`updatable=true`兼容，Git不走registry批量更新；自身热重载时卸载／安装顺序、请求返回与结果未知边界 |
+| 插件在线更新 | 官方 `remote.pluginManager`；同一窗口保存批次数据及首次启动选择，热重载后复用；在途请求沿用官方Promise结果，不增加远程恢复接口 | `listBundles/listVersions/updateBundle`、`BundleInfo`返回字段、类型契约指纹和进度事件；新版`update=registry`优先，旧版`updatable=true`兼容，Git不走registry批量更新；自身热重载时卸载／安装顺序、请求返回与结果未知边界。入口挂载依赖官方工具栏DOM结构假设：`[data-plugin-toolbar]`容器内带`aria-busy`属性、且不含`wb-plugin-update-trigger`类的按钮即「正在检查/更新」的刷新按钮（`PluginUpdate.tsx`的`isToolbarRefreshButton`）；宿主改版须复核该假设 |
 
 未来扫描发现 `deleteSession`、`rebuildCache`、`backup` 等同名方法，只列为线索：它可能是内部方法、只删登记、不删物理数据，或缺少工作台要求的事务保护。人工确认后在能力表与适配源码中登记，不对猜测的接口自动接线。
 

@@ -76,7 +76,7 @@ test('C08合法20k规则新旧全文通过专用传输，普通RPC仍拒绝超�
   }, () => 'id');
   const call = caller({ call: async (_channel, endpoint, payload) => {
     const body = JSON.stringify({ type: 'client-request', rpcId: 'large', method: endpoint, payload });
-    const response = await handleRequest(service, request(body), undefined, endpoint === 'workbase/rules' ? 'rules' : false);
+    const response = await handleRequest(service, request(body), undefined, endpoint === 'workbase/rules' ? 'rules' : 'rpc');
     assert.equal(response.status, 200);
     return (await response.json()).result;
   } });
@@ -107,7 +107,7 @@ test('C08设置和20k中文消息走专用路径，规则版本冲突仍拒绝�
     endpoints.push(endpoint);
     const response = await handleRequest(service, request(JSON.stringify({
       type: 'client-request', rpcId: 'r', method: endpoint, payload,
-    })), undefined, endpoint === RULES_ENDPOINT ? 'rules' : endpoint === MESSAGE_ENDPOINT ? 'message' : false);
+    })), undefined, endpoint === RULES_ENDPOINT ? 'rules' : endpoint === MESSAGE_ENDPOINT ? 'message' : 'rpc');
     assert.equal(response.status, 200);
     return (await response.json()).result;
   } });

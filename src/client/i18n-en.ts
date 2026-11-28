@@ -148,7 +148,8 @@ OpenAI TTS|OpenAI TTS
 音色|Voice
 语速（0.25–4）|Speed (0.25–4)
 服务密钥|API key
-技能提交结果无法确认，禁止继续操作；请重新初始化以核对状态与事务日志|The skill commit could not be confirmed. Reinitialize to verify the state and transaction journal before making changes.
+技能提交结果无法确认，禁止继续操作；请重新核对状态与事务日志|The skill commit could not be confirmed. Verify the state and transaction journal before making changes.
+重新核对|Re-verify
 认证请求头与目标请求头冲突，请先处理其他同名请求头|The authentication header conflicts with the destination header. Resolve duplicate headers before saving.
 工作台存储状态未知，请重启后核对存储和事务记录|The workbase storage state is unknown. Restart and verify storage and transaction records.
 恢复持久化校验失败|The restored state could not be verified as persisted.
@@ -710,6 +711,8 @@ RSS / Atom 地址|RSS / Atom URL
 仅用于新增连接，详情中可调整。|For new connections only; change it in connection details.
 按会话启用|Enable per session
 宿主不支持会话隔离，暂不能按会话启用。|The host lacks session isolation; per-session activation is unavailable.
+连接器能力读取失败，暂不能确认宿主是否支持会话隔离。|Connector capabilities could not be read, so session isolation support is unconfirmed.
+无法读取连接器能力|Could not read connector capabilities
 整数，范围1–300秒。|Integer from 1 to 300 seconds.
 连接超时须为1–300秒整数。|Connection timeout must be an integer from 1 to 300 seconds.
 自动刷新频率|Automatic refresh interval
@@ -803,7 +806,7 @@ OAuth 刷新失败，需要重新授权|OAuth refresh failed. Authorize again.
 连接器配置或凭据保存失败，原配置保留|Connector configuration or credentials could not be saved. Original configuration retained.
 JSON 文件不能超过 2 MB|JSON files must not exceed 2 MB
 一次最多导入 500 个连接|Import up to 500 connections at a time
-来源需要 HTTP/HTTPS 地址|Sources require HTTP/HTTPS URLs
+来源需要 HTTPS 地址（仅本机回环允许 http）|Sources require an HTTPS URL (plain http is only allowed for loopback hosts)
 市场目录加载失败或目录格式不支持；仍可手工添加连接|Marketplace catalog failed to load or its format is unsupported. Connections can still be added manually.
 部分连接器资源清理未确认，请重启宿主|Some connector resource cleanup is unconfirmed. Restart the host.
 OAuth 需要启用 HTTP 连接、官方客户端与官方凭据库|OAuth requires an enabled HTTP connection, the official client and the official credential store
@@ -984,6 +987,7 @@ RSS 抓取失败|RSS fetch failed
 启用规则前，请填写正文。|Add content before enabling the rule.
 正文最多20000字符，不能包含工作台区块标记。|Content is limited to 20000 characters and cannot contain managed block markers.
 规则保存失败，请重试|Rule saving failed. Please retry.
+设置未能保存，请重试|The settings could not be saved. Please retry.
 规则仍有未保存修改，请完善内容或重试保存。|Rules have unsaved changes. Complete the content or retry saving.
 放弃未保存规则并关闭|Discard unsaved rules and close
 全局规则|Global rules
@@ -1438,6 +1442,7 @@ npm 官方源|Official npm registry
 工作台设置|Workbase settings
 工作树请求失败，请重试|Worktree request failed; retry
 已保存|Saved
+连接超时需为 1–300 的整数|The timeout must be an integer between 1 and 300.
 已取消收藏|Unfavorited
 已取消置顶|Unpinned
 已同步|Synced
@@ -1461,6 +1466,9 @@ npm 官方源|Official npm registry
 开启自动更新|Enable automatic updates
 开始恢复|Start recovery
 开始新会话|Start a new session
+默认工作区|Default workspace
+新会话|New session
+未命名会话|Untitled session
 归档|Archived
 归档「|Archive “
 归档会话|Archive session
@@ -1810,7 +1818,8 @@ Agent 使用终端和图片读取工具，并支持上下文压缩，适合测�
 脚注|Footnotes
 自定义安装源|Custom registry
 最多 30 字。|Up to 30 characters.
-观察副本|Observational copy
+运行中读取|Read while running
+包含在 profiles 的运行中读取副本中；安装环境依赖和运行锁排除，恢复后需重新安装依赖|Included in the live profile copy; install environment dependencies and runtime locks are excluded, so reinstall dependencies after restore
 记下一步，按 Enter 添加…|Write your next step; Enter to add…
 设置分类|Settings categories
 设置已保存|Settings saved
@@ -2015,7 +2024,7 @@ Agent 不允许撤销删除|Agents cannot undo deletion
 正在导出 {p0}|Exporting {p0}
 正式存储 API 的结构化副本；不同数据源不共享全局快照|Structured copy from the official storage API. Data sources do not share a global snapshot.
 该范围未在当前根目录发现|This scope was not found in the current root directory
-文件观察副本；{p0} 个 SQLite 在线快照；{p1} 项运行锁、依赖目录或旁路文件未归档；链接仅记录、不跟随|Observational file copy; {p0} live SQLite snapshots; {p1} locks, dependency directories or sidecar files excluded; links recorded without following
+运行中读取，与磁盘写入并发时不保证一致；{p0} 个 SQLite 在线快照；{p1} 项运行锁、依赖目录或旁路文件未归档；链接仅记录、不跟随|Read while running; consistency is not guaranteed under concurrent disk writes; {p0} live SQLite snapshots; {p1} locks, dependency directories or sidecar files excluded; links recorded without following
 未提供在线导出能力|Online export is unavailable
 正在加密归档|Encrypting archive
 正在解密回读并校验摘要|Decrypting for readback and checksum validation

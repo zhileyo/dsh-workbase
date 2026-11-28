@@ -8,7 +8,9 @@
 
 当前源码与本地包为 `1.1.1`。最新源码构建是2026-11-22的整改版，覆盖原报告全部22项严重问题，保留迁移与72小时撤销，并加入市场／RSS 地址策略、待办详情两列对齐、失效会话恢复、诊断清理绑定核验与冷会话删除放行，以及诊断判据修正（缓存缺失不再报异常、空会话按官方冷读折叠复核）、快捷会话失效身份自动换新与延迟创建（首次输入才建空会话），并补迁移记录源状态快照与实体清单视图、语音播报服务标签改名。2026-11-23在其上叠加两轮未提交改动：迁移撤销期阻断详情移至抽屉固定页脚（m00102），及提示通道路由整改——操作回执走Toast、弹窗打开期间失败回归内联告警（m00377）。**本机 `npm run typecheck` 通过，受影响组件定向测试88项全过，`npm run build` 通过且双构建幂等；全量 `npm test` 本轮未重跑，最近一次全量为11-22整改版（755项中730通过、7跳过，18项失败全部为环境限制：符号链接权限、Git初始化、子进程ENOENT，另有backup／market两条在HEAD基线同样失败的断言）；7文件安装包扫描0命中，已装到 profile `desktop`，宿主重启后生效——11-23两轮改动未打包安装，需重新打包才能进宿主。**
 
-2026-11-25又在未提交状态下叠加六处修复：首页技能数字未确认时按短退避重试（m00001）、订阅列表与统计时间范围解耦（m00306／m00346）、web壳下镜像子插槽不再重复声明（m00572）、技能市场失败提示只保留当前一轮读取（m00792）、统计卡用上次确认的数字填满首帧（m00931）、编辑订阅保存后回到订阅列表（m01073）。本机`tsc --noEmit`通过；`npm test`762项中737通过／18失败／7跳过（18项失败仍全为环境限制：符号链接`EPERM`、Git初始化、`spawn sqlite3 ENOENT`）；`node build.mjs`连跑两次`lib/client.js`均为1768841字节、SHA-256 `61B55C7983435433F355475D777C1A16329FCBF431DEACFE80F6870A82FD6730`（幂等）；最新预览包`dsh-workbase-1.1.1-pre.20261125.5-cb65f19c.tgz`（1011138字节，SHA-256 `CB65F19C6D88A4460B33B19C6DB4A7CA60FBF623C26EF3BE56F8A6E99CDE91B8`；`package.json`临时改为`1.1.1-pre.20261125.5`，打包后即还原`1.1.0`），装在独立profile`workbase-pre`（`bundles`为`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`dsh-workbase`，依赖指向`file:D:/Projects/dsh-workbase/<该tgz>`），`desktop`profile仍是registry的`1.1.0`不受影响。本批六处修复已提交，尚未发版。之所以要另起profile：`cordis.patch.yml`的插件id固定为`dsh-workbase`、存储域固定为`dsh_workbase`，同一profile装两份必然撞id。
+2026-11-25又在未提交状态下叠加六处修复：首页技能数字未确认时按短退避重试（m00001）、订阅列表与统计时间范围解耦（m00306／m00346）、web壳下镜像子插槽不再重复声明（m00572）、技能市场失败提示只保留当前一轮读取（m00792）、统计卡用上次确认的数字填满首帧（m00931）、编辑订阅保存后回到订阅列表（m01073）。本机`tsc --noEmit`通过；`npm test`762项中737通过／18失败／7跳过（18项失败仍全为环境限制：符号链接`EPERM`、Git初始化、`spawn sqlite3 ENOENT`）；`node build.mjs`连跑两次`lib/client.js`均为1768841字节、SHA-256 `61B55C7983435433F355475D777C1A16329FCBF431DEACFE80F6870A82FD6730`（幂等）；最新预览包`dsh-workbase-1.1.1-pre.20261125.5-cb65f19c.tgz`（1011138字节，SHA-256 `CB65F19C6D88A4460B33B19C6DB4A7CA60FBF623C26EF3BE56F8A6E99CDE91B8`；`package.json`临时改为`1.1.1-pre.20261125.5`，打包后即还原`1.1.0`），装在独立profile`workbase-pre`（`bundles`为`@deepseek-ai/dsh-base`、`@deepseek-ai/dsh-web-app`、`dsh-workbase`，依赖指向`file:D:/Projects/dsh-workbase/<该tgz>`），`desktop`profile仍是registry的`1.1.0`不受影响。本批六处修复已提交，尚未发版。2026-11-28又在未提交状态下叠加审查报告eview-2026-11-26.md认定的13条正确性High修复（逐条先红后绿，详见日志同日条目），	sc --noEmit通过、
+pm test779项中754通过／18失败（仍为环境限制与既有Windows语义断言）／7跳过、
+ode build.mjs通过；浏览器视觉与真实宿主行为未验证。之所以要另起profile：`cordis.patch.yml`的插件id固定为`dsh-workbase`、存储域固定为`dsh_workbase`，同一profile装两份必然撞id。
 
 | 项目 | 最近一次已记录状态 |
 | --- | --- |
@@ -164,6 +166,87 @@ DSH_HOME=/tmp/dsh-workbase-host-022rc1 DSH_TELEMETRY_MODE=DISABLED dsh --profile
 维护本节时保留`当前源码与本地包为`、`当前版本`、版本化tgz名、完整性校验提示及唯一的`## 日志`分界，供`release-sync-docs.mjs`匹配；该脚本只更新分界之前，不改历史。过程日志保持原文，不把旧安装记录重新解释为当前状态。
 
 ## 日志
+
+### 2026-11-28 · 审查报告第三批：可测试性、Standards 坏味道与安全项
+
+**背景**：review-2026-11-26.md 前两批（正确性 High、Standards 硬违规、性能类）修完后，用户指定修剩余三类：可测试性缺口（Quality 8 条）、重复与坏味道（Standards 65 Medium + 55 Low + 3 Nit）、安全 1 条 Low。目标 goal-ded214ef（30 轮）。
+
+**决策**：1）可测试性 8 条全部补齐：设置保存守卫与重复提交、NativeComposer 选区映射（`composerInsertionRange` 加导出，新 `test/composer-insertion.test.ts`）、终端保存/着色（`saveOfficial` 加导出，abort 与超时判未确认）、语音三组件、`session-search` 全文 5 条新用例、MCP OAuth 守卫、附件工具往返、色板下载（`downloadCatppuccin` 加可注入 fetcher，失败包成 `WorkbaseError` 的 `palette-download`/`palette-too-large`/`palette-incomplete`）。2）安全条目实际校验点在 `mcp.ts:471-475` 与 `mcp-market.ts:178-181`，新增 `marketSourceAllowed`：https 一律放行、http 仅回环放行，文案改「来源需要 HTTPS 地址（仅本机回环允许 http）」。3）Standards 123 条按文件分 A–F 六组派发子代理并行重构；A 组新抽 `project-menu.ts`/`roving.ts`/`focus-restore.ts`/`fetchTodoResource`/`canSend`，B 组新抽 `panel-utils.ts`（usePanelAction/downloadBlob/useStatusPolling）与 `backup-labels.ts`，C 组新抽 `shared/fs-name.ts`/`server/restore-state.ts`，D 组抽 `splitSkillDocument` 到 shared，E 组抽 `rss-feeds.ts`/`rss-opml.ts`/`mcp-market-cache.ts`，F 组抽 `readIdentityKey`/`writeIdentityOnce`/`sourceStrategy`/`evictLoadedSession` 等。4）跳过与保留均记录理由：Composer 模型身份 JSON 持久化契约、RssPanel 字符串哨兵（记忆格式）、三份单飞协调器（flush 语义有意分叉）、rss.ts 整份 structuredClone 事务、personalization nlink 判定（官方 fs 不暴露）、project-initialization 内嵌默认文本（存量比对基准）。5）`test/skills-render.test.ts:40-41` 的源码文本断言与「提炼共享 usePanelAction」直接冲突，断言原样重定向到 `panel-utils.ts`（正则逐字不变）。
+
+**证据**：`npx tsc --noEmit` 退出码 0；全量 `npx tsx --test test/*.test.ts` = 837 tests / 812 pass / 18 fail / 7 skipped，18 条失败与基线逐条同名（symlink EPERM、git 初始化、spawn ENOENT、backup A05、market 0o666）；`npm run build` 通过，`lib/client.js` 1772664 字符。`git diff --stat` 101 files +3409/−1467。过程事故两次（子代理 `git stash push -u` 短暂重置工作树覆盖 B 组未提交改动、C 组拼坏 `service.ts:57` 后自愈），均已当场恢复并复跑验证；临时文件（`.audit-smells-*.txt`、`tmp-git-probe.mts`）已清理。
+
+**遗留**：浏览器视觉与真实宿主行为未验证；B 组 4 条、C 组 1 条、A 组 1 条按契约理由跳过；备份归档内容有一处预期内变化（宿主提供 sessionPersistence 时归档不再含 sessions-history 观察副本）；`review-2026-11-26.md` 仍未跟踪，全部改动未提交。
+### 2026-11-28 · 按审查报告处理性能类条目（客户端 13 项 + 服务端 6 项）
+
+**背景**：`review-2026-11-26.md` 的 Quality 轴列了约 25 条性能型 Medium，集中在客户端每次渲染/每次按键的全量重算与服务端只读路径的整份克隆上。用户指定先修这一类。
+
+**决策**：
+1）客户端优先修「按渲染次数放大」的地方（请求体积预检、词典索引、候选集合、列表小写化、导入预览防抖、轮询分级、记忆写入合并、重播索引上限），因为它们随使用时长线性放大。
+2）服务端把 `change()` 拆成 `change()` / `read()` 两条通道：只读操作不克隆、不双比较、不写盘；但读通道必须先 `ensureBindings()` 惰性对齐，否则绑定没有建立点（先删干净直接改 `read` 时 `service-audit-regression` 与 `tools.test` 三条用例报「当前项目绑定不可用」，故保留一次 reconcile）。
+3）`searchSessions` 改为自己构造可见会话集合（绑定一致的工作区会话 + 仍有效的工作树会话），不再借 `snapshot()` 拿可见集合——否则每次搜索都跑一遍宿主诊断与迁移核对。
+4）`syncMigratedWorkspaces` 没有待清记录时直接返回（最常见情形不再列一次宿主工作区），有待清记录时列一次并传给逐条处理。
+5）`runGit` 补 15s 超时与 `signal`：git 是外部进程，挂起会堵死共用串行队列；超时/取消都以 `code: -1` 返回，让上层按「读不到分支」显式报错而不是静默降级。
+6）备份导出的逐事件写改为每 512 条一次批量写；扩展层项目投影的 `existsSync` 加 2s TTL 缓存。
+7）诊断修复的 `validate()` 保持每次重新 `list()`：那里的重复读取是「驱逐见证」的语义要求，只把线性 `find` 换成 Map 会掩盖真实成本而不改变正确性前提，因此**未改**，留作已知项。
+
+**证据**：`npx tsc --noEmit` 退出码 0；全量 `npx tsx --test test/*.test.ts` 的通过数与失败集见下方「遗留」；新增用例覆盖 `api-request`（3 条）、`i18n-index`（2 条）、`ui-memory-save`（1 条）、`plugin-update-observer`（1 条）、ui-interaction 内的轮询分级/记忆合并/扩展统计过期标记，以及 `host-features.test.ts` 的「检索不读全量会话、不触发诊断」两条断言。定向复跑：`service`/`service-audit-regression`/`rpc`/`tools` = 41/41、`migration`+`service` 46 项中仅 2 条既有 symlink EPERM 失败、`host-git`+`host-features`+`service` 8/8。
+
+**遗留**：Windows 下既有的 18 条环境失败不受影响（符号链接 EPERM、`spawn sqlite3 ENOENT`、`spawn …node.exe ENOENT`、`test/backup.test.ts:132` 的 NTFS 备用数据流断言、`test/market.test.ts:470` 的 0o666 断言）。技能发现/监听、诊断修复、mcp 市场串行、rss 快照与 store 克隆、restore-archive 明文保留、tools 的 projectId、migration-ownership 索引与并行 realpath、backup-retention 的整包校验等条目本轮未动；浏览器视觉与真实宿主行为仍未验证。
+### 2026-11-28 · 按审查报告修完性能类 Medium 条目
+
+**背景**：`review-2026-11-26.md` 的 Quality 轴性能段列出约 30 处热路径浪费——客户端每帧重复序列化与轮询叠加、服务端只读入口也做整份克隆与两遍全量 JSON 比较、备份与 RSS 反复整包读写。这些都不改变对外行为，但决定长期使用后的卡顿与磁盘放大。
+
+**决策**：
+1）服务端只读入口（`listForAgent`、`readImage`、`readAttachment`、`gitBranches`、`sessionPreview`）改走新的 `read()`：不克隆、不双比较、不写盘；`ensureBindings` 仍只在需要时对齐一次——reconcile 是项目绑定的唯一建立点，只读路径直接跳过会让「绑定不可用」遍地开花（本批确实撞了 3 条用例）。
+2）`searchSessions` 自己构造可见会话集合，不再为拿集合跑整份 `snapshot()`，从而不再连带触发宿主诊断。
+3）`UiMemory` 的写入保持同步：先改成 `setTimeout` 尾随写、再改成微任务合并，都被 `test/client-launch.test.ts` 抓到「刷新后读到旧搜索词」。记忆是刷新后要接着用的状态，异步合并会丢状态，只保留「内容未变不写」的去重。
+4）客户端轮询按活跃度分级（备份/恢复：进行中 1.5–2s、空闲 15s，隐藏页不轮询）、MCP 导入预览 250ms 防抖、插件工具栏 observer 只在工具栏相关变更时重算、i18n 文案索引预编译一次、侧栏候选集合与 RSS 列表小写化各只算一次。
+5）Agent 工具的写入路径不再为拿 `projectId` 调用 `listForAgent`——新增 `projectForAgent` 只读一次绑定，待办全表扫描留给真正的列表工具。
+6）服务端其余热路径：技能来源监听 150ms 合并（`WatchCoalescer`）、迁移 realpath 并行、备份单遍哈希（不再为校验二次整读）、恢复解包后立即删除解密明文 tar、迁移归属改索引查表、`runGit` 15s 超时、备份来源批量写、扩展路径存在性 2s TTL 缓存。
+
+**证据**：`npx tsc --noEmit` = 0；`npx tsx --test test/*.test.ts` = 813 tests / 788 pass / 18 fail / 7 skipped（改动前基线 762/737/18/7，新增 51 条全部通过，18 条失败与基线逐条同名，全部是本机 Windows 环境项）；`npm run build` 通过（`lib/client.js` 1774341 字符）；`git diff --stat` = 62 files changed, 1743 insertions(+), 348 deletions(-)。新增测试文件：`test/api-request.test.ts`、`test/i18n-index.test.ts`、`test/ui-memory-save.test.ts`、`test/plugin-update-observer.test.ts`。
+
+**遗留**：以下几条经复核后**刻意不改**，理由写在这里免得下次又被当成遗漏——①备份保留（`src/server/backup-retention.ts:27`）为读清单时间做整包解密+解包+摘要：这是「只删还能恢复的归档」的前提，改成只读清单就把删除判据换成未校验的文件元数据；②RSS 事务的整份 `structuredClone`（`src/server/rss.ts:90`）与 `rss-store` 的写前 `schema.parse` 是事务隔离与落盘校验本身，改共享结构要重做并发模型；③技能的 `observeEffect` 重复枚举与摘要/扫描串行依赖宿主 EffectReader 的时序契约，等待真实宿主行为再动；④诊断的 O(N²) 汇总只在冷启动全量检查时出现。浏览器视觉与真实宿主行为仍未验证。
+### 2026-11-28 · 按审查报告修完 Standards 轴硬违规（5 High + 16 Medium）
+
+**背景**：`review-2026-11-26.md` 的 Standards 轴指出 5 条 High 与 16 处 Medium 属于「违反仓库明文规则」，不是风格偏好：值导入宿主包、把失败宽泛降级成「能力缺失」、显示文案参与逻辑比较、手写复制共用控件。这类问题不改，后续每一处新代码都会照着错的样子写。
+
+**决策**：
+1）`skills.ts` 不再从 `@deepseek-ai/dsh-skill` 值导入判定函数，改成 `import type` + 本地读 `skill.invocation.modelInvocable`；新增 `test/host-imports.test.ts` 静态守卫（正则限定单条 `import` 语句，用 `[^;]*?` 而不是 `[\s\S]*?`，否则会从更早的 `import … from 'zod'` 一路跨过去误判）。
+2）`skills-sandbox.ts` 与 `skills-files.ts` 的关联路径判定合并成共用 `bundleTarget` / `temporaryPath`，父进程先校验再交给子进程执行；新增「同一组畸形名喂给本地与沙箱写入」的差分用例（临时注释掉父进程校验可复现 RED：沙箱会去写空名条目）。
+3）`migration.ts` 的 `canonical()` 只对 `ENOENT` 降级，其余解析失败置 `unresolved` 并阻断迁移；`rss.ts` 的保留分组名收敛到 `shared/rss.ts` 的 `rssGroupNameReserved`。
+4）客户端显示文案一律按枚举键取译文：`Detail.tsx` 的优先级徽标走 `priorityBadgeLabels`，RSS 分组重名判定额外比对当前语言下的保留名；`ExtensionSettings` 复用新抽出的 `SettingsSubtabs`，不再手写第二套页签与键盘公式。
+5）失败与缺失分开报：`ExtensionSettings` 的能力读取失败不再冒充「宿主不支持会话隔离」并给重试；`project-sidebar` 目录读失败与目录不一致用两句不同文案；`host.ts` 的 `gitBranches` 只在 git 明确说「not a git repository」时降级成无分支；`mcp-host` 只在 `ERR_MODULE_NOT_FOUND` 时降级；`rss-store` 区分系统读取失败与缓存损坏；`backup-sources` 的 `ctx.get` 抛错报「宿主能力读取失败」，不再说成缺能力；`mcp.ts` 的凭据清除与保存回滚都带上已完成/未回滚清单。
+6）扩展层项目投影与服务端同判据（绑定路径要一致、已迁移源项目不可见），并抽成可测的 `extensionProjects`。
+7）宿主给的中文兜底标题（默认工作区／新会话／未命名会话）在 `readSnapshot` 边界统一过 `t()`，服务端不再决定界面语言。
+8）`extension-summary` 的已确认读数在读失败时保留原值但标 `stale`，首页按异常色提示；`docs/UI-DESIGN.md` 第 0 节补上这条例外（首帧防抖动只适用于扩展统计卡）。
+
+**证据**：`npx tsc --noEmit` 退出码 0；`npx tsx --test test/*.test.ts` = 795 tests / 770 pass / 18 fail / 7 skipped，18 条失败与改动前基线同名（Windows 符号链接 EPERM、git 初始化、`spawn sqlite3 ENOENT`、`test/backup.test.ts` 的 NTFS 备用数据流断言、`test/market.test.ts` 的 0o666 断言）；新增 33 条用例全绿；`npm run build` 通过（`lib/client.js` 1771806 字符）。
+
+**遗留**：浏览器视觉与真实宿主行为未验证；`Detail.tsx` 的优先级徽标、`Composer` 的「放弃并重新开始」只有纯函数/结构断言，没有渲染断言；`session-maintenance.ts:217-258` 经核对已由上批的两阶段校验与 `delete-partial` 覆盖，本次未改；Standards 轴剩余约 50 条 Fowler 坏味道与 Quality 轴其余条目未动。
+### 2026-11-28 · 按审查报告修完 13 条正确性 High
+
+**背景**：`review-2026-11-26.md` 对整棵 `src/` 做了三轴审查（231 条，2/2 双确认 226 条），其中 13 条判为 High（正确性），决定先修这一批。每条都先写失败用例、亲眼看它以正确原因失败，再改生产代码。
+
+**决策**：
+1）`session-maintenance.ts` 的驱逐见证改为按当前行会话判定（`evicted.has(sessionId)`），并把级联删除改成两阶段：全集合校验零副作用，提交阶段失败只抛带已完成清单的 `delete-partial`。
+2）`mcp.ts` 握手看门狗语义收窄为「握手还没有结果」（`state !== 'connecting'` 即清定时器），不再把官方客户端的 `auth` 终态改写成超时错误。
+3）`restore-archive.ts` 把内联扫描抽成 `scanArchive(plain, signal)`，用 `Parser` + `createReadStream` 手工管道，首个非法条目就 `parser.abort()` + `input.destroy()`；`t({file})` 返回的不是 List 实例、也没有 `abort()`，在 `onReadEntry` 里 throw 不会停止解析——这是不能继续用 `t()` 的原因。
+4）`TerminalSettings.tsx` 的 `lifetime` 从 `useMemo(new AbortController)` 改成受管状态：卸载、模型替换、用户放弃各自独立 abort，`resetLifetime()` 同步复位 `saving`/`downloading` 等闩锁。
+5）`MigrationPanel.tsx` 只有在「结果未确认或已完成但刷新失败」时才锁死重试；宿主明确拒绝时释放旧预览令牌并退回可重试状态。
+6）`speech-playback.ts` 的 `streamRelease` 链改为 `Promise.all([...].map(item => item.catch(() => {})))`，取消回执失败不再毒化后续播报。
+7）`Settings.tsx` 的保存回执不再看 `live.current.busy`（父级 `setBusy(false)` 要到下一帧才传播），失败必写 `setSaveError`，成功必 `onClose()`。
+8）技能提交结果不确定时新增显式 `recover` 入口：清 `commitUncertain` 后重跑 `initialize` 的恢复核对，成功才放行写操作；`snapshot.recoverable` 驱动面板的「重新核对」按钮。A16 的「只允许重启恢复」语义保留，不做静默自动恢复。
+9）默认来源导入该来源里已有的技能目录时按「接管」处理：只有路径正是本轮导入候选、且 digest 来自本轮预览时才把 digest 当 `expected`，其它「目标存在却无既往摘要」仍由 `fileTransaction` 拒绝。
+10）附件工具把会话翻页扫描与附件字节校验挪到状态事务外（`scanSessionAttachment` / `scanSessionImage`），事务里只写引用。
+11）未送达首条消息新增 `abandonPending()` 与「放弃并重新开始」，清闩锁与本次创建请求身份；重试仍复用原会话与原消息（既有契约与用例保持）。
+12）`skills-sandbox.ts` 的技能目录事务子进程加超时（默认 60s，可注入），超时即 `SIGKILL` 并失败——串行队列不能被一个不退出的事务永久堵死。
+13）`rss.snapshot` 增加 `light` 投影（不含 `body`/`bodyContent`），面板轮询改用 light + 中止上一次请求 + 页面隐藏时跳过，并用 `keepArticleBodies` 按 `id + sequence` 保留已读正文；正文仍由 `article.fetch` 按篇读取。
+
+**证据**：`tsc --noEmit` 退出码 0；`npx tsx --test test/*.test.ts` = 779 项 / 754 通过 / 18 失败 / 7 跳过，18 失败与 11-25 基线逐条同名（符号链接 `EPERM`、Git 初始化、`spawn sqlite3 ENOENT`，另加 `test/backup.test.ts:132` 与 `test/market.test.ts:470` 两条在 HEAD 基线同样失败的 Windows 语义断言），无新增失败；`node build.mjs` 通过（`lib/client.js` 1770212 字符）。新增用例：`test/tools.test.ts` 5 项、`test/skills-sandbox.test.ts` 2 项、`test/rss.test.ts` 的 light 投影、`test/rss-panel.test.ts` 的 `keepArticleBodies`，其余修复各自在对应既有测试文件内先红后绿（`session-maintenance` 4、`mcp` 35、`restore` 17、`ui-interaction` 91、`speech-playback` 9、`skills` 13、`client-launch` 6）。
+
+**遗留**：浏览器视觉回归与真实宿主行为未验证（本机没有 Playwright 与真实 profile）；`Composer` 的「放弃并重新开始」按钮只做了类型与手写用例层面的验证，没有渲染断言；13 条之外的 218 条（Medium 126、Low 79、Nit 3、单方确认 4）尚未处理。
+
 
 ### 2026-11-25 · 编辑订阅保存后回到订阅列表
 

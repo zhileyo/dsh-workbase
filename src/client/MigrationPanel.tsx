@@ -6,23 +6,32 @@ import { MIGRATION_UNAVAILABLE, MIGRATION_SOURCE_MISSING, MIGRATION_UNDO_ACTIVE,
 import { IconButton, Modal, ModalFlow, Picker, preventImeSubmit } from './ui.js';
 import { errorText, languageTag, t } from './i18n.js';
 
+/** 迁移涉及的四个实体计数：键与中文标签只在这里出现一次，视图与对照表共用。 */
+const COUNT_ROWS = [['active', '活跃会话'], ['archived', '归档会话'], ['pending', '待处理待办'], ['done', '已完成待办']] as const;
+
 export function MigrationCountsView({ counts }: { counts: MigrationCounts }) {
   return <dl className="wb-migration-counts">
-    <div><dt>活跃会话</dt><dd>{counts.active}</dd></div>
-    <div><dt>归档会话</dt><dd>{counts.archived}</dd></div>
-    <div><dt>待处理待办</dt><dd>{counts.pending}</dd></div>
-    <div><dt>已完成待办</dt><dd>{counts.done}</dd></div>
+    {COUNT_ROWS.map(([key, label]) => <div key={key}><dt>{t(label)}</dt><dd>{counts[key]}</dd></div>)}
   </dl>;
 }
 export function MigrationComparisonView({ preview }: { preview: MigrationPreview }) {
-  const rows = [['active', '活跃会话'], ['archived', '归档会话'], ['pending', '待处理待办'], ['done', '已完成待办']] as const;
   const result = preview.resultCounts ?? (preview.kind === 'directory' ? preview.source.counts : null);
   return <div className="wb-migration-comparison"><table aria-label="迁移内容对照">
     <thead><tr><th scope="col">内容</th><th scope="col">迁出</th><th scope="col">目标现有</th><th scope="col">迁移后</th></tr></thead>
-    <tbody>{rows.map(([key, label]) => <tr key={key}><th scope="row">{t(label)}</th>
+    <tbody>{COUNT_ROWS.map(([key, label]) => <tr key={key}><th scope="row">{t(label)}</th>
       {[preview.source.counts[key], preview.kind === 'merge' ? preview.target.counts[key] : 0, result?.[key] ?? null].map((value, index) =>
         <td key={index} className={value === 0 || value === null ? 'wb-migration-zero' : undefined}>{value ?? '—'}</td>)}</tr>)}</tbody>
   </table></div>;
+}
+/** 迁移写操作（确认／撤销）的结果核验：schema 解析加调用方给的期望状态与项目关联条件，不符即返回 null。
+ *  调用方据此把「未确认」和「已完成但刷新失败」区分开，避免误判成可重试。 */
+function verifiedRecord(value: unknown, accept: (row: MigrationRecord) => boolean): MigrationRecord | null {
+  const parsed = migrationRecordSchema.safeParse(value);
+  return parsed.success && accept(parsed.data) ? parsed.data : null;
+}
+/** 写操作失败文案：已完成但后续刷新失败时不能提示「请重试」，未完成才回落到底层错误或默认文案。 */
+function failureText(completed: boolean, error: unknown, completedText: string, fallbackText: string) {
+  return completed ? completedText : error instanceof Error ? error.message : fallbackText;
 }
 export function MigrationPreviewBlockers({ preview }: { preview: MigrationPreview }) {
   const undoBlockers = preview.undoBlockers ?? [];
@@ -143,44 +152,61 @@ export function MigrationPanel({ api, project, projects, revision = 0, records =
   const canConfirm = !records && !busy && !finished && !previewLoading && !!target && target.available && !target.archived
     && !!preview && preview.target.projectId === targetId && preview.source.projectId === project.projectId
     && preview.revision === revision && preview.executable && !preview.blockers.length && preview.expiresAt > Date.now();
-  const confirm = async () => {
-    if (pending.current || !canConfirm || !preview) return;
-    pending.current = true; setBusy(true); setFinished(true); setError('');
-    let completed = false;
+  /** 确认与撤销共用的迁移写操作骨架：pending 守卫 → 提交 → 结果核验 → 收尾。
+   *  allowed() 不过就静默返回；失败时 onAborted 先收拾界面状态（可重试 or 终态），
+   *  文案由 failure 决定（已完成但刷新失败不能提示「请重试」），成功后统一 onClose。 */
+  const runMigrationStep = async (step: {
+    allowed(): boolean;
+    prepare?(): void;
+    call(): Promise<unknown>;
+    accept(value: unknown): MigrationRecord | null;
+    unconfirmedMessage: string;
+    onAborted?(unconfirmed: boolean, completed: boolean): void;
+    succeed(record: MigrationRecord): Promise<void>;
+    failure(completed: boolean, error: unknown): string;
+  }) => {
+    if (pending.current || !step.allowed()) return;
+    pending.current = true; setBusy(true); setError('');
+    step.prepare?.();
+    let completed = false, unconfirmed = false;
     try {
-      const value = await api.call({ op: 'migration-confirm', token: preview.token });
-      const result = migrationRecordSchema.safeParse(value);
-      if (!result.success || result.data.status !== 'completed'
-        || result.data.source.projectId !== project.projectId || result.data.target.projectId !== targetId)
-        throw new Error('迁移结果尚未确认，请查看迁移记录后再操作');
-      completed = true; setFinished(true); discard();
-      await onMigrated?.(targetId);
-      onClose();
-    } catch (error) {
-      // 失败发生在弹窗打开期间（未调 onClose），按原型 error() 归内联告警，不转投 Toast。
-      const message = completed ? '迁移已完成，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '迁移失败，请重试';
-      setError(message);
-    } finally { setBusy(false); pending.current = false; }
-  };
-  const undo = async () => {
-    if (pending.current || finished || !selected?.canUndo || selected.status !== 'completed') return;
-    pending.current = true; setBusy(true); setFinished(true); setError('');
-    let completed = false;
-    try {
-      const value = await api.call({ op: 'migration-undo', id: selected.id });
-      const result = migrationRecordSchema.safeParse(value);
-      if (!result.success || result.data.status !== 'reverted' || result.data.id !== selected.id
-        || result.data.source.projectId !== selected.source.projectId || result.data.target.projectId !== selected.target.projectId)
-        throw new Error('撤销结果尚未确认，请查看迁移记录后再操作');
+      const record = step.accept(await step.call());
+      if (!record) { unconfirmed = true; throw new Error(step.unconfirmedMessage); }
       completed = true;
-      await onMigrated?.(selected.source.projectId!, true);
+      await step.succeed(record);
       onClose();
     } catch (error) {
-      // 同上：撤销失败时详情弹窗仍在打开，保留内联告警供重试，不转投 Toast。
-      const message = completed ? '迁移已撤销，刷新失败，请重新打开工作台' : error instanceof Error ? error.message : '撤销失败，请重试';
-      setError(message);
+      step.onAborted?.(unconfirmed, completed);
+      setError(step.failure(completed, error));
     } finally { setBusy(false); pending.current = false; }
   };
+  const confirm = () => runMigrationStep({
+    allowed: () => canConfirm && !!preview,
+    call: () => api.call({ op: 'migration-confirm', token: preview!.token }),
+    accept: value => verifiedRecord(value, row => row.status === 'completed'
+      && row.source.projectId === project.projectId && row.target.projectId === targetId),
+    unconfirmedMessage: '迁移结果尚未确认，请查看迁移记录后再操作',
+    onAborted: (unconfirmed, completed) => {
+      // 失败发生在弹窗打开期间（未调 onClose），按原型 error() 归内联告警，不转投 Toast。
+      // 未确认的结果与「已完成但刷新失败」都不能再次提交；只有宿主明确拒绝的失败才退回可重试状态：
+      // 释放旧预览令牌、保留预览重取入口，否则界面会停在「请重试」却没有任何重试入口。
+      if (unconfirmed || completed) setFinished(true);
+      else { discard(); setFinished(false); }
+    },
+    succeed: async () => { setFinished(true); discard(); await onMigrated?.(targetId); },
+    failure: (completed, error) => failureText(completed, error, '迁移已完成，刷新失败，请重新打开工作台', '迁移失败，请重试'),
+  });
+  const undo = () => runMigrationStep({
+    allowed: () => !finished && !!selected?.canUndo && selected.status === 'completed',
+    prepare: () => setFinished(true),
+    call: () => api.call({ op: 'migration-undo', id: selected!.id }),
+    accept: value => verifiedRecord(value, row => row.status === 'reverted' && row.id === selected!.id
+      && row.source.projectId === selected!.source.projectId && row.target.projectId === selected!.target.projectId),
+    unconfirmedMessage: '撤销结果尚未确认，请查看迁移记录后再操作',
+    // 同 confirm：撤销失败时详情弹窗仍在打开，保留内联告警供重试，不转投 Toast。
+    succeed: async () => { await onMigrated?.(selected!.source.projectId!, true); },
+    failure: (completed, error) => failureText(completed, error, '迁移已撤销，刷新失败，请重新打开工作台', '撤销失败，请重试'),
+  });
   const main = <Modal drawer title={records ? '迁移记录' : '项目迁移'} busy={busy} onClose={onClose}>
     <form className="wb-migration-page" onKeyDown={preventImeSubmit} onSubmit={event => { event.preventDefault(); void confirm(); }}>
       <div className="wb-migration-body wb-migration">

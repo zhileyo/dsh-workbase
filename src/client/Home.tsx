@@ -12,6 +12,8 @@ import { dateText, folderName, Icon, IconButton, Menu, Modal, Tabs, type ModalSt
 import { useExtensionSummaries } from './extension-summary.js';
 import { overviewTabs, type CoreOverviewTab, type OverviewTab } from './OverviewNavigation.js';
 import { errorText, t as translate } from './i18n.js';
+import { projectMenuItems } from './project-menu.js';
+import { captureScrollPositions, restoreFocus, restoreScrollPositions, type ScrollPosition } from './focus-restore.js';
 
 export interface HomeProps {
   snapshot: Snapshot; api: ClientPort; memory: UiMemory; busy: boolean;
@@ -25,11 +27,27 @@ export interface HomeProps {
 const fieldLabels: Record<keyof Preferences['fields']['grid'], string> = {
   directory: '目录名称', activity: '最近活动', status: '状态', active: '近期活跃', todos: '待办', archived: '归档', recent: '最近会话',
 };
+// 列表可见列：key 是字段偏好里的开关，name 是具名网格线，width 是该列像素宽。
 const listFields = [
-  ['active', 'recent', 80], ['todos', 'pending', 64], ['archived', 'archived', 64],
-  ['recent', 'latest', 180], ['activity', 'activity', 108], ['status', 'status', 110],
+  { key: 'active', name: 'recent', width: 80 }, { key: 'todos', name: 'pending', width: 64 }, { key: 'archived', name: 'archived', width: 64 },
+  { key: 'recent', name: 'latest', width: 180 }, { key: 'activity', name: 'activity', width: 108 }, { key: 'status', name: 'status', width: 110 },
 ] as const;
 const statTabs = overviewTabs;
+/**
+ * 首页与概览抽屉共用的统计口径：时间窗、归档排除、新到旧排序只在这里定义，
+ * 两侧读同一份数据源，避免口径漂移。
+ */
+export function sessionStats(snapshot: Snapshot) {
+  const home = snapshot.preferences.home;
+  const since = Date.now() - home.statDays * 86400000;
+  const allSessions = snapshot.projects.flatMap(p => p.sessions.map(s => ({ ...s, project: p }))).sort((a, b) => b.updatedAt - a.updatedAt);
+  return {
+    since, allSessions,
+    running: allSessions.filter(s => s.running && !s.archived),
+    active: allSessions.filter(s => s.updatedAt >= since && !s.archived),
+    pending: snapshot.projects.flatMap(p => p.todos.filter(t => !t.done).map(t => ({ ...t, project: p }))),
+  };
+}
 export function fitRecentButtons(width: number, widths: readonly number[], gap = 8) {
   let used = 0, count = 0;
   for (const item of widths) {
@@ -99,11 +117,10 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
   });
   const extensions = useExtensionSummaries(api, home.statCards, home.statDays);
   const grid = prefs.view === 'grid', fields = prefs.fields[prefs.view];
-  const since = Date.now() - home.statDays * 86400000;
-  const visibleStatTabs = order.flatMap(key => statTabs.filter(([id]) => id === key && home.statCards[id]));
+  const visibleStatTabs = order.flatMap(key => statTabs.filter(tab => tab.key === key && home.statCards[tab.key]));
   const projects = snapshot.projects.filter(p => prefs.projectFilter === 'favorite' ? p.mark.favorite : prefs.projectFilter === 'archived' ? p.archived : !p.archived)
     .sort((a, b) => Number(b.mark.pinned) - Number(a.mark.pinned) || b.updatedAt - a.updatedAt);
-  const allSessions = snapshot.projects.flatMap(p => p.sessions.map(s => ({ ...s, project: p }))).sort((a,b) => b.updatedAt - a.updatedAt);
+  const { since, allSessions, running, active, pending } = sessionStats(snapshot);
   const recentStyle = home.stats ? 'buttons' : home.recentStyle;
   const recent = allSessions.filter(s => !s.archived).slice(0, recentStyle === 'cards' ? 5 : undefined);
   const recentKey = JSON.stringify(recent.map(s => [s.sessionId, s.title]));
@@ -122,9 +139,6 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
     void document.fonts?.ready.then(measure);
     return () => observer.disconnect();
   }, [recentStyle, recentKey, home.recent, home.quick]);
-  const running = allSessions.filter(s => s.running && !s.archived);
-  const active = allSessions.filter(s => s.updatedAt >= since && !s.archived);
-  const pending = snapshot.projects.flatMap(p => p.todos.filter(t => !t.done).map(t => ({ ...t, project: p })));
   const diagnosis = currentDiagnosis ?? snapshot.diagnostics ?? fallbackDiagnosis(snapshot);
   const diagnostics = diagnosticSummary(diagnosis);
   const copyPath = async (path: string) => {
@@ -137,22 +151,18 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
   const archiveProject = (p: Project, archived: boolean) => {
     void mutate({ op: 'archive-project', projectId: p.projectId, archived });
   };
-  const menus = (p: Project) => p.archived ? [
-    { label: p.mark.favorite ? '取消收藏' : '收藏项目', action: () => void mutate({ op: 'mark', projectId: p.projectId, field: 'favorite', value: !p.mark.favorite }) },
-    { label: '打开目录', action: () => openDirectory(p) },
-    { label: '恢复项目', action: () => archiveProject(p, false) },
-  ] : [
-    { label: '重命名', action: () => rename(p) },
-    { label: p.mark.favorite ? '取消收藏' : '收藏项目', action: () => void mutate({ op: 'mark', projectId: p.projectId, field: 'favorite', value: !p.mark.favorite }) },
-    { label: '打开目录', action: () => openDirectory(p) },
-    { label: '项目迁移', separatorBefore: true, action: () => migration?.(p, false) },
-    { label: '迁移记录', action: () => migration?.(p, true) },
-    { label: '归档项目', action: () => archiveProject(p, true) },
-    { label: '移除项目', action: () => removeProject(p), danger: true },
-  ];
-  const visibleColumns = listFields.filter(([key]) => fields[key]);
-  const columns = `[project] minmax(220px,1fr) ${visibleColumns.map(([,name,width]) => `[${name}] ${width}px`).join(' ')} [actions] 28px`;
-  const minimum = 220 + 28 + 16 + 12 * (visibleColumns.length + 1) + visibleColumns.reduce((sum, [,,width]) => sum + width, 0);
+  // 条目、顺序、分隔与危险态由 project-menu 统一决定；这里只声明首页有哪些动作。
+  const menus = (p: Project) => projectMenuItems(p, {
+    favorite: (project, value) => { void mutate({ op: 'mark', projectId: project.projectId, field: 'favorite', value }); },
+    openDirectory,
+    rename,
+    removeProject,
+    archive: archiveProject,
+    migration: (project, records) => migration?.(project, records),
+  });
+  const visibleColumns = listFields.filter(field => fields[field.key]);
+  const columns = `[project] minmax(220px,1fr) ${visibleColumns.map(field => `[${field.name}] ${field.width}px`).join(' ')} [actions] 28px`;
+  const minimum = 220 + 28 + 16 + 12 * (visibleColumns.length + 1) + visibleColumns.reduce((sum, field) => sum + field.width, 0);
   const pin = (p: Project) => <span className="entity-marks"><IconButton name="pin" label={p.mark.pinned ? '取消置顶项目' : '置顶项目'} className="wb-pin entity-mark-button" active={p.mark.pinned} disabled={busy}
     onClick={() => void mutate({ op: 'mark', projectId: p.projectId, field: 'pinned', value: !p.mark.pinned })}/></span>;
   const title = (p: Project) => <button className="wb-project-title project-open" type="button" onClick={() => navigate(p.projectId)} title={`${p.title} · ${p.path}`}>{p.title}</button>;
@@ -175,7 +185,7 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
       {fields.recent && latest && <div className="project-summary-latest">{lastSession}</div>}
     </article> : <article className="wb-project project" key={p.projectId} onClick={open}>
       <div className="project-name">{projectIcon(p)}<div className="project-copy"><div className="entity-title">{title(p)}{pin(p)}</div>{fields.directory && path(p)}</div></div>
-      <div className="project-footer">{visibleColumns.map(([key,name]) => <div className="project-list-cell" data-field={name} key={key}>
+      <div className="project-footer">{visibleColumns.map(({ key, name }) => <div className="project-list-cell" data-field={name} key={key}>
         <span className="list-field-label">{fieldLabels[key]}</span>{key === 'recent' ? lastSession : key === 'activity' ? p.updatedAt > 0 && <span className="activity">{dateText(p.updatedAt)}</span> : key === 'status' ? status(p) : <span className="list-value">{values[key]}</span>}
       </div>)}</div><Menu label={`${p.title}的更多操作`} disabled={busy} items={menus(p)}/>
     </article>;
@@ -192,21 +202,25 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
       </button>)}</div>
     </section>}
     {home.stats && visibleStatTabs.length > 0 && <section className="wb-home-stats home-stats" aria-label="工作台统计"><div className="stats-grid" data-count={visibleStatTabs.length}>
-      {visibleStatTabs.map(([key,label,symbol]) => {
-        if (key === 'skills' || key === 'mcp' || key === 'rss') {
-          const result = extensions[key];
-          const state = result?.status === 'error' ? 'error' : result?.status === 'ready' && result.value.errors ? 'warning' : undefined;
-          const rawDetail = result?.status === 'ready' ? result.value.detail : result?.status === 'error' ? result.message : '正在读取…';
-          const detail = errorText(rawDetail)
-            .replace(/ · (\d+) 个异常$/, (_, count: string) => translate(' · {p0} 个异常', { p0: count }));
-          return <button className="wb-stat-card stat-card" type="button" key={key} data-stat-tab={key} data-state={state}
-            aria-haspopup="dialog" {...cardProps(key)} title={detail} aria-label={`${label}，${result?.status === 'ready' ? result.value.count ?? '—' : '—'}，${detail}`}><span className="recent-icon"><Icon name={symbol}/></span>
-            <span className="stat-copy"><span className="stat-label">{label}</span><strong className="stat-value">{result?.status === 'ready' ? result.value.count ?? '—' : '—'}</strong></span><span className="stat-arrow"><Icon name="chevron"/></span></button>;
-        }
-        const value = key === 'running' ? running.length : key === 'recent' ? active.length : key === 'pending' ? pending.length : diagnostics.count;
-        const detail = key === 'running' ? running.length ? `${new Set(running.map(s => s.project.projectId)).size} 个项目` : '暂无运行中' : key === 'recent' ? `最近 ${home.statDays} 天` : key === 'pending' ? `手动 ${pending.filter(t => t.creator === 'user').length}／Agent ${pending.filter(t => t.creator === 'agent').length}` : diagnostics.detail;
-        const diagnosticState = key === 'diagnostic' ? diagnostics.state : undefined;
-        return <button className="wb-stat-card stat-card" type="button" key={key} data-stat-tab={key} data-state={diagnosticState} aria-haspopup="dialog" {...cardProps(key)} title={detail} aria-label={`${label}，${value}，${detail}`}><span className="recent-icon"><Icon name={diagnosticState === 'normal' ? 'check-circle' : symbol}/></span>
+      {visibleStatTabs.map(({ key, label, icon: symbol }) => {
+        // 扩展卡与核心卡只差数据来源，外壳（类名、data 属性、标题与无障碍文案）只写一份。
+        const extensionKey = key === 'skills' || key === 'mcp' || key === 'rss' ? key : undefined;
+        const result = extensionKey ? extensions[extensionKey] : undefined;
+        const value = extensionKey ? result?.status === 'ready' ? result.value.count ?? '—' : '—'
+          : key === 'running' ? running.length : key === 'recent' ? active.length : key === 'pending' ? pending.length : diagnostics.count;
+        const state = extensionKey
+          ? result?.status === 'error' ? 'error' : result?.status === 'ready' && (result.value.errors || result.stale) ? 'warning' : undefined
+          : key === 'diagnostic' ? diagnostics.state : undefined;
+        const rawDetail = extensionKey
+          ? result?.status === 'ready' ? result.value.detail : result?.status === 'error' ? result.message : '正在读取…'
+          : key === 'running' ? running.length ? `${new Set(running.map(s => s.project.projectId)).size} 个项目` : '暂无运行中'
+          : key === 'recent' ? `最近 ${home.statDays} 天`
+          : key === 'pending' ? `手动 ${pending.filter(t => t.creator === 'user').length}／Agent ${pending.filter(t => t.creator === 'agent').length}`
+          : diagnostics.detail;
+        const detail = extensionKey
+          ? errorText(rawDetail).replace(/ · (\d+) 个异常$/, (_, count: string) => translate(' · {p0} 个异常', { p0: count }))
+          : rawDetail;
+        return <button className="wb-stat-card stat-card" type="button" key={key} data-stat-tab={key} data-state={state} aria-haspopup="dialog" {...cardProps(key)} title={detail} aria-label={`${label}，${value}，${detail}`}><span className="recent-icon"><Icon name={state === 'normal' ? 'check-circle' : symbol}/></span>
           <span className="stat-copy"><span className="stat-label">{label}</span><strong className="stat-value">{value}</strong></span><span className="stat-arrow"><Icon name="chevron"/></span>
         </button>;
       })}
@@ -223,7 +237,7 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
       </div>
       {projects.length ? grid ? <div className="wb-project-grid project-grid">{renderProjects()}</div> : <div className="wb-project-table project-table" tabIndex={0} role="region" aria-label="项目列表">
         <div className="project-table-body" style={{ '--project-columns': columns, '--project-min-width': `${minimum}px` } as CSSProperties}>
-          <div className="wb-table-head list-head"><span>项目名称</span>{visibleColumns.map(([key]) => <span key={key}>{fieldLabels[key]}</span>)}<span className="sr-only">操作</span></div><div className="project-list">{renderProjects()}</div>
+          <div className="wb-table-head list-head"><span>项目名称</span>{visibleColumns.map(({ key }) => <span key={key}>{fieldLabels[key]}</span>)}<span className="sr-only">操作</span></div><div className="project-list">{renderProjects()}</div>
         </div>
       </div> : <div className="wb-empty empty"><Icon name={prefs.projectFilter === 'favorite' ? 'star' : 'folder'}/><h3>{prefs.projectFilter === 'favorite' ? '暂无收藏项目' : prefs.projectFilter === 'archived' ? '暂无归档项目' : '这里还没有活跃项目'}</h3><p>{prefs.projectFilter === 'archived' ? '在项目菜单中选择「归档项目」后显示在这里，业务只读。' : '打开已有目录，或通过顶部添加新项目。'}</p></div>}
     </section></div>}
@@ -231,6 +245,8 @@ export function Home({ snapshot, api, memory, busy, mutate, navigate, rename, re
   </main>;
 }
 
+/** 统计概览里会被待办子弹窗重建的滚动容器。 */
+const STATS_SCROLLERS = '.settings-content,.settings-panel,.stats-group-results,.stats-group-items,.stats-project-groups';
 /** 核心概览内容复用统一外层，待办详情保留列表恢复行为。 */
 export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, diagnosis, onReport, navigation, onClose, embedded, onModalState, notify }: {
   stat: CoreOverviewTab; snapshot: Snapshot; api: ClientPort; busy: boolean; refresh(): Promise<void>;
@@ -240,29 +256,24 @@ export function StatsOverview({ stat, snapshot, api, busy, refresh, navigate, di
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [statTodo, setStatTodo] = useState<{ project: Project; todo: Todo } | null>(null);
-  const statReturn = useRef<{ focus: HTMLElement | null; scroll: { node: HTMLElement; top: number; left: number }[] } | null>(null);
+  const statReturn = useRef<{ focus: HTMLElement | null; scroll: ScrollPosition[] } | null>(null);
   useLayoutEffect(() => {
     if (statTodo || !statReturn.current) return;
     const origin = statReturn.current;
     statReturn.current = null;
     // 子弹窗的布局效果已恢复模态范围，在本次绘制前恢复原列表。
-    for (const item of origin.scroll) if (item.node.isConnected) {
-      item.node.scrollTop = item.top; item.node.scrollLeft = item.left;
-    }
+    restoreScrollPositions(origin.scroll);
     const fallback = root.current?.closest('.wb')?.querySelector<HTMLElement>('.stats-drawer .stats-group-results');
-    (origin.focus?.isConnected ? origin.focus : fallback)?.focus({ preventScroll: true });
+    restoreFocus(origin.focus, fallback);
   }, [statTodo]);
   const home = snapshot.preferences.home;
-  const since = Date.now() - home.statDays * 86400000;
-  const allSessions = snapshot.projects.flatMap(p => p.sessions.map(s => ({ ...s, project: p }))).sort((a, b) => b.updatedAt - a.updatedAt);
-  const running = allSessions.filter(s => s.running && !s.archived);
-  const active = allSessions.filter(s => s.updatedAt >= since && !s.archived);
-  const pending = snapshot.projects.flatMap(p => p.todos.filter(t => !t.done).map(t => ({ ...t, project: p })));
+  // 与首页共用同一份统计口径（见 sessionStats）。
+  const { running, active, pending } = sessionStats(snapshot);
   const openTodo = (t: typeof pending[number]) => {
     const dialog = root.current?.closest('.wb')?.querySelector<HTMLElement>('.stats-drawer');
     const focus = [...(dialog?.querySelectorAll<HTMLElement>('[data-stat-entry]') ?? [])].find(node => node.dataset.statEntry === t.id) ?? null;
     statReturn.current = {
-      focus, scroll: dialog ? [dialog, ...dialog.querySelectorAll<HTMLElement>('.settings-content,.settings-panel,.stats-group-results,.stats-group-items,.stats-project-groups')].map(node => ({ node, top: node.scrollTop, left: node.scrollLeft })) : [],
+      focus, scroll: dialog ? captureScrollPositions([dialog, ...dialog.querySelectorAll<HTMLElement>(STATS_SCROLLERS)]) : [],
     };
     setStatTodo({ project: t.project, todo: t });
   };

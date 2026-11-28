@@ -35,7 +35,7 @@ export class SpeechComponent {
   }
   dispose() {
     this.target?.removeEventListener('focus', this.refresh); this.target = undefined;
-    clearInterval(this.timer); this.timer = undefined; this.setEnabled(false); this.playback.stop(true);
+    clearInterval(this.timer); this.timer = undefined; this.setEnabled(false);
   }
 }
 

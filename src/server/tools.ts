@@ -14,7 +14,12 @@ const updateSchema = z.object({
   title: z.string().trim().min(1).max(500).optional(), note: z.string().max(10000).optional(), done: z.boolean().optional(),
   priority: prioritySchema.optional(),
 }).strict();
-const deleteSchema = z.object({ id: z.string().min(1), expectedVersion: z.number().int().positive() }).strict();
+/** 版本化引用：id + expectedVersion。删除与附件增删都走同一套版本校验，delete 只是其中一个调用者。 */
+const versionedIdSchema = z.object({ id: z.string().min(1), expectedVersion: z.number().int().positive() }).strict();
+/** 附件引用：id + attachmentId，读附件类工具共用。 */
+const attachmentRefSchema = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(200) }).strict();
+/** 版本化附件引用：版本校验之上再带 attachmentId，供附件增删四个工具共用。 */
+const versionedAttachmentRefSchema = versionedIdSchema.extend({ attachmentId: z.string().min(1).max(200) }).strict();
 const priorityParameter = { oneOf: [
   { type: 'string', enum: ['high', 'medium', 'low'] }, { type: 'null' },
 ], description: '高／中／低；null表示未设置或清空优先级' };
@@ -46,6 +51,45 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
     const workspace = ctx.workspaceRegistry.list().find(w => w.sessionIds.includes(sessionId));
     return service.workspaceForSession(sessionId, workspace?.id);
   };
+  // 会话扫描与附件字节校验都在状态事务外完成：翻页读会话历史、把附件流读一遍都是长操作，
+  // 放进 service 的 change() 里就等于让整份状态写排在它后面等。
+  // 倒序翻页只写一遍：命中判断由调用方传入，未命中按调用方文案报 forbidden。
+  const scanSessionHistory = async <T>(exec: ToolRunContext, lookup: (records: readonly unknown[]) => T | null,
+    notFoundMessage: string): Promise<T> => {
+    let beforeSeq: number | undefined;
+    for (let page = 0; page < 100; page++) {
+      exec.signal.throwIfAborted();
+      const history = await ctx.sessionController.page({ address: { kind: 'session', sessionId: SessionId(exec.agent!.session.id) },
+        maxMessages: 100, ...(beforeSeq === undefined ? {} : { beforeSeq }) }, exec.signal);
+      const found = lookup(history.records);
+      if (found) return found;
+      if (!history.hasMore) break;
+      const seqs = history.records.map(r => (r as unknown as { event?: { seq?: number }; seq?: number }).event?.seq
+        ?? (r as unknown as { seq?: number }).seq).filter((seq): seq is number => typeof seq === 'number');
+      const next = Math.min(...seqs);
+      if (!Number.isFinite(next) || beforeSeq !== undefined && next >= beforeSeq) break;
+      beforeSeq = next;
+    }
+    throw new WorkbaseError('forbidden', notFoundMessage);
+  };
+  const scanSessionAttachment = async (exec: ToolRunContext, attachmentId: string) => {
+    const found = await scanSessionHistory(exec, records => sessionFile(records, attachmentId), '当前会话消息中没有此文件引用');
+    let bytes = 0;
+    for await (const chunk of ctx.attachments.readFileStream({
+      attachmentId: AttachmentId(found.attachmentId), name: found.name, bytes: found.bytes,
+    }, exec.signal)) {
+      bytes += chunk.length;
+      if (bytes > MAX_TODO_ATTACHMENT_BYTES) throw new WorkbaseError('invalid', '附件不能超过10MiB');
+    }
+    if (bytes !== found.bytes) throw new WorkbaseError('invalid', '附件长度校验失败');
+    return found;
+  };
+  const scanSessionImage = async (exec: ToolRunContext, attachmentId: string) => {
+    // attachment()只核验存储引用，SDK不会核验它是否属于会话，所以先读本会话消息。
+    const found = await scanSessionHistory(exec, records => sessionImage(records, attachmentId), '当前会话消息中没有此图片引用');
+    await ctx.sessionController.attachment({ sessionId: SessionId(exec.agent!.session.id), attachment: found as ImageAttachmentRef });
+    return found;
+  };
   const definitions: ToolDefinition[] = [
     {
       name: 'workbase_list_todos', description: '读取当前项目待办。summary=true仅返回摘要（不含备注、图片引用），适合先查重和选择任务；需要完整内容时调用 workbase_get_todo。可按status、query（标题和备注）、priority筛选；无参数沿用完整返回。不能跨项目读取。',
@@ -71,35 +115,11 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       parameters: { type: 'object', properties: { id: { type: 'string' }, expectedVersion: { type: 'integer' }, attachmentId: { type: 'string' } },
         required: ['id', 'expectedVersion', 'attachmentId'], additionalProperties: false }, output,
       async execute(args, exec) {
-        const input = deleteSchema.extend({ attachmentId: z.string().min(1).max(200) }).strict().parse(args);
-        const workspaceId = workspaceFor(exec), current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
-        return { data: JSON.stringify(await service.attachTodoAttachment({ ...input, projectId: current.projectId }, async () => {
-          let beforeSeq: number | undefined;
-          for (let page = 0; page < 100; page++) {
-            exec.signal.throwIfAborted();
-            const history = await ctx.sessionController.page({ address: { kind: 'session', sessionId: SessionId(exec.agent!.session.id) },
-              maxMessages: 100, ...(beforeSeq === undefined ? {} : { beforeSeq }) }, exec.signal);
-            const found = sessionFile(history.records, input.attachmentId);
-            if (found) {
-              let bytes = 0;
-              for await (const chunk of ctx.attachments.readFileStream({
-                attachmentId: AttachmentId(found.attachmentId), name: found.name, bytes: found.bytes,
-              }, exec.signal)) {
-                bytes += chunk.length;
-                if (bytes > MAX_TODO_ATTACHMENT_BYTES) throw new WorkbaseError('invalid', '附件不能超过10MiB');
-              }
-              if (bytes !== found.bytes) throw new WorkbaseError('invalid', '附件长度校验失败');
-              return found;
-            }
-            if (!history.hasMore) break;
-            const seqs = history.records.map(r => (r as unknown as { event?: { seq?: number }; seq?: number }).event?.seq
-              ?? (r as unknown as { seq?: number }).seq).filter((seq): seq is number => typeof seq === 'number');
-            const next = Math.min(...seqs);
-            if (!Number.isFinite(next) || beforeSeq !== undefined && next >= beforeSeq) break;
-            beforeSeq = next;
-          }
-          throw new WorkbaseError('forbidden', '当前会话消息中没有此文件引用');
-        }, { kind: 'agent', workspaceId }, exec.signal)) };
+        const input = versionedAttachmentRefSchema.parse(args);
+        const workspaceId = workspaceFor(exec), current = await service.projectForAgent(workspaceId, exec.signal);
+        const attachment = await scanSessionAttachment(exec, input.attachmentId);
+        return { data: JSON.stringify(await service.attachTodoAttachment({ ...input, projectId: current.projectId },
+          async () => attachment, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
     {
@@ -107,8 +127,8 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       parameters: { type: 'object', properties: { id: { type: 'string' }, expectedVersion: { type: 'integer' }, attachmentId: { type: 'string' } },
         required: ['id', 'expectedVersion', 'attachmentId'], additionalProperties: false }, output,
       async execute(args, exec) {
-        const input = deleteSchema.extend({ attachmentId: z.string().min(1).max(200) }).strict().parse(args);
-        const workspaceId = workspaceFor(exec), current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
+        const input = versionedAttachmentRefSchema.parse(args);
+        const workspaceId = workspaceFor(exec), current = await service.projectForAgent(workspaceId, exec.signal);
         return { data: JSON.stringify(await service.removeTodoAttachment({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
@@ -126,8 +146,8 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
         },
       },
       async execute(args, exec) {
-        const input = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(200) }).strict().parse(args);
-        const workspaceId = workspaceFor(exec), current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
+        const input = attachmentRefSchema.parse(args);
+        const workspaceId = workspaceFor(exec), current = await service.projectForAgent(workspaceId, exec.signal);
         const { attachment } = await service.readAttachment({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal);
         return { attachment, message: '待办附件' };
       },
@@ -137,30 +157,12 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       parameters: { type: 'object', properties: { id: { type: 'string' }, expectedVersion: { type: 'integer' }, attachmentId: { type: 'string' } },
         required: ['id', 'expectedVersion', 'attachmentId'], additionalProperties: false }, output,
       async execute(args, exec) {
-        const input = deleteSchema.extend({ attachmentId: z.string().min(1).max(200) }).strict().parse(args);
+        const input = versionedAttachmentRefSchema.parse(args);
         const workspaceId = workspaceFor(exec);
-        const current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
-        return { data: JSON.stringify(await service.attachTodoImage({ ...input, projectId: current.projectId }, async () => {
-          // attachment()只核验存储引用，SDK不会核验它是否属于会话，所以先读本会话消息。
-          let beforeSeq: number | undefined;
-          for (let page = 0; page < 100; page++) {
-            exec.signal.throwIfAborted();
-            const history = await ctx.sessionController.page({ address: { kind: 'session', sessionId: SessionId(exec.agent!.session.id) },
-              maxMessages: 100, ...(beforeSeq === undefined ? {} : { beforeSeq }) }, exec.signal);
-            const found = sessionImage(history.records, input.attachmentId);
-            if (found) {
-              await ctx.sessionController.attachment({ sessionId: SessionId(exec.agent!.session.id), attachment: found as ImageAttachmentRef });
-              return found;
-            }
-            if (!history.hasMore) break;
-            const seqs = history.records.map(r => (r as unknown as { event?: { seq?: number }; seq?: number }).event?.seq
-              ?? (r as unknown as { seq?: number }).seq).filter((seq): seq is number => typeof seq === 'number');
-            const next = Math.min(...seqs);
-            if (!Number.isFinite(next) || beforeSeq !== undefined && next >= beforeSeq) break;
-            beforeSeq = next;
-          }
-          throw new WorkbaseError('forbidden', '当前会话消息中没有此图片引用');
-        }, { kind: 'agent', workspaceId }, exec.signal)) };
+        const current = await service.projectForAgent(workspaceId, exec.signal);
+        const image = await scanSessionImage(exec, input.attachmentId);
+        return { data: JSON.stringify(await service.attachTodoImage({ ...input, projectId: current.projectId },
+          async () => image, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
     {
@@ -168,8 +170,8 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       parameters: { type: 'object', properties: { id: { type: 'string' }, expectedVersion: { type: 'integer' }, attachmentId: { type: 'string' } },
         required: ['id', 'expectedVersion', 'attachmentId'], additionalProperties: false }, output,
       async execute(args, exec) {
-        const input = deleteSchema.extend({ attachmentId: z.string().min(1).max(200) }).strict().parse(args);
-        const workspaceId = workspaceFor(exec), current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
+        const input = versionedAttachmentRefSchema.parse(args);
+        const workspaceId = workspaceFor(exec), current = await service.projectForAgent(workspaceId, exec.signal);
         return { data: JSON.stringify(await service.removeTodoImage({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
@@ -185,8 +187,8 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
         },
       },
       async execute(args, exec) {
-        const input = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(200) }).strict().parse(args);
-        const workspaceId = workspaceFor(exec), current = await service.listForAgent(workspaceId, exec.signal, { summary: true });
+        const input = attachmentRefSchema.parse(args);
+        const workspaceId = workspaceFor(exec), current = await service.projectForAgent(workspaceId, exec.signal);
         const result = await service.readImage({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal);
         return { image: result.image, message: '待办图片' };
       },
@@ -197,7 +199,7 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       async execute(args, exec) {
         const input = createSchema.parse(args);
         const workspaceId = workspaceFor(exec);
-        const current = await service.listForAgent(workspaceId, exec.signal);
+        const current = await service.projectForAgent(workspaceId, exec.signal);
         return { data: JSON.stringify(await service.createTodo({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
@@ -207,7 +209,7 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
       async execute(args, exec) {
         const input = updateSchema.parse(args);
         const workspaceId = workspaceFor(exec);
-        const current = await service.listForAgent(workspaceId, exec.signal);
+        const current = await service.projectForAgent(workspaceId, exec.signal);
         return { data: JSON.stringify(await service.updateTodo({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
@@ -218,17 +220,21 @@ export function registerTools(ctx: Context, service: WorkbaseService) {
         required: ['id', 'expectedVersion'], additionalProperties: false,
       }, output,
       async execute(args, exec) {
-        const input = deleteSchema.parse(args);
+        const input = versionedIdSchema.parse(args);
         const workspaceId = workspaceFor(exec);
-        const current = await service.listForAgent(workspaceId, exec.signal);
+        const current = await service.projectForAgent(workspaceId, exec.signal);
         return { data: JSON.stringify(await service.deleteTodo({ ...input, projectId: current.projectId }, { kind: 'agent', workspaceId }, exec.signal)) };
       },
     },
   ];
   for (const definition of definitions) ctx.effect(() => ctx.tools.register(definition));
 }
-/** 只从消息的 image 内容块提取引用，忽略工具参数与任意文本里的伪造引用。 */
-export function sessionImage(records: readonly unknown[], id: string): TodoImage | null {
+/**
+ * 只在 user／assistant 消息的内容块里找指定 attachmentId 的附件：工具参数、任意文本与其他事件都不参与。
+ * 首个同名块的字段不合法时继续扫后续块，避免一条结构异常的历史挡掉真实引用。
+ */
+function findMessageAttachment<T>(records: readonly unknown[], id: string, kind: 'image' | 'file',
+  extract: (attachment: Record<string, unknown>) => T | null): T | null {
   for (const item of records) {
     const record = item as { type?: string; event?: unknown };
     const event = (record.type === 'event' ? record.event : record) as { type?: string; data?: { message?: { content?: unknown }; content?: unknown } };
@@ -236,28 +242,25 @@ export function sessionImage(records: readonly unknown[], id: string): TodoImage
     const content = event.data?.message?.content ?? event.data?.content;
     if (!Array.isArray(content)) continue;
     for (const block of content) {
-      if (block?.type !== 'image' || block.attachment?.attachmentId !== id) continue;
-      const ref = block.attachment;
-      const parsed = todoImageSchema.safeParse({ attachmentId: ref.attachmentId, mediaType: ref.mediaType,
-        bytes: ref.bytes, width: ref.width, height: ref.height });
-      if (parsed.success) return parsed.data;
+      if (block?.type !== kind || block.attachment?.attachmentId !== id) continue;
+      const found = extract(block.attachment as Record<string, unknown>);
+      if (found) return found;
     }
   }
   return null;
 }
+/** 只从消息的 image 内容块提取引用，忽略工具参数与任意文本里的伪造引用。 */
+export function sessionImage(records: readonly unknown[], id: string): TodoImage | null {
+  return findMessageAttachment(records, id, 'image', ref => {
+    const parsed = todoImageSchema.safeParse({ attachmentId: ref.attachmentId, mediaType: ref.mediaType,
+      bytes: ref.bytes, width: ref.width, height: ref.height });
+    return parsed.success ? parsed.data : null;
+  });
+}
 /** 文件引用只来自真实消息块，不解释文件名为路径，不从工具参数或文本提取。 */
 export function sessionFile(records: readonly unknown[], id: string): TodoAttachment | null {
-  for (const item of records) {
-    const record = item as { type?: string; event?: unknown };
-    const event = (record.type === 'event' ? record.event : record) as { type?: string; data?: { message?: { content?: unknown }; content?: unknown } };
-    if (!event || !['user/message', 'assistant/message'].includes(event.type ?? '')) continue;
-    const content = event.data?.message?.content ?? event.data?.content;
-    if (!Array.isArray(content)) continue;
-    for (const block of content) {
-      if (block?.type !== 'file' || block.attachment?.attachmentId !== id) continue;
-      const parsed = todoAttachmentSchema.safeParse({ ...block.attachment, mediaType: 'application/octet-stream' });
-      if (parsed.success) return parsed.data;
-    }
-  }
-  return null;
+  return findMessageAttachment(records, id, 'file', ref => {
+    const parsed = todoAttachmentSchema.safeParse({ ...ref, mediaType: 'application/octet-stream' });
+    return parsed.success ? parsed.data : null;
+  });
 }

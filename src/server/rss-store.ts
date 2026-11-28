@@ -45,6 +45,14 @@ export function boundRssCache(state: RssStoredState, limits: { articles: number;
   });
   if (bytes > limits.cacheBytes || count > limits.articles) throw new Error('撤销缓存容量不足，请稍后重试');
 }
+/**
+ * Cache is reconstructible; never overwrite a corrupt subscription config.
+ * 只作废条件头与撤销记录，让下次刷新全量重下，订阅配置本身保持原样。
+ */
+function reconstructCache(config: RssStoredConfig) {
+  for (const feed of config.feeds) { delete feed.etag; delete feed.lastModified; feed.error = '缓存不可用，请重新刷新'; }
+  config.undo = [];
+}
 export class RssStore {
   readonly directory: string;
   constructor(home: string) { this.directory = join(home, 'workbase', 'rss'); }
@@ -63,14 +71,29 @@ export class RssStore {
     for (const feed of config.feeds) if (feed.groupId && !ids.has(feed.groupId)) feed.groupId = '';
     let cache: RssStoredCache = { articles: [], undo: {} };
     if (config.generation) {
+      const file = join(this.directory, `cache-${config.generation}.json`);
+      let size: number | undefined;
       try {
-        const file = join(this.directory, `cache-${config.generation}.json`);
-        if ((await stat(file)).size > RSS_LIMITS.cacheBytes) throw new Error('RSS 缓存超过上限');
-        cache = cacheSchema.parse(JSON.parse(await readFile(file, 'utf8')));
-      } catch {
-        // Cache is reconstructible; never overwrite a corrupt subscription config.
-        for (const feed of config.feeds) { delete feed.etag; delete feed.lastModified; feed.error = '缓存不可用，请重新刷新'; }
-        config.undo = [];
+        size = (await stat(file)).size;
+      } catch (error) {
+        // 读不到（权限、设备错误）与「读到了但内容坏了」要分开：前者不能顺手清掉 etag，
+        // 否则系统错误被吞成「缓存不可用」，下一次再重拉全部订阅。
+        if (rssCacheFailureFatal(error)) throw new Error('RSS 缓存读取失败', { cause: error });
+        size = undefined; // ENOENT：缓存文件不在，按代次丢失重建
+      }
+      if (size === undefined) {
+        reconstructCache(config);
+      } else if (size > RSS_LIMITS.cacheBytes) {
+        // 超限不是「读到了坏内容」：单独报出超限原因，且作废条件头会诱发全量重下，所以保留
+        // etag／lastModified，只挂错误文案。
+        for (const feed of config.feeds) feed.error = '缓存超过上限，请重新刷新';
+      } else {
+        try {
+          cache = cacheSchema.parse(JSON.parse(await readFile(file, 'utf8')));
+        } catch (error) {
+          if (rssCacheFailureFatal(error)) throw new Error('RSS 缓存读取失败', { cause: error });
+          reconstructCache(config);
+        }
       }
     }
     const state = { config, cache };
@@ -111,4 +134,9 @@ export function rssArticleIn(state: RssStoredState, id: string): RssArticle {
   const article = state.cache.articles.find(a => a.id === id && state.config.feeds.some(f => f.id === a.feedId));
   if (!article) throw new Error('文章缓存已不可用');
   return article;
+}
+/** 系统层读取失败（权限、设备、占用）不能当成「缓存内容损坏」。 */
+export function rssCacheFailureFatal(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException)?.code;
+  return code === 'EACCES' || code === 'EPERM' || code === 'EIO' || code === 'EBUSY' || code === 'EMFILE' || code === 'ENFILE';
 }

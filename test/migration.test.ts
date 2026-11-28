@@ -174,3 +174,12 @@ test('迁移预览按真实路径核对绑定，保留真实宿主不可用阻�
   preview = await f.service.previewMigration({ projectId: 'p1', directory: f.target }, signal);
   assert.ok(preview.blockers.includes('源项目目录不可用或关联失效'));
 });
+
+test('目录核对遇到非 ENOENT 的路径解析失败时阻断迁移，而不是退回字面量比较', async t => {
+  const f = await fixture(t);
+  // 含 NULL 字节的路径必然让 realpath 抛出 ENOENT 之外的错误码（ERR_INVALID_ARG_VALUE）。
+  f.state().bindings.push({ ...f.state().bindings[0]!, projectId: 'p9', workspaceId: 'w9', path: `${f.root}\u0000broken` });
+  const preview = await f.service.previewMigration({ projectId: 'p1', directory: f.target }, new AbortController().signal);
+  assert.ok(preview.blockers.includes('目录或路径无法核实'));
+  assert.equal(preview.executable, false);
+});

@@ -75,11 +75,6 @@ export const mcpStateLabels: Record<McpState, string> = {
   error: '连接失败', disabled: '已停用', unavailable: '官方客户端不可用',
 };
 
-export function mcpScopeVisible(record: Pick<McpConfig, 'scope' | 'projectIds'>, workspaceId: string | undefined,
-  projects: readonly { projectId: string; workspaceId: string; archived: boolean; available: boolean }[]) {
-  const project = projects.find(p => p.workspaceId === workspaceId && p.available && !p.archived);
-  return record.scope === 'global' || !!project && record.projectIds.includes(project.projectId);
-}
 export function mcpRedactedConfig(record: McpConnection): McpConfig {
   const config = mcpConfigSchema.parse(record);
   return { ...config, headers: {}, env: {}, args: redactMcpArgs(config.args) };

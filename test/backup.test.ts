@@ -58,6 +58,15 @@ test('盘点的39类范围都有导出或明确未支持策略，不退化成仅
   for (const record of report.records) assert.ok(ids.has(record.id), `缺少策略：${record.id}`);
 });
 
+test('宿主能力读取抛错时报告故障，不冒充「宿主缺少能力」', async () => {
+  const ctx = { get(name: string) { if (name === 'sessionPersistence') throw new Error('synthetic read failure'); return undefined; } };
+  const sources = await createBackupSources(ctx as unknown as Context, '/isolated-home',
+    { workspaces: async () => [], sessions: async () => [], rename: async () => {} })();
+  const sessions = sources.find(source => source.id === 'sessions')!;
+  assert.match(sessions.unsupported ?? '', /宿主能力读取失败/);
+  assert.match(sessions.unsupported ?? '', /synthetic read failure/);
+  assert.equal(sources.find(source => source.id === 'sessions')!.export, undefined, '读失败不提供导出');
+});
 async function fixture(t: TestContext) {
   const root = await mkdtemp(path.join(tmpdir(), 'wb-backup-'));
   t.after(() => rm(root, { recursive: true, force: true }));

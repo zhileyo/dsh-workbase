@@ -5,6 +5,16 @@ import type { WorkbaseService } from './service.js';
 import { downloadCatppuccin } from './terminal-palette.js';
 import type { ExtensionsPort } from '../shared/extensions.js';
 
+/** 带独立端点的通道标签（不含普通 RPC）：调用方按标签选择端点，不再用布尔开关兼作通道身份。 */
+export type DedicatedRoute = 'extensions' | 'rules' | 'message' | 'assistant';
+/** 专用端点各自允许的 op：与下面的 dispatch 同文件维护，新增 op 时不会漏改 HTTP 侧白名单。 */
+export const DEDICATED_ENDPOINT_OPS: Record<DedicatedRoute, readonly string[]> = {
+  extensions: ['extensions'],
+  rules: ['rules-save', 'settings'],
+  message: ['submit-message'],
+  assistant: ['personal-save', 'speech-save', 'speech-synthesize', 'speech-stream-text', 'speech-stream-cancel'],
+};
+
 export async function dispatch(service: WorkbaseService, payload: unknown, owner: boolean, signal: AbortSignal, extensions?: ExtensionsPort) {
   try {
     if (!owner) throw new WorkbaseError('forbidden', '仅宿主所有者可访问工作台');
@@ -84,7 +94,6 @@ export async function dispatch(service: WorkbaseService, payload: unknown, owner
     return { ok: false as const, error: {
       code: error instanceof WorkbaseError ? error.code : error instanceof ZodError ? 'invalid' : signal.aborted ? 'cancelled' : 'internal',
       message: error instanceof ZodError ? '参数不合法，请检查输入' : error instanceof Error ? error.message : '操作失败',
-      details: {},
     } };
   }
 }

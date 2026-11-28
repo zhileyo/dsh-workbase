@@ -338,3 +338,36 @@ test('驱逐已加载的空闲会话需要显式evict，活动会话即使evict�
     assert.deepEqual(f.removed, ['fork']);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
+test('驱逐见证按当前行会话判定，已驱逐的级联子会话不被当成未驱逐', async () => {
+  const f = await fixture();
+  try {
+    f.live.set('parent', { id: 'parent', header: f.headers.get('parent') });
+    f.live.set('child', { id: 'child', header: f.headers.get('child') });
+    const stages: { evicted: boolean; cacheRemoved?: boolean }[] = [];
+    // 对应 diagnostics.ts:263 的判定：缓存行消失必须由「本次删除亲自驱逐该会话」见证。
+    assert.equal(await f.maintenance.deleteSession('parent', { coldOnly: true, evict: true,
+      validate: async stage => {
+        if (!stage) return true;
+        stages.push(structuredClone(stage));
+        return stage.evicted;
+      } }), true);
+    assert.equal(stages.length, 4);
+    assert.deepEqual(stages.map(stage => stage.evicted), [true, true, true, true]);
+    assert.deepEqual(f.removed, ['child', 'parent']);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+test('级联中段失败不能谎称整体跳过，必须报出已删除的部分', async () => {
+  const f = await fixture();
+  try {
+    const cache = f.services.sessionProjectionCache as { requireTable(): { delete(id: string): Promise<void> } };
+    const inner = cache.requireTable();
+    cache.requireTable = () => ({ delete: async id => {
+      await inner.delete(id);
+      // 子会话已物理删除后父会话的日志修订号才变化，复现「删到一半才发现」。
+      if (id === 'child') f.rows.get('parent')!.revision = '2';
+    } });
+    await assert.rejects(f.maintenance.deleteSession('parent'), /已删除 child/);
+    assert.deepEqual(f.removed, ['child']);
+    await access(f.locations.get('parent')!);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});

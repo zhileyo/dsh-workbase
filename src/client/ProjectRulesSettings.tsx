@@ -71,6 +71,21 @@ export function filterProjectRules(rules: ProjectRules['projects'], projects: Pr
   });
 }
 
+type RulePatch = Partial<ProjectRules['projects'][number]>;
+
+/** 列表与详情共用的三件小事：按规则 id 合并补丁、项目标题解析、保存状态文案。
+ *  两处「保存状态 + 重试保存」整段 JSX 未合并：列表用 role="status" 且允许空文本，
+ *  详情用 role="alert" 且仅在保存失败时渲染，合并会把告警语义改成状态语义。 */
+function patchRule(value: ProjectRules, id: string, patch: RulePatch): ProjectRules {
+  return { ...value, projects: value.projects.map(rule => rule.id === id ? { ...rule, ...patch } : rule) };
+}
+function projectNames(projects: Project[], ids: string[]) {
+  return ids.map(id => projects.find(project => project.projectId === id)?.title ?? id);
+}
+function saveStateLabel(dirty: boolean, saving: boolean) {
+  return dirty ? saving ? t('正在自动保存…') : t('未保存修改') : t('已自动保存');
+}
+
 export function ProjectRulesSettings({ scope, value, onChange, projects, disabled, renderMarkdown, saveStatus = '', saveError = '', saving = false, retry, savedValue, select }: {
   scope: 'global' | 'projects'; value: ProjectRules; onChange(value: ProjectRules): void;
   projects: Project[]; disabled: boolean; renderMarkdown?(text: string): ReactNode;
@@ -80,9 +95,8 @@ export function ProjectRulesSettings({ scope, value, onChange, projects, disable
 }) {
   const [query, setQuery] = useState('');
   const search = useRef<HTMLInputElement>(null), listId = useId();
-  const update = (id: string, patch: Partial<ProjectRules['projects'][number]>) =>
-    onChange({ ...value, projects: value.projects.map(rule => rule.id === id ? { ...rule, ...patch } : rule) });
-  const stateLabel = (dirty: boolean) => dirty ? saving ? t('正在自动保存…') : t('未保存修改') : t('已自动保存');
+  const update = (id: string, patch: RulePatch) => onChange(patchRule(value, id, patch));
+  const stateLabel = (dirty: boolean) => saveStateLabel(dirty, saving);
   const scopeStatus = scope === 'global' && savedValue
     ? stateLabel(JSON.stringify(value.global) !== JSON.stringify(savedValue.global)) : saveStatus;
   const status = <div className="rules-save-status"><span role="status" className={saveError ? 'wb-warning' : ''}>{saveError || scopeStatus}</span>
@@ -97,7 +111,7 @@ export function ProjectRulesSettings({ scope, value, onChange, projects, disable
     {value.global.enabled && <div className="rules-global-editor"><RulesEditor label="全局规则正文" value={value.global.content} disabled={disabled}
       onChange={content => onChange({ ...value, global: { ...value.global, content } })} renderMarkdown={renderMarkdown}/></div>}
   </>;
-  const names = (ids: string[]) => ids.map(id => projects.find(project => project.projectId === id)?.title ?? id);
+  const names = (ids: string[]) => projectNames(projects, ids);
   const visible = filterProjectRules(value.projects, projects, query);
   const clear = () => { setQuery(''); search.current?.focus(); };
   return <>
@@ -140,16 +154,18 @@ export function ProjectRulesSettings({ scope, value, onChange, projects, disable
   </>;
 }
 
-/** 规则详情只提供内容，添加及已有规则均由设置的ModalFlow持有外层。 */
-export function ProjectRuleDetail({ rule, value, onChange, projects, disabled, renderMarkdown, saveStatus = '', saveError = '', saving = false, retry, savedValue }: Parameters<typeof ProjectRulesSettings>[0] & {
-  rule: ProjectRules['projects'][number];
+/** 规则详情只提供内容，添加及已有规则均由设置的ModalFlow持有外层；
+ *  属性显式列出而非继承列表组件的入参表：详情不需要 scope 选择属性。 */
+export function ProjectRuleDetail({ rule, value, onChange, projects, disabled, renderMarkdown, saveStatus = '', saveError = '', saving = false, retry, savedValue }: {
+  rule: ProjectRules['projects'][number]; value: ProjectRules; onChange(value: ProjectRules): void;
+  projects: Project[]; disabled: boolean; renderMarkdown?(text: string): ReactNode;
+  saveStatus?: string; saveError?: string; saving?: boolean; retry?(): void; savedValue?: ProjectRules;
 }) {
-  const update = (id: string, patch: Partial<ProjectRules['projects'][number]>) =>
-    onChange({ ...value, projects: value.projects.map(item => item.id === id ? { ...item, ...patch } : item) });
-  const names = (ids: string[]) => ids.map(id => projects.find(project => project.projectId === id)?.title ?? id);
+  const update = (id: string, patch: RulePatch) => onChange(patchRule(value, id, patch));
+  const names = (ids: string[]) => projectNames(projects, ids);
   const validation = projectRulesSchema.safeParse({ global: { enabled: false, content: '' }, projects: [rule] });
   const dirty = !validation.success || JSON.stringify(validation.data.projects[0]) !== JSON.stringify(savedValue?.projects.find(item => item.id === rule.id));
-  const detailStatus = savedValue ? dirty ? saving ? t('正在自动保存…') : t('未保存修改') : t('已自动保存') : saveStatus;
+  const detailStatus = savedValue ? saveStateLabel(dirty, saving) : saveStatus;
   return <>
         <div className="rules-detail-status"><span role="status">{t('应用到 {p0} 个项目 · {p1} · {p2}', { p0: rule.projectIds.length, p1: rule.enabled ? t('启用') : t('停用'), p2: detailStatus })}</span>
           {saveError && <div className="rules-save-status"><span className="wb-warning" role="alert">{saveError}</span>

@@ -15,40 +15,32 @@ import { PersonalSave } from './personal-save.js';
 import { personalFiles, type PersonalFile } from '../shared/personalization.js';
 import { SpeechSave } from './speech-save.js';
 import { SpeechSettings } from './SpeechSettings.js';
+import { SettingsSubtabs } from './settings-subtabs.js';
+import { nextTabIndex } from './roving.js';
 
-export const themeOptions = [['violet','柔和紫晶'],['fresh','清新森林'],['warm','暖纸阅读'],['dsh','经典湛蓝'],['follow','跟随平台']] as const;
-const categories = [['general','通用配置','settings'],['appearance','外观布局','palette'],['project','项目配置','folder'],['personal','私人订制','settings'],['extensions','扩展配置','components'],['tools','其他组件','components'],['backup','备份恢复','archive']] as const;
+export const themeOptions = [
+  { value: 'violet', label: '柔和紫晶' }, { value: 'fresh', label: '清新森林' }, { value: 'warm', label: '暖纸阅读' },
+  { value: 'dsh', label: '经典湛蓝' }, { value: 'follow', label: '跟随平台' },
+] as const;
+const categories = [
+  { value: 'general', label: '通用配置', icon: 'settings' }, { value: 'appearance', label: '外观布局', icon: 'palette' },
+  { value: 'project', label: '项目配置', icon: 'folder' }, { value: 'personal', label: '私人订制', icon: 'settings' },
+  { value: 'extensions', label: '扩展配置', icon: 'components' }, { value: 'tools', label: '其他组件', icon: 'components' },
+  { value: 'backup', label: '备份恢复', icon: 'archive' },
+] as const;
 const personalLabels = ['伙伴档案', '用户档案', '行为准则', '记忆进化'];
 const statCardRows = [
-  ['running','运行统计','尚未结束的会话。'],
-  ['recent','会话统计','所选时间范围内更新的未归档会话。'],
-  ['pending','待办统计','跨项目的未完成待办。'],
-  ['diagnostic','项目诊断','项目目录可用性检查。'],
-  ['skills','技能统计','已确认生效且无异常的全局技能，按调用名去重。'],
-  ['mcp','连接器统计','实际已连接的受管服务与异常。'],
-  ['rss','订阅统计','启用订阅源在所选时间范围内发布的已缓存文章。'],
+  { key: 'running', label: '运行统计', hint: '尚未结束的会话。' },
+  { key: 'recent', label: '会话统计', hint: '所选时间范围内更新的未归档会话。' },
+  { key: 'pending', label: '待办统计', hint: '跨项目的未完成待办。' },
+  { key: 'diagnostic', label: '项目诊断', hint: '项目目录可用性检查。' },
+  { key: 'skills', label: '技能统计', hint: '已确认生效且无异常的全局技能，按调用名去重。' },
+  { key: 'mcp', label: '连接器统计', hint: '实际已连接的受管服务与异常。' },
+  { key: 'rss', label: '订阅统计', hint: '启用订阅源在所选时间范围内发布的已缓存文章。' },
 ] as const;
 function useEditableState<T>(initial: T, edited: () => void) {
   const [value, setValue] = useState(initial);
   return [value, (next: SetStateAction<T>) => { edited(); setValue(next); }] as const;
-}
-function SettingsSubtabs<T extends string>({ scope, label, value, options, onChange }: {
-  scope: string; label: string; value: T; options: readonly { value: T; label: string; hidden?: boolean }[]; onChange(value: T): void;
-}) {
-  const visible = options.filter(option => !option.hidden);
-  return <div className="settings-subtabs" role="tablist" aria-label={label}>{options.map(option => <button
-    type="button" role="tab" key={option.value} id={`wb-settings-${scope}-tab-${option.value}`}
-    aria-controls={`wb-settings-${scope}-panel-${option.value}`} aria-selected={value === option.value}
-    tabIndex={value === option.value ? 0 : -1} hidden={option.hidden}
-    onClick={() => onChange(option.value)} onKeyDown={e => {
-      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-      e.preventDefault();
-      const i = visible.findIndex(item => item.value === option.value);
-      const next = e.key === 'Home' ? 0 : e.key === 'End' ? visible.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + visible.length) % visible.length;
-      const target = visible[next]!;
-      onChange(target.value);
-      e.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`#wb-settings-${scope}-tab-${target.value}`)?.focus();
-    }}>{option.label}</button>)}</div>;
 }
 export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, save, call, onClose, pickDirectory, dark = false, onRestored, describedBy, renderMarkdown, registerCloseGuard, embedded = true, onModalState, initialExtension }: {
   snapshot: Snapshot; busy: boolean; preview(theme: Preferences['theme']): void;
@@ -73,7 +65,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     task.current.mounted = true;
     return () => { task.current.mounted = false; task.current.generation++; };
   }, []);
-  const [tab, setTab] = useState<typeof categories[number][0]>(initialExtension ? 'extensions' : 'general');
+  const [tab, setTab] = useState<typeof categories[number]['value']>(initialExtension ? 'extensions' : 'general');
   const [extensionTab, setExtensionTab] = useState<ExtensionTab>(initialExtension ?? 'skills');
   const [appearanceTab, setAppearanceTab] = useState<'theme' | 'layout' | 'stats'>('layout');
   const [projectTab, setProjectTab] = useState<'global' | 'initialization' | 'single'>('global');
@@ -184,15 +176,14 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   const navKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
     if (!['ArrowDown','ArrowUp','ArrowRight','ArrowLeft','Home','End'].includes(e.key)) return;
     e.preventDefault();
-    const count = categories.length;
-    const next = e.key === 'Home' ? 0 : e.key === 'End' ? count - 1 : (i + (['ArrowDown','ArrowRight'].includes(e.key) ? 1 : -1) + count) % count;
-    switchTab(categories[next]![0]); (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
+    const next = nextTabIndex(e.key, i, categories.length);
+    switchTab(categories[next]!.value); (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
   };
   const homeRows = [
-    ['quick','快捷会话','输入任务并选择项目，直接开始新会话。'],
-    ['stats','数据统计','展示统计卡，并开启「统计卡片」页签。'],
-    ['recent','最近会话','显示输入框下方的最近会话入口。'],
-    ['projects','项目总览','显示项目列表 / 宫格与筛选、视图切换按钮。'],
+    { key: 'quick', label: '快捷会话', hint: '输入任务并选择项目，直接开始新会话。' },
+    { key: 'stats', label: '数据统计', hint: '展示统计卡，并开启「统计卡片」页签。' },
+    { key: 'recent', label: '最近会话', hint: '显示输入框下方的最近会话入口。' },
+    { key: 'projects', label: '项目总览', hint: '显示项目列表 / 宫格与筛选、视图切换按钮。' },
   ] as const;
   const sidebarHelp = t('侧栏入口与顶部返回按钮至少保留一个。');
   return <ModalFlow embedded={embedded} onModalState={onModalState} fallbackFocus=".rules-search input" main={
@@ -212,8 +203,10 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     setSaveError('');
     setSubmitting(true);
     const generation = task.current.generation;
+    // 回执有效性只认本实例、本次代次与保存锁；父级 busy 只用于禁用按钮，
+    // 它在写入期间由 run() 置真、回执到达那一帧仍是旧值，不能拿它吞掉回执。
     const current = () => task.current.mounted && task.current.generation === generation
-      && task.current.lock === 'save' && !live.current.busy && !live.current.restoreBusy;
+      && task.current.lock === 'save' && !live.current.restoreBusy;
     void (async () => {
       try {
       const rulesSaved = await rulesSave.flush();
@@ -236,7 +229,9 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
       openOnStartup, agentManageTodos, pluginAutoUpdate, terminalSettingsVisible, speechComponentEnabled, backup: { ...backup, directory: backup.directory.trim() },
       ...(!pluginUpdateBusy ? { pluginUpdateVisible } : {}),
       navigation: { ...navigation, sidebarName: navigation.sidebarName.trim() || snapshot.preferences.navigation.sidebarName } } });
-      if (ok && rulesSaved && current()) onClose();
+      if (!current()) return;
+      if (!ok) { setSaveError(t('设置未能保存，请重试')); return; }
+      onClose();
       } catch (error) {
         if (current()) setSaveError(error instanceof Error ? error.message : '保存失败');
       } finally {
@@ -246,27 +241,27 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
     })();
   }}>
     <div className="settings-layout">
-      <nav className="settings-nav" role="tablist" aria-label="设置分类" aria-orientation="vertical">{categories.map(([value,label,symbol],i) => <button type="button" role="tab" id={`wb-settings-tab-${value}`} aria-controls={`wb-settings-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => switchTab(value)} onKeyDown={e => navKey(e, i)}><Icon name={symbol}/>{label}</button>)}</nav>
+      <nav className="settings-nav" role="tablist" aria-label="设置分类" aria-orientation="vertical">{categories.map(({ value, label, icon }, i) => <button type="button" role="tab" id={`wb-settings-tab-${value}`} aria-controls={`wb-settings-panel-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} key={value} onClick={() => switchTab(value)} onKeyDown={e => navKey(e, i)}><Icon name={icon}/>{label}</button>)}</nav>
       <div className="wb-drawer-body settings-content" ref={content}>
         <section className="settings-panel" role="tabpanel" id="wb-settings-panel-appearance" aria-labelledby="wb-settings-tab-appearance" hidden={tab !== 'appearance'}>
           <h3>外观布局</h3><p className="dialog-description">选择工作台主题，调整首页模块与统计卡片。</p>
           <SettingsSubtabs scope="appearance" label="外观布局分类" value={appearanceTab} options={[{ value: 'layout', label: '首页模块' }, { value: 'stats', label: '统计卡片', hidden: !home.stats }, { value: 'theme', label: '主题配色' }]} onChange={value => { setAppearanceTab(value); resetScroll(); }}/>
           <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-theme" aria-labelledby="wb-settings-appearance-tab-theme" hidden={appearanceTab !== 'theme'}>
             <div className="theme-mode-note"><Icon name="info"/><div className="theme-mode-copy"><strong>当前外观：{dark ? '深色' : '浅色'}</strong><span>切换明暗模式，请前往 DSH 设置 → 外观。</span></div></div>
-            <div className="theme-choices" role="radiogroup" aria-label="工作台主题">{themeOptions.map(([value,label]) => <label className="theme-choice" key={value}>
+            <div className="theme-choices" role="radiogroup" aria-label="工作台主题">{themeOptions.map(({ value, label }) => <label className="theme-choice" key={value}>
               <input type="radio" name="workbase-theme" value={value} checked={theme === value} disabled={busy} onChange={() => { setTheme(value); preview(value); }}/>
               <span className="theme-choice-copy"><strong>{label}</strong></span>
             </label>)}</div>
             <p className="settings-inline-note">即时预览，保存后生效。</p>
           </div>
           <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-layout" aria-labelledby="wb-settings-appearance-tab-layout" hidden={appearanceTab !== 'layout'}>
-          {homeRows.map(([key,label,hint]) => <div key={key}><label className="wb-setting-row setting-row homepage-setting"><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
+          {homeRows.map(({ key, label, hint }) => <div key={key}><label className="wb-setting-row setting-row homepage-setting"><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
             <input type="checkbox" aria-label={`显示${label}`} checked={home[key]} disabled={busy} onChange={e => { setHome({ ...home, [key]: e.target.checked }); if (key === 'stats' && !e.target.checked) setAppearanceTab('layout'); }}/>
           </label>{key === 'recent' && <div className="setting-dependent" hidden={!home.recent}><label className="setting-row"><div><strong>最近会话样式</strong>{home.stats && <small>统计开启时固定为按钮，关闭后恢复所选样式。</small>}</div><Picker variant="recent-layout" label="最近会话样式" value={home.stats ? 'buttons' : home.recentStyle} disabled={busy || home.stats} onChange={value => setHome({ ...home, recentStyle: value as 'cards' | 'buttons' })}
             options={[{ value: 'cards', label: '卡片' },{ value: 'buttons', label: '按钮' }]}/></label></div>}</div>)}
           </div>
           <div className="settings-subpanel" role="tabpanel" id="wb-settings-appearance-panel-stats" aria-labelledby="wb-settings-appearance-tab-stats" hidden={!home.stats || appearanceTab !== 'stats'}>
-            {statCardRows.map(([key,label,hint]) => <label className="wb-setting-row setting-row" key={key}><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
+            {statCardRows.map(({ key, label, hint }) => <label className="wb-setting-row setting-row" key={key}><div><strong>{`显示${label}`}</strong><small>{hint}</small></div>
               <input type="checkbox" aria-label={`显示${label}`} checked={home.statCards[key]} disabled={busy} onChange={e => {
                 if (e.target.checked && Object.values(home.statCards).filter(Boolean).length >= 6) {
                   setStatError('最多显示 6 张统计卡，请先关闭一项'); return;
@@ -404,7 +399,7 @@ export function Settings({ snapshot, busy, pluginUpdateBusy = false, preview, sa
   } detail={rule && <Modal title={rule.name || t('未命名规则')} onClose={closeRule} drawer className="rules-detail-dialog" busy={busy}
     leading={<IconButton name="back" label="返回规则列表" disabled={busy} onClick={closeRule}/>}>
     <div className="rules-detail-body" onCompositionStart={() => rulesSave.composition(true)} onCompositionEnd={() => rulesSave.composition(false)}>
-      <ProjectRuleDetail scope="projects" {...rulesProps} rule={rule}/>
+      <ProjectRuleDetail {...rulesProps} rule={rule}/>
     </div>
   </Modal>}/>;
 }

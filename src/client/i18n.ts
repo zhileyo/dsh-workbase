@@ -61,21 +61,51 @@ export function localized<T extends object>(table: T): T {
   };
   return wrap(table);
 }
-/** 已知错误按完整文案/模板匹配，替换一次且不改写路径、用户内容或宿主未知错误。 */
+/**
+ * 已知错误按完整文案/模板匹配，替换一次且不改写路径、用户内容或宿主未知错误。
+ * 匹配用的正则与长度排序在第一次调用时建一次索引：词典是静态的，调用路径只做查表。
+ */
+interface TextTemplate { regex: RegExp; names: string[]; to: string }
+interface TextIndex {
+  toEnglish: Map<string, string>; toChinese: Map<string, string>;
+  englishTemplates: TextTemplate[]; chineseTemplates: TextTemplate[];
+  englishPrefixes: { prefix: string; text: string }[]; chinesePrefixes: { prefix: string; text: string }[];
+}
+let textIndex: TextIndex | null = null;
+const templateOf = (from: string, to: string): TextTemplate => {
+  const names: string[] = [];
+  const pattern = from.split(/(\{p\d+\})/).map(part => {
+    if (/^\{p\d+\}$/.test(part)) { names.push(part.slice(1, -1)); return '([\\s\\S]*?)'; }
+    return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }).join('');
+  return { regex: new RegExp(`^${pattern}$`), names, to };
+};
+const indexOf = (): TextIndex => {
+  if (textIndex) return textIndex;
+  const toEnglish = new Map<string, string>(), toChinese = new Map<string, string>();
+  const englishTemplates: TextTemplate[] = [], chineseTemplates: TextTemplate[] = [];
+  const englishPrefixes: { prefix: string; text: string }[] = [], chinesePrefixes: { prefix: string; text: string }[] = [];
+  for (const [source, translated] of Object.entries(english)) {
+    toEnglish.set(source, translated);
+    toChinese.set(translated, source);
+    if (/\{p\d+\}/.test(source)) englishTemplates.push(templateOf(source, translated));
+    if (/\{p\d+\}/.test(translated)) chineseTemplates.push(templateOf(translated, source));
+    if (!source.includes('{')) englishPrefixes.push({ prefix: source, text: translated });
+    if (!translated.includes('{')) chinesePrefixes.push({ prefix: translated, text: source });
+  }
+  englishPrefixes.sort((a, b) => b.prefix.length - a.prefix.length);
+  chinesePrefixes.sort((a, b) => b.prefix.length - a.prefix.length);
+  textIndex = { toEnglish, toChinese, englishTemplates, chineseTemplates, englishPrefixes, chinesePrefixes };
+  return textIndex;
+};
 export function errorText(message: string): string {
   const en = languageTag() === 'en-US';
-  if (en && english[message] !== undefined) return english[message]!;
-  for (const [source, translated] of Object.entries(english)) {
-    if (!en && message === translated) return source;
-    const from = en ? source : translated, to = en ? translated : source;
-    if (!/\{p\d+\}/.test(from)) continue;
-    const names: string[] = [];
-    const pattern = from.split(/(\{p\d+\})/).map(part => {
-      if (/^\{p\d+\}$/.test(part)) { names.push(part.slice(1, -1)); return '([\\s\\S]*?)'; }
-      return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }).join('');
-    const match = new RegExp(`^${pattern}$`).exec(message);
-    if (match) return to.replace(/\{(p\d+)\}/g, (token, name: string) => match[names.indexOf(name) + 1] ?? token);
+  const index = indexOf();
+  const exact = (en ? index.toEnglish : index.toChinese).get(message);
+  if (exact !== undefined) return exact;
+  for (const template of en ? index.englishTemplates : index.chineseTemplates) {
+    const match = template.regex.exec(message);
+    if (match) return template.to.replace(/\{(p\d+)\}/g, (token, name: string) => match[template.names.indexOf(name) + 1] ?? token);
   }
   return message;
 }
@@ -84,13 +114,11 @@ export function statusText(message: string): string {
   const en = languageTag() === 'en-US';
   const whole = errorText(message);
   if (whole !== message) return whole;
-  for (const [source, translated] of Object.entries(english).sort(([a], [b]) => b.length - a.length)) {
-    const prefix = en ? source : translated;
-    if (prefix && !prefix.includes('{') && message.startsWith(prefix) && message.length > prefix.length) {
-      const remainder = message.slice(prefix.length);
-      if (remainder.startsWith(en ? '；' : '; ')) {
-        return (en ? translated : source) + errorText(remainder);
-      }
+  const index = indexOf();
+  const separator = en ? '；' : '; ';
+  for (const item of en ? index.englishPrefixes : index.chinesePrefixes) {
+    if (message.length > item.prefix.length && message.startsWith(item.prefix) && message.slice(item.prefix.length).startsWith(separator)) {
+      return item.text + errorText(message.slice(item.prefix.length));
     }
   }
   return message;

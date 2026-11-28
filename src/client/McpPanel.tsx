@@ -6,11 +6,14 @@ import { extensionCall, type ClientPort, type UiMemory } from './api.js';
 import { Icon, IconButton, Menu, Modal, ModalFlow, Picker, FormField, preventImeSubmit, usePanelSnapshot, type Notify, type ModalState } from './ui.js';
 import { t, errorText, statusText } from './i18n.js';
 import { ScopePicker } from './ScopePicker.js';
+import { apiScopedMap, downloadBlob, usePanelAction } from './panel-utils.js';
+import { nextTabIndex } from './roving.js';
+import { toScope, toScopeValues, type ScopeValue } from './scope-values.js';
 
 export interface McpPanelProps { api: ClientPort; projects: Project[]; onClose(): void; memory?: UiMemory; navigation?: React.ReactNode; notify?: Notify; embedded?: boolean; onModalState?(state: ModalState): void; onSettings?(): void }
 type Tab = 'connections' | 'catalog';
 type Detail = { kind: 'create' | 'read' | 'edit' | 'sources' | 'oauth' | 'remove' | 'clear'; id?: string; sourceId?: string; draftKey?: string; candidate?: McpCandidate };
-type Form = Partial<McpConfig> & { id?: string; revision?: number; secret: string; argsText: string; envText: string; headersText: string; credentialValues: Record<string, string> };
+type Form = Partial<McpConfig> & { id?: string; revision?: number; secret: string; argsText: string; envText: string; headersText: string; timeoutText: string; credentialValues: Record<string, string> };
 type MarketResult = { candidates: McpCandidate[]; errors: {
   sourceId?: string; message: string; reason?: string; cached?: boolean;
 }[] };
@@ -27,6 +30,7 @@ function formFor(record?: Partial<McpConfig> & { id?: string; revision?: number 
   return { ...mcpDefaults, name: '', description: '', transport: 'http', auth: 'none', url: '', command: '', cwd: '',
     keyHeader: 'X-API-Key', scope: 'global', projectIds: [], enabled: true, ...record, secret: '', credentialValues: {},
     argsText: JSON.stringify(record?.args ?? []), envText: JSON.stringify(record?.env ?? {}),
+    timeoutText: String(record?.timeoutSeconds ?? mcpDefaults.timeoutSeconds ?? 30),
     headersText: JSON.stringify(record?.headers ?? {}) };
 }
 function Toggle({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange(): void }) {
@@ -35,8 +39,7 @@ function Toggle({ label, checked, disabled, onChange }: { label: string; checked
 }
 /** 管理、添加、详情及授权通过ModalFlow共用一个外层抽屉。 */
 export function McpPanel({ api, projects, onClose, memory, navigation, notify, embedded, onModalState, onSettings }: McpPanelProps) {
-  const connections = marketConnections.get(api) ?? new Map<string, string>();
-  marketConnections.set(api, connections);
+  const connections = apiScopedMap(marketConnections, api);
   const saved = memory?.extensions.mcp;
   const [tab, setTab] = useState<Tab>(saved?.tab === 'catalog' || saved?.tab === 'marketSources' ? 'catalog' : 'connections');
   const [group, setGroup] = useState(saved?.group ?? '');
@@ -88,8 +91,12 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
   useEffect(() => {
     const controller = new AbortController();
     mounted.current = true;
+    let inFlight = false;
     const refresh = () => {
-      if (actionLock.current) return;
+      if (actionLock.current || inFlight) return;
+      // 隐藏时不值得轮询；上一轮没回来也不叠加新请求，避免慢快照把请求排队堆起来。
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      inFlight = true;
       const revision = ++snapshotRevision.current;
       void call<McpSnapshot>('snapshot', undefined, controller.signal).then(value => {
         if (!controller.signal.aborted && revision === snapshotRevision.current) { setSnapshot(value); setLoadError(''); loadIssue.current = ''; }
@@ -99,7 +106,7 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
         setLoadError(message);
         if (loadIssue.current !== message) notify?.(errorText(message), 'info');
         loadIssue.current = message;
-      });
+      }).finally(() => { inFlight = false; });
     };
     refresh();
     const timer = setInterval(refresh, 1500);
@@ -116,11 +123,14 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
     const controller = new AbortController();
     previewRequest.current = controller;
     setPreviewBusy(true); setImportError('');
-    void call<typeof preview>('previewImport', { text: importText, ...importScope }, controller.signal).then(value => {
-      if (!controller.signal.aborted) { setPreview(value); setSelected(value.filter(c => !c.duplicate).map(c => c.name)); }
-    }).catch(reason => { if (!controller.signal.aborted) { setPreview([]); setImportError(reason.message ?? '无法解析配置'); } })
-      .finally(() => { if (!controller.signal.aborted && previewRequest.current === controller) setPreviewBusy(false); });
-    return () => controller.abort();
+    // 正文 textarea 每敲一个字符都会换 importText；预览按 250ms 合并，只把最后一次待发请求发出去（与 RSS 导入预览一致）。
+    const timer = setTimeout(() => {
+      void call<typeof preview>('previewImport', { text: importText, ...importScope }, controller.signal).then(value => {
+        if (!controller.signal.aborted) { setPreview(value); setSelected(value.filter(c => !c.duplicate).map(c => c.name)); }
+      }).catch(reason => { if (!controller.signal.aborted) { setPreview([]); setImportError(reason.message ?? '无法解析配置'); } })
+        .finally(() => { if (!controller.signal.aborted && previewRequest.current === controller) setPreviewBusy(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [importText, importScope, detail?.kind, addTab, api]);
   useEffect(() => {
     if (tab !== 'catalog' || !snapshot || loadError) { setMarketLoading(false); return; }
@@ -153,12 +163,11 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
       .finally(() => { if (!controller.signal.aborted) setMarketLoading(false); }); }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [tab, query, !!snapshot, loadError, snapshot?.sources.map(s => `${s.id}:${s.url}:${s.enabled}`).join(','), api, marketRevision]);
+  // 动作包装器与技能面板共用一份骨架（panel-utils）：锁、busy、失败回报与焦点恢复都在那里。
+  const panelAction = usePanelAction({ lock: actionLock, setBusy, alive: mounted });
   async function act(method: string, input?: unknown, after?: (value: unknown) => void) {
-    if (actionLock.current) return;
-    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    actionLock.current = true; snapshotRevision.current++; setBusy(true); setError('');
     let committed = false;
-    try {
+    await panelAction(async () => {
       const value = await call(method, input);
       committed = true;
       if (mounted.current) {
@@ -175,17 +184,10 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
         const next = await call<McpSnapshot>('snapshot');
         if (mounted.current && revision === snapshotRevision.current) { setSnapshot(next); setLoadError(''); loadIssue.current = ''; }
       }
-    } catch (reason) { if (mounted.current) reportFailure(`${committed ? '操作已完成，但刷新失败：' : ''}${reason instanceof Error ? reason.message : '操作失败，请重试'}`); }
-    finally {
-      actionLock.current = false;
-      if (mounted.current) {
-        setBusy(false);
-        requestAnimationFrame(() => {
-          if (mounted.current && focused?.isConnected && (document.activeElement === document.body || document.activeElement === focused))
-            focused.focus({ preventScroll: true });
-        });
-      }
-    }
+    }, {
+      start: () => { snapshotRevision.current++; setError(''); },
+      report: reason => reportFailure(`${committed ? '操作已完成，但刷新失败：' : ''}${reason instanceof Error ? reason.message : '操作失败，请重试'}`),
+    });
   }
   function show(record: McpConnectionView) { setError(''); setDetail({ kind: 'read', id: record.id }); setToolQuery(''); }
   function create(candidate?: McpCandidate) {
@@ -261,14 +263,17 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
   const picker = (label: string, key: keyof McpConfig, options: { value: string; label: string; disabled?: boolean }[]) =>
 <FormField label={label}><Picker label={label} value={String(form[key] ?? '')} options={options} disabled={busy}
       onChange={value => patch(key, value)}/></FormField>;
-  function scopePicker(value: { scope?: 'global' | 'project'; projectIds?: string[] }, change: (next: { scope: 'global' | 'project'; projectIds: string[] }) => void) {
-    const values = value.scope === 'global' ? ['global'] : value.projectIds ?? [];
-    return <FormField label="应用范围"><ScopePicker projects={projects} values={values} variant="i-mcp-scopes" disabled={busy}
-      onChange={selected => change({ scope: selected.includes('global') ? 'global' : 'project', projectIds: selected.filter(id => id !== 'global') })}/></FormField>;
+  function scopePicker(value: ScopeValue, change: (next: { scope: 'global' | 'project'; projectIds: string[] }) => void) {
+    return <FormField label="应用范围"><ScopePicker projects={projects} values={toScopeValues(value)} variant="i-mcp-scopes" disabled={busy}
+      onChange={selected => change(toScope(selected))}/></FormField>;
   }
   function saveForm() {
     try {
-      const { credentialValues, ...config } = form;
+      const { credentialValues, timeoutText, ...config } = form;
+      // 数字字段保留字符串草稿：清空不该被当成 0，也不该让「05」这类输入被悄悄折叠。
+      const timeout = Number(timeoutText);
+      if (!timeoutText.trim() || !Number.isInteger(timeout) || timeout < 1 || timeout > 300) { setError(t('连接超时需为 1–300 的整数')); return; }
+      config.timeoutSeconds = timeout;
       const input = { ...config, args: JSON.parse(form.argsText), env: JSON.parse(form.envText), headers: JSON.parse(form.headersText) };
       if (!input.env || typeof input.env !== 'object' || Array.isArray(input.env)
         || !input.headers || typeof input.headers !== 'object' || Array.isArray(input.headers) || !Array.isArray(input.args)) throw new Error();
@@ -307,8 +312,7 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
   async function exportItem() {
     await act('export', { id: item?.id }, value => {
       const result = value as { content: string; filename: string };
-      const url = URL.createObjectURL(new Blob([result.content], { type: 'application/json' }));
-      const link = document.createElement('a'); link.href = url; link.download = result.filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      downloadBlob(new Blob([result.content], { type: 'application/json' }), result.filename);
     });
   }
   const sourceRename = (source: McpSource) => {
@@ -327,8 +331,7 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
           e.preventDefault();
           const keys: Tab[] = ['connections', 'catalog'];
-          const index = e.key === 'Home' ? 0 : e.key === 'End' ? 1 : (keys.indexOf(tab) + 1) % 2;
-          const next = keys[index]!; setTab(next); document.getElementById(`integration-mcp-tab-${next}`)?.focus();
+          const next = keys[nextTabIndex(e.key, keys.indexOf(tab), keys.length)]!; setTab(next); document.getElementById(`integration-mcp-tab-${next}`)?.focus();
         }}>
           {([['connections', '我的连接'], ['catalog', '连接器市场']] as const).map(([key, label]) =>
             <button type="button" role="tab" id={`integration-mcp-tab-${key}`} aria-controls="integration-mcp-page"
@@ -399,7 +402,8 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
       <div className="settings-layout"><section className="integration-detail"><div className="integration-detail-layout" data-single={!manualCreate}>
       {manualCreate && <nav className="integration-detail-nav" role="tablist" aria-label="添加方式" onKeyDown={e => {
         if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-        e.preventDefault(); const next = e.key === 'Home' ? 'create' : e.key === 'End' ? 'import' : addTab === 'create' ? 'import' : 'create';
+        e.preventDefault(); const addKeys = ['create', 'import'] as const;
+        const next = addKeys[nextTabIndex(e.key, addKeys.indexOf(addTab), addKeys.length)]!;
         chooseAddTab(next); document.getElementById(`integration-mcp-add-${next}`)?.focus();
       }}>
         {(['create', 'import'] as const).map(key => <button type="button" role="tab" id={`integration-mcp-add-${key}`}
@@ -460,7 +464,7 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
                 } }]}/>}</div></article>)}
             {!snapshot?.sources.length && <p className="integration-help">暂无数据源</p>}
           </section></>}
-        {(detail.kind === 'edit' || detail.kind === 'create' && addTab === 'create') && <form id="integration-mcp-edit-form"
+        {((detail.kind === 'edit' && !!item) || detail.kind === 'create' && addTab === 'create') && <form id="integration-mcp-edit-form"
           onSubmit={e => { e.preventDefault(); saveForm(); }} onKeyDown={preventImeSubmit}>
           <div className="integration-form-grid">
             {formSection('基本设置', <>
@@ -499,7 +503,8 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
             </>)}
             {advancedSection(<>
             {marketCreate && picker('注入方式', 'injection', [{ value: 'always', label: '始终注入' }, { value: 'session', label: '按会话启用（宿主不支持）', disabled: true }])}
-            {field('连接超时（秒）', 'timeoutSeconds', 'number')}
+            <FormField label="连接超时（秒）"><input aria-label="连接超时（秒）" inputMode="numeric" value={form.timeoutText} disabled={busy}
+              onChange={e => patch('timeoutText', e.target.value)}/></FormField>
             <label className="setting-row integration-span"><strong>断线自动重连</strong><input type="checkbox" className="switch" role="switch" aria-label="断线自动重连"
               checked={form.autoReconnect ?? true} onChange={e => patch('autoReconnect', e.target.checked)} disabled={busy}/></label>
             {form.transport === 'http' && <div className="integration-span">{jsonField('请求头（JSON 对象）', 'headersText')}</div>}
@@ -557,7 +562,7 @@ export function McpPanel({ api, projects, onClose, memory, navigation, notify, e
       </div><footer className="dialog-footer">
         {detail.kind === 'sources' && <button type="submit" form="integration-mcp-source-form" className="primary"
           disabled={busy || !sourceDraft.name?.trim() || !sourceDraft.url?.trim()}><Icon name="plus"/>添加数据源</button>}
-        {(detail.kind === 'edit' || detail.kind === 'create' && addTab === 'create') && <>
+        {((detail.kind === 'edit' && !!item) || detail.kind === 'create' && addTab === 'create') && <>
           {detail.kind === 'edit' && <button type="button" disabled={busy} onClick={back}>取消</button>}
           <button type="submit" form="integration-mcp-edit-form" className="primary" disabled={busy}>{detail.kind === 'edit' ? '保存配置' : form.auth === 'oauth' ? '保存并授权' : '添加连接'}</button></>}
         {detail.kind === 'create' && addTab === 'import' && <button type="button" className="primary"

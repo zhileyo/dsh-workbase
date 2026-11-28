@@ -24,7 +24,7 @@ function fixture() {
   const releases: string[] = [];
   const waits = new Map<string, ReturnType<typeof deferred<string>>>();
   const refs = new Map<string, SidebarReference>();
-  let closeCount = 0, directoryMismatch = false;
+  let closeCount = 0, directoryMismatch = false, directoryFailed = false;
   const controller = new ProjectSidebarController({
     panel,
     candidates: p => [`s-${p.workspaceId}`],
@@ -38,13 +38,14 @@ function fixture() {
       return reference;
     },
     async directory(_reference, p) {
+      if (directoryFailed) return { workspaceId: '', path: '', workingDirectory: undefined, failed: true };
       return { workspaceId: p.workspaceId, path: directoryMismatch ? '/other-project' : p.path, workingDirectory: p.path };
     },
     closeRightbar() { closeCount++; },
   });
   controller.setAvailable(true);
   return { controller, panel, creates, releases, waits, refs,
-    mismatch() { directoryMismatch = true; }, get closeCount() { return closeCount; } };
+    mismatch() { directoryMismatch = true; }, failRead() { directoryFailed = true; }, get closeCount() { return closeCount; } };
 }
 const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };
 
@@ -262,6 +263,18 @@ test('目录核验失败不挂载目标、不回落旧会话，释放引用并�
   f.controller.dispose();
 });
 
+test('目录读取失败按可重试报告，不冒充目录与项目不一致', async () => {
+  const f = fixture();
+  f.failRead();
+  f.controller.select(project('a'));
+  f.controller.open();
+  await flush();
+  assert.equal(f.controller.commandTarget.getSnapshot(), undefined);
+  assert.match(f.controller.getSnapshot().error, /读取失败/);
+  assert.doesNotMatch(f.controller.getSnapshot().error, /不一致/);
+  assert.deepEqual(f.releases, ['s-w-a'], '读失败也要释放引用，便于用户重试');
+  f.controller.dispose();
+});
 test('目录不可用、官方席位未就绪不创建；同一项目刷新不重复创建', async () => {
   const f = fixture();
   f.controller.select({ ...project('a'), available: false });
@@ -417,4 +430,29 @@ test('连接失败保留可重试入口，再次点击只重试当前项目', as
   assert.deepEqual(f.creates, ['w-a', 'w-a']);
   assert.equal(f.controller.commandTarget.getSnapshot(), 's-w-a');
   f.controller.dispose();
+});
+test('目标读取不在每次渲染时重算候选集合，只在候选变化时更新', async () => {
+  const choices = observable(['s-w-p']), panel = observable<string | null>('dsh-workbase');
+  let candidateReads = 0;
+  const controller = new ProjectSidebarController({
+    panel,
+    candidates: (p: { workspaceId: string }) => { candidateReads += 1; return [`s-${p.workspaceId}`]; },
+    subscribeCandidates: choices.subscribe,
+    retain(id: string) {
+      return { sessionId: id, ready: Promise.resolve(), binding: {}, release() {} } as any;
+    },
+    async directory(_reference: unknown, p: { workspaceId: string; path: string }) {
+      return { workspaceId: p.workspaceId, path: p.path, workingDirectory: p.path };
+    },
+    closeRightbar() {},
+  } as any);
+  const target = project('p');
+  controller.setAvailable(true);
+  controller.select(target);
+  controller.open();
+  await flush();
+  assert.equal(controller.target.getSnapshot().sessionId, 's-w-p');
+  candidateReads = 0;
+  for (let index = 0; index < 20; index += 1) controller.target.getSnapshot();
+  assert.equal(candidateReads, 0);
 });

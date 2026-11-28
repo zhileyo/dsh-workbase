@@ -4,7 +4,8 @@ import path from 'node:path';
 import type { State } from '../shared/model.js';
 import { stateSchema } from '../shared/model.js';
 import { backupManifestSchema, type BackupManifest } from '../shared/backup.js';
-import { restoreInputSchema, type RestorePort, type RestoreStatus, type RestoreArchive } from '../shared/restore.js';
+import { restoreInputSchema, isRestorePhase, restoreActivePhases, restoreSettledPhases,
+  type RestorePort, type RestoreStatus, type RestoreArchive } from '../shared/restore.js';
 import type { BackupManager } from './backup.js';
 import { privateDirectory, readIdentity, ensureIdentity, inspectArchive, sameFiles } from './restore-archive.js';
 import { jsonFile, safeDestination } from './backup-files.js';
@@ -34,10 +35,10 @@ export class RestoreManager implements RestorePort {
     this.loaded ??= (async () => {
       try {
         const data = JSON.parse(await readFile(path.join(this.options.home, 'backup', 'last-restore.json'), 'utf8')) as RestoreStatus;
-        if (!data || typeof data.message !== 'string') return;
-        if (['checking', 'ready', 'restoring'].includes(data.phase))
+        if (!data || typeof data.message !== 'string' || !isRestorePhase(data.phase)) return;
+        if (restoreActivePhases.has(data.phase))
           this.value = { phase: 'interrupted', message: '上次恢复流程随宿主退出中断，请重新预览；已保留的回滚副本仍可使用', ...(data.result ? { result: data.result } : {}) };
-        else if (['completed', 'failed', 'interrupted'].includes(data.phase)) this.value = { ...data, preview: undefined };
+        else if (restoreSettledPhases.has(data.phase)) this.value = { ...data, preview: undefined };
       } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
     })();
     try { await this.loaded; } catch (e) { this.loaded = undefined; throw e; }

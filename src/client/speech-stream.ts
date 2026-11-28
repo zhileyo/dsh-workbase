@@ -1,4 +1,5 @@
 import type { Command } from '../shared/commands.js';
+import { speechBilledCharacters, SPEECH_BILLED_CHARACTERS, SPEECH_TEXT_CHARACTERS } from '../shared/speech.js';
 import { SpeechPcm } from './speech-pcm.js';
 type Send = (command: Command, signal?: AbortSignal) => Promise<unknown>;
 /** HTTP只读音频，owner RPC顺序写文字；取消不重连、不重发。 */
@@ -24,8 +25,7 @@ export class ClientSpeechStream {
   push(text: string, finish = false) {
     if (this.finished || this.controller.signal.aborted) return;
     this.total += text;
-    let count = 0; for (const char of this.total) count += /\p{Script=Han}/u.test(char) ? 2 : 1;
-    if (count > 10000 || this.total.length > 12000) {
+    if (speechBilledCharacters(this.total) > SPEECH_BILLED_CHARACTERS || this.total.length > SPEECH_TEXT_CHARACTERS) {
       this.fail(new Error('回复超过官方 10000 计费字符限制，已停止播报')); return;
     }
     this.finished = finish;

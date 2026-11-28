@@ -1,4 +1,4 @@
-type Entry = { readonly type: string; readonly event: { readonly type: string; readonly seq: number; readonly data: unknown } };
+import { assistantMessageText, SPEECH_TEXT_CHARACTERS, type SpeechEntry } from '../shared/speech.js';
 export type SpeechAction = { kind: 'text'; attempt: string; text: string }
   | { kind: 'remember'; attempt: string; text: string }
   | { kind: 'finish'; attempt: string } | { kind: 'cancel'; attempt: string; message?: string };
@@ -11,7 +11,7 @@ export class SpeechStreamTurns {
   private muted = new Set<string>();
   private latest = -Infinity;
   constructor(private readonly filterMarkdown = true) {}
-  seed(entries: readonly Entry[]) {
+  seed(entries: readonly SpeechEntry[]) {
     if (this.current) this.muted.add(this.current.id);
     this.current = undefined;
     for (const entry of entries) {
@@ -29,7 +29,7 @@ export class SpeechStreamTurns {
   settle(attempt: string, hasEntry: boolean): SpeechAction[] {
     return !hasEntry && this.current?.id === attempt && !this.current.retired ? this.cancel() : [];
   }
-  accept(entry: Entry): SpeechAction[] {
+  accept(entry: SpeechEntry): SpeechAction[] {
     if (entry.event.seq <= this.latest) return [];
     this.latest = entry.event.seq;
     const data = entry.event.data as { attemptId?: string; turn?: number; step?: number; interrupted?: boolean;
@@ -45,7 +45,7 @@ export class SpeechStreamTurns {
       if (this.current && data.turn === this.current.turn && entry.event.type === 'assistant/message' &&
         data.message && !data.message.content.some(block => block.type === 'tool-call')) {
         this.current.committed = true;
-        const text = data.message.content.filter(block => block.type === 'text').map(block => block.text ?? '').join('\n').trim();
+        const text = assistantMessageText(undefined, data.message.content);
         if (text) return [{ kind: 'remember', attempt: this.current.id, text }];
       }
       return [];
@@ -78,7 +78,7 @@ export class SpeechStreamTurns {
     }
     if (addition) {
       state.pending += addition;
-      if ([...state.blocks.values()].reduce((sum, text) => sum + text.length, 0) > 12000)
+      if ([...state.blocks.values()].reduce((sum, text) => sum + text.length, 0) > SPEECH_TEXT_CHARACTERS)
         return [...actions, ...this.cancel('回复过长，已停止播报')];
       actions.push(...this.flush(false));
     }

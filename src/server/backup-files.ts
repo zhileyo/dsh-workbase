@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { digest } from './backup-archive.js';
+import type { BackupCoverage } from '../shared/backup.js';
 
 const exec = promisify(execFile);
 export interface BackupSource {
@@ -14,6 +15,15 @@ export interface BackupSource {
   guarantee?: 'verified' | 'observation';
   export?(destination: string, signal: AbortSignal): Promise<string>;
 }
+/** 备份范围的导出策略：locations.json 与覆盖表共用同一份推导，不允许各处手写结论。 */
+export const sourceStrategy = (source: BackupSource): 'unsupported' | 'api' | 'observation' =>
+  source.unsupported ? 'unsupported' : source.export ? 'api' : 'observation';
+/** 覆盖表状态：与 sourceStrategy 同源；export 范围可带 guarantee，观察副本固定 observation。 */
+export const sourceCoverageStatus = (source: BackupSource): BackupCoverage['status'] => {
+  if (source.unsupported) return 'unsupported';
+  if (source.export) return source.guarantee ?? 'verified';
+  return 'observation';
+};
 export interface BackupLink { path: string; target: string; type: 'symlink' | 'hardlink' }
 export const within = (parent: string, child: string) => {
   const rel = path.relative(parent, child);
@@ -108,6 +118,8 @@ export async function copyObserved(source: string, destination: string, signal: 
       } else {
         // FileHandle 流固定已打开 inode；逐次读取不会把整份历史日志装进内存。
         const output = await open(to, 'wx', 0o600);
+        // 复制时顺手算源摘要：同一份字节不再为校验多读一遍文件。
+        const sourceHash = createHash('sha256');
         try {
           const buffer = Buffer.alloc(256 * 1024);
           let offset = 0;
@@ -115,18 +127,12 @@ export async function copyObserved(source: string, destination: string, signal: 
             signal.throwIfAborted();
             const { bytesRead } = await fd.read(buffer, 0, buffer.length, offset);
             if (!bytesRead) break;
+            sourceHash.update(buffer.subarray(0, bytesRead));
             let written = 0;
             while (written < bytesRead) written += (await output.write(buffer, written, bytesRead - written, offset + written)).bytesWritten;
             offset += bytesRead;
           }
         } finally { await output.close(); }
-        const sourceHash = createHash('sha256'), buffer = Buffer.alloc(256 * 1024);
-        for (let offset = 0;;) {
-          signal.throwIfAborted();
-          const result = await fd.read(buffer, 0, buffer.length, offset);
-          if (!result.bytesRead) break;
-          sourceHash.update(buffer.subarray(0, result.bytesRead)); offset += result.bytesRead;
-        }
         const after = await lstat(from), read = await fd.stat();
         if (before.ino !== after.ino || before.size !== read.size || before.mtimeMs !== read.mtimeMs
           || before.ctimeMs !== read.ctimeMs || sourceHash.digest('hex') !== (await digest(to, signal)).sha256)

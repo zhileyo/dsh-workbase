@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+/** 系统分组名不占自定义分组身份：同名自定义分组会被拒绝，OPML 导入则归入默认分组。 */
+export const RSS_RESERVED_GROUP_NAMES = ['默认分组', '未分组', '全部订阅'] as const;
+export function rssGroupNameReserved(name: string): boolean {
+  return (RSS_RESERVED_GROUP_NAMES as readonly string[]).includes(name);
+}
+
 export const RSS_LIMITS = {
   responseBytes: 2 * 1024 * 1024, cacheBytes: 8 * 1024 * 1024,
   articles: 2000, perFeed: 200, feeds: 500, groups: 100,

@@ -9,6 +9,7 @@ import { Modal } from '../src/client/ui.js';
 import { UiMemory } from '../src/client/api.js';
 import { defaultProjectInitialization } from '../src/shared/project-initialization.js';
 import { defaultProjectRules } from '../src/shared/project-rules.js';
+import { DEEPSEEK_TTS_ENDPOINT } from '../src/shared/speech.js';
 
 const nodes = (node: any): any[] => !node || typeof node !== 'object' ? []
   : Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children), ...nodes(node.props?.main), ...nodes(node.props?.detail)];
@@ -85,6 +86,48 @@ test('迁移确认只提交一次，核实成功回执才刷新，未知结果�
   }
 });
 
+test('迁移确认失败可重新预览并再次提交，未确认结果仍不可重复提交', async () => {
+  const { project } = fixture(), target = { ...project, projectId: 'target', workspaceId: 'target-w', title: '目标' };
+  const identity = (p: Project) => ({ projectId: p.projectId, workspaceId: p.workspaceId, title: p.title, path: p.path });
+  const counts = { active: 1, archived: 0, pending: 2, done: 0 };
+  let previews = 0, writes = 0, closed = 0;
+  const api = { call(command: any) {
+    if (command.op === 'migration-preview-project') {
+      previews++;
+      return Promise.resolve({ token: `token-${previews}`, kind: 'merge', revision: 0,
+        expiresAt: Date.now() + 600000, source: { ...identity(project), counts }, target: { ...identity(target), counts },
+        executable: true, blockers: [] });
+    }
+    if (command.op === 'migration-discard') return Promise.resolve(null);
+    writes++;
+    return writes === 1 ? Promise.reject(new Error('目标项目目录已被外部修改，请重新预览'))
+      : Promise.resolve({ id: 'record', kind: 'merge', status: 'completed', source: identity(project),
+        target: identity(target), completedAt: 1, undoUntil: 2, revertedAt: null, entities: [] });
+  } };
+  const h = await harness('src/client/MigrationPanel.tsx', 'MigrationPanel', {
+    api, project, projects: [project, target], onClose() { closed++; }, async onMigrated() {},
+  }, { effects: true });
+  h.render(); h.commitLayout();
+  h.render().find(n => n.props.label === '迁移到项目')!.props.onChange('target');
+  h.render(); h.commitLayout(); await flush();
+  const submit = () => h.render().find(n => n.type === 'form')!.props.onSubmit({ preventDefault() {} });
+  const button = () => h.render().find(n => n.type === 'button' && n.props.children === '确认迁移')!;
+  const retry = () => h.render().find(n => n.type === 'button' && n.props.children === '重试');
+  assert.equal(button().props.disabled, false);
+  submit(); await flush();
+  assert.equal(writes, 1);
+  assert.ok(h.render().some(n => String(n.props.children ?? '').includes('目标项目目录已被外部修改')),
+    '失败原因必须写回内联告警');
+  assert.ok(retry(), '明确失败后必须保留重试入口');
+  assert.equal(button().props.disabled, true, '旧预览已作废，确认入口先禁用');
+  retry()!.props.onClick(); h.render(); h.commitLayout(); await flush();
+  assert.equal(previews, 2, '重试必须重新取预览');
+  assert.equal(button().props.disabled, false, '新预览可用后确认入口恢复');
+  submit(); await flush();
+  assert.equal(writes, 2, '重新预览后必须能再次提交');
+  assert.equal(closed, 1);
+  h.unmount();
+});
 test('迁移预览失败保留选择可重试，版本变化和目标归档立即禁用旧预览确认', async () => {
   const { project } = fixture(), target = { ...project, projectId: 'target', title: '目标' };
   let reads = 0;
@@ -274,6 +317,35 @@ test('宿主未确认的新读数不撤下已经确认的数字', async () => {
   h.unmount();
 });
 
+test('已确认读数在读取失败时保留原值并标记过期，成功读取后清除标记', async () => {
+  const requests: { resolve(value: any): void; reject(error: any): void }[] = [];
+  let refresh: (() => void) | undefined;
+  const api = {
+    call() { return new Promise((resolve, reject) => requests.push({ resolve, reject })); },
+    subscribe(listener: () => void) { refresh = listener; return () => {}; },
+  };
+  const enabled = { skills: true, mcp: false, rss: false };
+  const h = await harness('src/client/extension-summary.ts', 'useExtensionSummaries', {}, {
+    effects: true, setInterval() { return 1; }, clearInterval() {},
+    setTimeout() { return 1; }, clearTimeout() {},
+  });
+  h.invoke(api, enabled, 7); h.commitLayout();
+  requests[0]!.resolve({ count: 7, detail: '项目 1 · 异常 0', errors: 0 }); await flush();
+  assert.notEqual(h.invoke(api, enabled, 7).skills.stale, true, '成功读取不算过期');
+  refresh!();
+  requests[1]!.reject(new Error('读取失败')); await flush();
+  const failed = h.invoke(api, enabled, 7).skills;
+  assert.equal(failed.status, 'ready', '保留已确认读数');
+  assert.equal(failed.value.count, 7);
+  assert.equal(failed.stale, true, '读失败要标记过期，供首页显示异常色');
+  assert.notEqual(failed.status, 'error', '有已确认读数时不退回「—」');
+  refresh!();
+  requests[2]!.resolve({ count: 9, detail: '项目 2 · 异常 0', errors: 0 }); await flush();
+  const recovered = h.invoke(api, enabled, 7).skills;
+  assert.equal(recovered.value.count, 9);
+  assert.notEqual(recovered.stale, true, '成功读取后清除过期标记');
+  h.unmount();
+});
 test('RSS统计入口清除旧筛选，无局部时间Picker且不按统计天数裁剪文章', async () => {
   const api = { call: async () => ({}) }, memory = new UiMemory();
   memory.extensions.rss = { tab: 'catalog', group: 'old-group', search: '旧搜索', scroll: 0 };
@@ -742,10 +814,12 @@ test('市场来源仅提供内置开关，失败保留原值，成功即时保�
 });
 
 // 直接执行真实组件的事件处理；不把回调断言当作浏览器视觉或焦点验收。
-async function harness(entry: string, component: string, props: any, runtime: { setTimeout?: any; clearTimeout?: any; setInterval?: any; clearInterval?: any; effects?: boolean; portal?: boolean } = {}) {
+async function harness(entry: string, component: string, props: any, runtime: { setTimeout?: any; clearTimeout?: any; setInterval?: any; clearInterval?: any; effects?: boolean; portal?: boolean; modules?: Record<string, any>; footer?: string } = {}) {
   const output = await build({ entryPoints: [entry], bundle: true, platform: 'node', format: 'cjs',
-    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*'],
-    ...(component === 'RssEditor' ? { footer: { js: 'module.exports.RssEditor = RssEditor;' } } : {}) });
+    jsx: 'automatic', write: false, external: ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/*', '@xterm/xterm', '@xterm/addon-fit', '@xterm/xterm/css/xterm.css'],
+    loader: { '.css': 'text' },
+    ...(component === 'RssEditor' ? { footer: { js: 'module.exports.RssEditor = RssEditor;' } }
+      : runtime.footer ? { footer: { js: runtime.footer } } : {}) });
   const require = createRequire(import.meta.url), react = require('react'), hooks: any[] = [];
   const layoutEffects: { effect: () => any; deps?: unknown[]; cleanup?: () => void; pending: boolean }[] = [];
   let cursor = 0;
@@ -761,9 +835,10 @@ async function harness(entry: string, component: string, props: any, runtime: { 
     document: { activeElement: null, getElementById: () => null },
     window: { setInterval: runtime.setInterval ?? setInterval, clearInterval: runtime.clearInterval ?? clearInterval,
       addEventListener() {}, removeEventListener() {} }, HTMLElement: class {},
+    queueMicrotask: (callback: () => void) => queueMicrotask(callback),
     requestAnimationFrame: (callback: () => void) => callback(),
     cancelAnimationFrame() {},
-    require: (id: string) => id === 'react-dom' && runtime.portal ? { createPortal: (node: any) => node } : id !== 'react' ? require(id) : { ...react,
+    require: (id: string) => runtime.modules?.[id] ?? (id === 'react-dom' && runtime.portal ? { createPortal: (node: any) => node } : id !== 'react' ? require(id) : { ...react,
       useId: () => 'field-error',
       useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
       useEffect(effect: () => any, deps?: unknown[]) { if (runtime.effects) effectHook(effect, deps); },
@@ -782,8 +857,13 @@ async function harness(entry: string, component: string, props: any, runtime: { 
         if (!(i in hooks)) hooks[i] = typeof initial === 'function' ? initial() : initial;
         return [hooks[i], (next: any) => { hooks[i] = typeof next === 'function' ? next(hooks[i]) : next; }];
       },
+      useMemo(factory: () => any, deps?: unknown[]) {
+        const i = cursor++, previous = hooks[i];
+        if (!previous || !deps || deps.some((value, index) => !Object.is(value, previous.deps[index]))) hooks[i] = { value: factory(), deps };
+        return hooks[i].value;
+      },
       useRef(current: unknown) { const i = cursor++; return hooks[i] ??= { current }; },
-    },
+    }),
   });
   return { props, render() { cursor = 0; return nodes(module.exports[component]!(props)); },
     invoke(...args: any[]) { cursor = 0; return (module.exports[component] as any)(...args); },
@@ -885,17 +965,23 @@ test('C16：MCP合法文件未读完时选择非法文件，不遗留busy或覆�
 test('C05/C16：预览完成不释放另一文件读取busy，重复当前页签不取消预览', async () => {
   const previews: { resolve(value: any): void; signal: AbortSignal }[] = [];
   let resolveFile!: (text: string) => void;
+  const timers = new Map<number, () => void>(); let timerId = 0;
   const api = { call: (command: any, signal: AbortSignal) => command.method === 'previewImport'
     ? new Promise(resolve => previews.push({ resolve, signal }))
     : Promise.resolve({ connections: [], sources: [], foreign: [], capabilities: {}, defaults: {} }) };
   const h = await harness('src/client/McpPanel.tsx', 'McpPanel', { api, projects: [], embedded: true, onClose() {} },
-    { effects: true, setInterval() { return 1; }, clearInterval() {} });
+    { effects: true, setInterval() { return 1; }, clearInterval() {},
+      setTimeout(callback: () => void) { timers.set(++timerId, callback); return timerId; },
+      clearTimeout(id: number) { timers.delete(id); } });
+  // 预览按输入防抖：驱动一次定时器把待发请求真正发出去。
+  const tick = async () => { const pending = [...timers.values()]; timers.clear(); pending.forEach(callback => callback()); await flush(); };
   h.render(); h.commitLayout(); await flush();
   h.render().find(n => n.type === 'button' && n.props.children?.includes?.('添加连接'))!.props.onClick();
   h.render().find(n => n.props.id === 'integration-mcp-add-import')!.props.onClick();
   h.render().find(n => n.props['aria-label'] === 'JSON 配置')!.props.onChange({ target: { value: '{}' } });
   h.render(); h.commitLayout();
   h.render().find(n => n.props.id === 'integration-mcp-add-import')!.props.onClick();
+  await tick();
   assert.equal(previews[0]!.signal.aborted, false);
   h.render().find(n => n.type === 'input' && n.props.type === 'file')!.props.onChange({ target: {
     files: [{ name: 'ok.json', size: 1, text: () => new Promise(resolve => { resolveFile = resolve; }) }], value: '',
@@ -904,7 +990,7 @@ test('C05/C16：预览完成不释放另一文件读取busy，重复当前页签
   const busy = () => h.render().find(n => n.type?.name === 'ModalFlow')!.props.detail.props.busy;
   assert.equal(busy(), true, '文件读取仍在进行');
   resolveFile('{"new":true}'); await flush();
-  h.render(); h.commitLayout();
+  h.render(); h.commitLayout(); await tick();
   assert.equal(busy(), true, '新内容启动新预览');
   previews[1]!.resolve([]); await flush();
   assert.equal(busy(), false);
@@ -2121,4 +2207,459 @@ test('全局搜索输入法 Enter 不打开结果，离开区域关闭，组合�
   input().props.onFocus();
   root().props.onBlur({ currentTarget: { contains: () => false }, relatedTarget: null });
   assert.equal(input().props['aria-expanded'], false);
+});
+/** 终端设置只用到少数宿主原子，测试用最小替身把焦点留在组件自身的编排上。 */
+function terminalPrimitives() {
+  const atoms = {
+    Button: (props: any) => createElement('button', props, props.children),
+    Input: (props: any) => createElement('input', props),
+    Menu: (props: any) => createElement('div', { 'data-menu': '' }, props.anchor, props.children),
+    IconChevronDownOutlineRegular: () => null,
+    SettingsValueField: (props: any) => createElement('input', props),
+    settingsTextField: (field: string) => ({ field, format: (value: unknown) => String(value ?? ''), parse: () => undefined }),
+  };
+  class SettingsFormModel {
+    readonly shell: () => any;
+    constructor() {
+      this.shell = () => ({ available: true, writable: true, dirty: false, invalid: false, saving: false, failed: false });
+    }
+    bind(project: () => unknown) { return { getSnapshot: project, subscribe: () => () => {} }; }
+    field() { return { text: '', overridden: false, invalid: false }; }
+    actions() { return { edit() {}, resetField() {}, save: async () => {}, discard() {} }; }
+    dispose() {}
+  }
+  return { ...atoms, SettingsFormModel,
+    SettingsForm: (props: any) => createElement('div', { onSave: props.onSave, onDiscard: props.onDiscard }, props.children) };
+}
+
+test('终端设置放弃修改后保存与下载仍可用', async () => {
+  const listeners = new Set<() => void>();
+  const notify = () => { for (const listener of listeners) listener(); };
+  let saves = 0, downloads = 0;
+  const officialState: any = { available: true, writable: true, dirty: true, invalid: false, saving: false, failed: false,
+    timeoutMs: { text: '30000', overridden: false, invalid: false },
+    maxOutputBytes: { text: '1048576', overridden: false, invalid: false } };
+  const official = {
+    hooks: { shellCard: { getSnapshot: () => officialState,
+      subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } } },
+    edit() {}, resetField() {},
+    discard() { notify(); },
+    save() {
+      saves++; officialState.saving = true; notify();
+      void Promise.resolve().then(() => { officialState.saving = false; officialState.dirty = false; notify(); });
+    },
+  };
+  const store = (value: unknown) => ({ getSnapshot: () => value, subscribe: () => () => {} });
+  const h = await harness('src/client/TerminalSettings.tsx', 'TerminalSettings', {
+    theme: { getSnapshot: () => ({ status: 'ready', value: { terminalFontFamily: '', terminalFontSize: 13 },
+      base: {}, user: {}, writable: true, revision: 1 }), subscribe: () => () => {}, mutate: async () => true },
+    terminal: store(undefined), sessions: store({ byId: {} }), official,
+    officialText: (key: string) => key, isLive: () => true,
+    palette: { store: store(undefined), supported: store(false),
+      save: async () => {}, download: async () => { downloads++; return { catppuccin: {}, sourceRevision: 'r' }; } },
+  }, { effects: true, modules: { '@deepseek-ai/dsh-client-ui-primitives': terminalPrimitives() } });
+  h.commitLayout();
+  const form = () => h.render().find(n => n.props.onSave && n.props.onDiscard)!;
+  form().props.onSave();
+  await flush();
+  assert.equal(saves, 1, '首次保存应发出');
+  assert.match(JSON.stringify(h.render()), /设置已保存/);
+  form().props.onDiscard();
+  officialState.dirty = true; notify();
+  h.commitLayout();
+  form().props.onSave();
+  await flush();
+  assert.equal(saves, 2, '放弃修改后再次编辑并保存必须仍然发出');
+  assert.match(JSON.stringify(h.render()), /设置已保存/);
+});
+
+test('设置保存成功后关闭抽屉，父级 busy 未回落也不吞回执', async () => {
+  const preferences = initialState().preferences;
+  const snapshot = { preferences, revision: 0, syncedAt: 0, projects: [], conflicts: [], sessionMarks: {} };
+  let closed = 0, saved = 0, h: any;
+  const props: any = { snapshot, busy: false, preview: () => {}, save: async () => {
+    saved++;
+    // 真实接线里父级在写入期间 setBusy(true)，回执到达时子组件看到的是这一帧的 busy。
+    props.busy = true; h.render();
+    return true;
+  }, onClose: () => { closed++; }, pickDirectory: async () => null };
+  h = await harness('src/client/Settings.tsx', 'Settings', props, { effects: true });
+  h.render(); h.commitLayout();
+  h.render().find((n: any) => n.type === 'form')!.props.onSubmit({ preventDefault() {} });
+  await flush(); await flush();
+  assert.equal(saved, 1, '应提交一次设置');
+  assert.equal(closed, 1, '保存成功必须关闭抽屉');
+  h.unmount();
+});
+test('MCP 导入预览按输入合并，连续输入只发一次全文预览请求', async () => {
+  const timers = new Map<number, { callback: () => void; delay: number }>();
+  let timerId = 0;
+  const previews: string[] = [];
+  const api = { call: async (command: any) => command.method === 'previewImport'
+    ? (previews.push(command.input.text), [])
+    : { connections: [], sources: [], foreign: [], capabilities: {}, defaults: {} } };
+  const h = await harness('src/client/McpPanel.tsx', 'McpPanel', { api, projects: [], embedded: true, onClose() {} }, {
+    effects: true, setInterval() { return 1; }, clearInterval() {},
+    setTimeout(callback: () => void, delay: number) { timers.set(++timerId, { callback, delay }); return timerId; },
+    clearTimeout(id: number) { timers.delete(id); },
+  });
+  h.render(); h.commitLayout(); await flush();
+  h.render().find(n => n.type === 'button' && n.props.children?.includes?.('添加连接'))!.props.onClick();
+  h.render().find(n => n.props.id === 'integration-mcp-add-import')!.props.onClick();
+  const text = () => h.render().find(n => n.props['aria-label'] === 'JSON 配置')!;
+  for (const value of ['{', '{"a"', '{"a":1', '{"a":1}', '{"a":1} ']) {
+    text().props.onChange({ target: { value } });
+    h.render(); h.commitLayout(); await flush();
+  }
+  assert.equal(previews.length, 0);
+  for (const timer of [...timers.values()]) timer.callback();
+  timers.clear();
+  await flush();
+  assert.equal(previews.length, 1);
+  assert.equal(previews[0], '{"a":1} ');
+  h.unmount();
+});
+test('MCP 编辑态连接被移除后不再显示可提交表单', async () => {
+  const api = {};
+  const h = await harness('src/client/McpPanel.tsx', 'McpPanel', { api, projects: [], embedded: true, onClose() {} });
+  const row = { id: 'm', name: '改名服务', transport: 'http', url: 'https://example.org/mcp', state: 'connected', enabled: true,
+    description: '', timeoutSeconds: 30, autoReconnect: true, args: [], env: {}, headers: {}, tools: [], credentialRefs: [] };
+  Object.assign(row, { scope: 'global', projectIds: [] });
+  const full = { connections: [row], sources: [], foreign: [], capabilities: {}, defaults: {} };
+  h.seedPanelSnapshot(3, api, 'mcp', full);
+  h.render().find(n => n.type === 'button' && n.props.children?.includes?.('改名服务'))!.props.onClick();
+  h.render().find(n => n.type === 'button' && n.props.children === '编辑配置')!.props.onClick();
+  assert.ok(h.render().some(n => n.props?.id === 'integration-mcp-edit-form'));
+  h.seedPanelSnapshot(3, api, 'mcp', { ...full, connections: [] });
+  const tree = h.render();
+  assert.equal(tree.some(n => n.props?.id === 'integration-mcp-edit-form'), false, '失效详情不再渲染表单');
+  assert.equal(tree.some(n => n.type === 'button' && n.props.children === '保存配置'), false, '失效详情不再提供提交入口');
+  assert.ok(tree.some(n => n.props?.role === 'status' && n.props.children === '连接已经移除，请返回列表。'));
+});
+test('MCP 连接超时字段保留字符串草稿，清空不变成 0 也不提交非法值', async () => {
+  const calls: any[] = [];
+  const api = { call: async (command: any) => { if (command.method === 'save') calls.push(command.input); return { connections: [], sources: [], foreign: [], capabilities: {}, defaults: {} }; } };
+  const h = await harness('src/client/McpPanel.tsx', 'McpPanel', { api, projects: [], embedded: true, onClose() {} }, { setInterval() { return 1; }, clearInterval() {} });
+  h.render().find(n => n.type === 'button' && n.props.children?.includes?.('添加连接'))!.props.onClick();
+  const timeout = () => h.render().find(n => n.props['aria-label'] === '连接超时（秒）')!;
+  const submit = () => h.render().find(n => n.props?.id === 'integration-mcp-edit-form')!.props.onSubmit({ preventDefault() {} });
+  timeout().props.onChange({ target: { value: '' } });
+  assert.equal(timeout().props.value, '', '清空后不显示 0');
+  submit(); await flush();
+  assert.equal(calls.length, 0, '空字段不提交');
+  timeout().props.onChange({ target: { value: '0' } });
+  submit(); await flush();
+  assert.equal(calls.length, 0, '0 不提交');
+  timeout().props.onChange({ target: { value: '500' } });
+  submit(); await flush();
+  assert.equal(calls.length, 0, '超范围不提交');
+  assert.ok(h.render().some(n => n.props?.role === 'alert' && String(n.props.children).includes('1–300')));
+  timeout().props.onChange({ target: { value: '45' } });
+  submit(); await flush();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].timeoutSeconds, 45);
+});
+test('备份状态轮询在空闲时退到长间隔，恢复面板不再常驻轮询', async () => {
+  const delays: number[] = [];
+  const timers = new Map<number, { callback: () => void; delay: number }>();
+  let id = 0;
+  const clock = {
+    setTimeout(callback: () => void, delay: number) { timers.set(++id, { callback, delay }); delays.push(delay); return id; },
+    clearTimeout() {}
+  };
+  const api = { call: async (command: any) => command.op === 'restore-status' ? { phase: 'idle', message: '空闲' } : command.op === 'restore-catalog' ? [] : { phase: 'empty', message: '未开始' } };
+  const h = await harness('src/client/BackupSettings.tsx', 'BackupSettings', { tab: 'backup', value: { autoOnStartup: false, directory: '', retentionDays: 7 }, onChange() {}, call: api.call, pickDirectory: async () => null, disabled: false }, { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, effects: true });
+  h.render(); h.commitLayout(); await flush();
+  assert.deepEqual(delays, [15000], '空闲时 BackupSettings 用长间隔');
+  api.call = async (command: any) => command.op === 'restore-status' ? { phase: 'idle', message: '空闲' } : { phase: 'exporting', message: '备份中' };
+  const timers2: number[] = [];
+  const clock2 = { setTimeout(callback: () => void, delay: number) { timers2.push(delay); return 1; }, clearTimeout() {} };
+  const busy = await harness('src/client/BackupSettings.tsx', 'BackupSettings', { tab: 'backup', value: { autoOnStartup: false, directory: '', retentionDays: 7 }, onChange() {}, call: api.call, pickDirectory: async () => null, disabled: false }, { setTimeout: clock2.setTimeout, clearTimeout: clock2.clearTimeout, effects: true });
+  busy.render(); busy.commitLayout(); await flush();
+  assert.equal(timers2.at(-1), 2000, '备份进行中仍用短间隔');
+});
+
+test('恢复状态无变化时不重复回调父级', async () => {
+  const seen: string[] = [];
+  const timers = new Map<number, () => void>();
+  let id = 0;
+  const clock = { setTimeout(callback: () => void) { timers.set(++id, callback); return id; }, clearTimeout() {} };
+  const api = { call: async (command: any) => command.op === 'restore-catalog' ? [] : { phase: 'idle', message: '空闲' } };
+  const h = await harness('src/client/RestoreSettings.tsx', 'RestoreSettings', { call: api.call, disabled: false, pickDirectory: async () => null, onStatusChange: (status: any) => seen.push(status.phase) }, { setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, effects: true });
+  h.render(); h.commitLayout(); await flush();
+  const pending = [...timers.values()]; timers.clear(); pending.forEach(cb => cb()); await flush();
+  assert.deepEqual(seen, ['idle'], '重复读取同一状态不再通知父级');
+});
+test('MCP 面板轮询在请求未回来之前不叠加新请求', async () => {
+  let pending = 0, calls = 0, tick: any = null;
+  const api = { call: async (command: any) => {
+    if (command.method === 'snapshot') { calls++; pending++; return new Promise(() => {}); }
+    return { connections: [], sources: [], foreign: [], capabilities: {}, defaults: {} };
+  } };
+  const h = await harness('src/client/McpPanel.tsx', 'McpPanel', { api, projects: [], embedded: true, onClose() {} },
+    { effects: true, setInterval(callback: any) { tick = callback; return 1; }, clearInterval() {} });
+  h.render(); h.commitLayout(); await flush();
+  assert.equal(calls, 1);
+  tick(); await flush(); tick(); await flush();
+  assert.equal(calls, 1, '上一轮未完成时不再发新请求');
+  assert.equal(pending, 1);
+});
+function officialShellFixture() {
+  let state: any = { available: true, writable: true, dirty: true, invalid: false, saving: false, failed: false,
+    timeoutMs: { text: '30' }, maxOutputBytes: { text: '1000' } };
+  const listeners = new Set<() => void>();
+  const notify = () => { for (const listener of [...listeners]) listener(); };
+  const store = { getSnapshot: () => state, subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; } };
+  const counters = { saves: 0 };
+  return { counters, store, notify,
+    read: () => state, write(next: any) { state = { ...state, ...next }; notify(); },
+    face: { hooks: { shellCard: store }, edit() {}, resetField() {}, discard() {},
+      save() { counters.saves++; state = { ...state, saving: true }; notify(); } } };
+}
+
+test('官方终端外壳保存按 saving→clean 确认，abort 与超时都判未确认', async () => {
+  const h = await harness('src/client/TerminalSettings.tsx', 'saveOfficial', {}, {
+    footer: 'module.exports = { ...module.exports, saveOfficial };',
+    modules: { '@deepseek-ai/dsh-client-ui-primitives': terminalPrimitives() },
+    setTimeout: (callback: () => void) => { pending.push(callback); return pending.length as unknown as ReturnType<typeof setTimeout>; },
+    clearTimeout: () => {},
+  });
+  const pending: (() => void)[] = [];
+
+  const clean = officialShellFixture();
+  const original = clean.face.save;
+  clean.face.save = () => { original(); queueMicrotask(() => clean.write({ saving: false, dirty: false })); };
+  await h.invoke(clean.face, new AbortController().signal);
+  assert.equal(clean.counters.saves, 1);
+  assert.equal(clean.read().dirty, false);
+
+  const aborted = new AbortController();
+  const stuck = officialShellFixture();
+  const pendingSave = h.invoke(stuck.face, aborted.signal);
+  aborted.abort();
+  await assert.rejects(pendingSave, /unconfirmed/);
+
+  const timedOut = officialShellFixture();
+  pending.length = 0;
+  const hanging = h.invoke(timedOut.face, new AbortController().signal);
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(pending.length, 1);
+  pending[0]!();
+  await assert.rejects(hanging, /unconfirmed/);
+});
+
+test('终端着色替换随槽位增删保持对称，候选人缺能力时退回官方组件', async () => {
+  const calls: boolean[] = [], registered: { options: any; disposed: boolean }[] = [], listeners = new Set<() => void>();
+  let entries: any[] = [];
+  const slots = {
+    entries: () => entries,
+    register(options: any) { const row = { options, disposed: false }; registered.push(row); return () => { row.disposed = true; }; },
+    inject: (_slot: string, factory: () => any) => factory(),
+    subscribe: (_slot: string, listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+  };
+  const notify = () => { for (const listener of [...listeners]) listener(); };
+  const readable = <T,>(value: T) => ({ getSnapshot: () => value, subscribe: () => () => {} });
+  const h = await harness('src/client/ColoredTerminal.tsx', 'installColoredTerminal', {}, {
+    footer: 'module.exports = { ...module.exports, installColoredTerminal };',
+    modules: { '@xterm/xterm': { Terminal: class {} }, '@xterm/addon-fit': { FitAddon: class {} }, '@xterm/xterm/css/xterm.css': '',
+      '@deepseek-ai/dsh-client-ui-primitives': terminalPrimitives() },
+  });
+  const stop = h.invoke(slots, readable(undefined), readable(true), (ready: boolean) => calls.push(ready));
+  assert.deepEqual(calls, [false]);
+
+  entries = [{ component: () => null, options: { key: '@deepseek-ai/dsh-client-ui-sidebar-terminal', priority: 0 },
+    locale: 'sidebarTerminal', inject: () => ({}) }];
+  notify();
+  assert.deepEqual(calls, [false, true]);
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0]!.options.priority, -1);
+  assert.equal(registered[0]!.options.locale, 'sidebarTerminal');
+
+  entries = [];
+  notify();
+  assert.deepEqual(calls, [false, true, false]);
+  assert.equal(registered[0]!.disposed, true);
+
+  stop();
+  assert.deepEqual(calls, [false, true, false, false]);
+});
+test('设置保存失败必报错，恢复进行中拒绝提交，保存期间重复提交只发一次请求', async () => {
+  const { snapshot } = fixture(), writes: any[] = [], closed: number[] = [];
+  const h = await harness('src/client/Settings.tsx', 'Settings', {
+    snapshot, busy: false, call: async () => ({ revision: 2 }), memory: new UiMemory(),
+    onClose() { closed.push(1); }, onRestored() {}, onError() {}, onModalState() {}, notify() {}, refresh() {},
+    async save(command: any) { writes.push(command); return outcome.allow; },
+  });
+  const form = () => h.render().find(n => n.props && typeof n.props.onSubmit === 'function' && n.props.className === 'wb-settings');
+  const outcome = { allow: false };
+  const alerts = () => h.render().filter(n => n.props?.role === 'alert').map(n => n.props.children).flat().filter((v: unknown) => typeof v === 'string');
+
+  h.commitLayout();
+  form()!.props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(writes.length, 1);
+  assert.equal(closed.length, 0);
+  assert.ok(alerts().some((text: string) => text.includes('设置未能保存')));
+
+  outcome.allow = true;
+  form()!.props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(writes.length, 2);
+  assert.equal(closed.length, 1);
+});
+
+test('恢复任务进行中时设置保存被拒绝，并给出暂停保存的说明', async () => {
+  const { snapshot } = fixture(), writes: any[] = [];
+  const h = await harness('src/client/Settings.tsx', 'Settings', {
+    snapshot, busy: false, call: async () => ({ revision: 2 }), memory: new UiMemory(),
+    onClose() {}, onRestored() {}, onError() {}, onModalState() {}, notify() {}, refresh() {},
+    async save(command: any) { writes.push(command); return true; },
+  });
+  h.commitLayout();
+  const restore = h.render().find(n => n.props && typeof n.props.onRestoreBusyChange === 'function')!;
+  assert.ok(restore, '恢复面板必须把忙碌状态回传给设置页');
+  restore.props.onRestoreBusyChange(true);
+  h.commitLayout();
+  const form = h.render().find(n => n.props && typeof n.props.onSubmit === 'function' && n.props.className === 'wb-settings')!;
+  form.props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(writes.length, 0);
+  const note = h.render().filter(n => n.props?.className === 'settings-save-note').map(n => n.props.children).join('');
+  assert.match(String(note), /恢复任务进行中/);
+});
+test('保存请求未回来之前重复提交只发一次请求', async () => {
+  const { snapshot } = fixture(), writes: any[] = [], closed: number[] = [];
+  let release: ((value: boolean) => void) | undefined;
+  const h = await harness('src/client/Settings.tsx', 'Settings', {
+    snapshot, busy: false, call: async () => ({ revision: 2 }), memory: new UiMemory(),
+    onClose() { closed.push(1); }, onRestored() {}, onError() {}, onModalState() {}, notify() {}, refresh() {},
+    save(command: any) { writes.push(command); return new Promise<boolean>(resolve => { release = resolve; }); },
+  });
+  h.commitLayout();
+  const form = () => h.render().find(n => n.props && typeof n.props.onSubmit === 'function' && n.props.className === 'wb-settings')!;
+  form().props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  form().props.onSubmit({ preventDefault() {} });
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.equal(writes.length, 1);
+  release!(true);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  assert.equal(closed.length, 1);
+});
+function speechPlaybackStub(overrides: Record<string, unknown> = {}) {
+  const calls: string[] = [];
+  let playing = false, reason: string | undefined, error: string | undefined;
+  const playback = {
+    subscribe: () => () => {}, getSnapshot: () => ({}), status: { config: { enabled: true }, version: 1 },
+    saving: false, get error() { return error; }, get unavailableReason() { return reason; },
+    isSessionPlaying: () => playing, isReplyPlaying: () => playing, releaseSession: () => { calls.push('release'); },
+    reply: () => replyMode,
+    toggleAutomatic: async () => { calls.push('toggle'); },
+    stop: () => { calls.push('stop'); },
+    replayReply: (session: string, message: string) => { calls.push(`replay:${session}:${message}`); },
+    ...overrides,
+  };
+  let replyMode: { id: string } | undefined = { id: 'm1' };
+  return { playback, calls, set(reply?: { id: string }, playing2 = false, why?: string, err?: string) {
+    replyMode = reply; playing = playing2; reason = why; error = err; } };
+}
+
+const speechPrimitives = () => ({ ...terminalPrimitives(), Tooltip: (props: any) => createElement('div', { 'data-tooltip': props.label }, props.children) });
+
+test('语音回复按钮按可用性与播放状态切换标签、拦截不可用点击', async () => {
+  const h = await harness('src/client/SpeechReply.tsx', 'SpeechReply', { sessionId: 's1', messageId: 'm1' }, {
+    modules: { '@deepseek-ai/dsh-client-ui-primitives': speechPrimitives() },
+  });
+  const stub = speechPlaybackStub();
+  h.props.playback = stub.playback;
+  h.props.component = { subscribe: () => () => {}, getSnapshot: () => true };
+  stub.set({ id: 'm1' }, false);
+  const button = () => h.render().find(n => n.props && n.props.className === 'wb-speech-reply');
+  assert.equal(button().props['aria-label'], '重播回复');
+  assert.equal(button().props['aria-pressed'], false);
+  button().props.onClick();
+  assert.deepEqual(stub.calls, ['replay:s1:m1']);
+
+  stub.set({ id: 'm1' }, true);
+  assert.equal(button().props['aria-label'], '停止播报');
+  button().props.onClick();
+  assert.deepEqual(stub.calls, ['replay:s1:m1', 'stop']);
+
+  stub.set({ id: 'm1' }, false, '宿主不支持语音组件');
+  assert.equal(button().props['aria-disabled'], true);
+  assert.equal(button().props['data-unavailable'], true);
+  button().props.onClick();
+  assert.deepEqual(stub.calls, ['replay:s1:m1', 'stop']);
+
+  stub.set(undefined, false);
+  assert.equal(h.render().find(n => n.props && n.props.className === 'wb-speech-reply'), undefined);
+  h.props.component = { subscribe: () => () => {}, getSnapshot: () => false };
+  stub.set({ id: 'm1' }, false);
+  assert.equal(h.render().find(n => n.props && n.props.className === 'wb-speech-reply'), undefined);
+});
+
+test('自动播报按钮跟随组件开关与播放状态，点击即切换', async () => {
+  const stub = speechPlaybackStub();
+  const released: string[] = [];
+  const h = await harness('src/client/SpeechControl.tsx', 'SpeechControl', {
+    sessionId: 's1', playback: stub.playback,
+    sessions: { retain: () => ({ ready: Promise.resolve({ eventSource: {
+      getSnapshot: () => ({ entries: [], revision: 0 }), subscribe: () => () => {} } }), release() { released.push('s1'); } }) },
+    component: { subscribe: () => () => {}, getSnapshot: () => true },
+  }, { effects: true, modules: { '@deepseek-ai/dsh-client-ui-primitives': speechPrimitives() } });
+  const button = () => h.render().find(n => n.props && 'data-workbase-speech-auto' in n.props);
+  stub.set({ id: 'm1' }, true);
+  h.commitLayout();
+  assert.equal(button().props['aria-label'], '关闭自动播报');
+  assert.equal(button().props['aria-pressed'], true);
+  assert.ok(button().props['data-playing'] !== undefined);
+  button().props.onClick();
+  assert.deepEqual(stub.calls, ['toggle']);
+
+  stub.set({ id: 'm1' }, false, undefined, '语音服务未配置');
+  assert.equal(h.render().find(n => n.props && n.props.label === '语音服务未配置')!.props.label, '语音服务未配置');
+
+  h.props.component = { subscribe: () => () => {}, getSnapshot: () => false };
+  assert.equal(h.render().find(n => n.props && 'data-workbase-speech-auto' in n.props), undefined);
+});
+test('播报设置按可用性与服务商切换字段，草稿改动即时落盘', async () => {
+  const changes: string[] = [];
+  const draft: any = {
+    status: { available: true }, error: '', busy: false, key: '', hasSavedKey: false,
+    config: { enabled: false, provider: 'deepseek', endpoint: 'x', voice: 'stella', model: 'tts-1', speed: 1, filterMarkdown: true },
+    changed() { changes.push('changed'); },
+    load: async () => { changes.push('load'); },
+  };
+  const h = await harness('src/client/SpeechSettings.tsx', 'SpeechSettings', { draft, disabled: false }, {
+    modules: { '@deepseek-ai/dsh-client-ui-primitives': { ...terminalPrimitives(),
+      Picker: (props: any) => createElement('select', { 'data-picker': props.label, value: props.value, disabled: props.disabled, onChange: props.onChange }, props.children) } },
+  });
+  const picker = (label: string) => h.render().find(n => n.props && n.props.label === label && typeof n.props.onChange === 'function')!;
+  const checkbox = () => h.render().find(n => n.type === 'input' && n.props.type === 'checkbox')!;
+  assert.equal(h.render().find(n => n.type === 'p' && n.props.role === 'status'), undefined);
+  checkbox().props.onChange({ target: { checked: true } });
+  assert.deepEqual(draft.config.enabled, true);
+  assert.deepEqual(changes, ['changed']);
+
+  picker('播报服务').props.onChange('compatible');
+  assert.equal(draft.config.provider, 'compatible');
+  assert.equal(draft.config.endpoint, 'https://api.openai.com/v1/audio/speech');
+  assert.equal(draft.config.voice, 'alloy');
+  assert.equal(h.render().find(n => n.props && n.props.label === '音色'), undefined);
+  const texts = h.render().filter(n => n.type === 'input' && n.props.type === 'text').length;
+  assert.equal(texts, 3);
+
+  picker('播报服务').props.onChange('deepseek');
+  assert.equal(draft.config.endpoint, DEEPSEEK_TTS_ENDPOINT);
+  assert.equal(draft.config.voice, 'stella');
+  assert.equal(h.render().filter(n => n.type === 'input' && n.props.type === 'text').length, 0);
+
+  draft.status = { available: false };
+  const warning = h.render().find(n => n.props && n.props.className === 'wb-warning');
+  assert.match(String(warning.props.children), /官方凭据存储不可用/);
+  assert.equal(checkbox().props.disabled, true);
+
+  draft.status = { available: true }; draft.error = '密钥无效';
+  h.render().find(n => n.type === 'button')!.props.onClick();
+  assert.deepEqual(changes.slice(-1), ['load']);
 });

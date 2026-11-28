@@ -438,7 +438,7 @@ test('OPML selection imports real feeds atomically and revalidates duplicates at
     assert.deepEqual(await manager.handle('opml.import', { text, selected: [0, 1] }), { imported: 1, skipped: 1 });
     const exported = await manager.handle('opml.export') as string;
     assert.equal((await manager.handle('opml.preview', { text: exported }) as { duplicate: number }).duplicate, 2);
-    for (const name of ['默认分组', '未分组']) {
+    for (const name of ['默认分组', '未分组', '全部订阅']) {
       const fixed = `<opml version="2.0"><body><outline text="${name}"><outline text="默认来源" xmlUrl="https://news.org/${encodeURIComponent(name)}"/></outline></body></opml>`;
       await manager.handle('opml.import', { text: fixed, selected: [0] });
       assert.equal((await manager.listFeeds()).at(-1)?.groupId, '', 'new and legacy default labels share the fixed group');
@@ -477,4 +477,20 @@ test('editing URL cancels stale inflight data; duplicate refresh shares a bounde
     await new Promise<void>(resolve => server.close(() => resolve()));
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test('列表轮询只取不含正文的投影，正文按打开的文章单独读取', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'rss-light-'));
+  const state = emptyRssState();
+  state.cache.articles = [{ id: 'a1', feedId: '', key: 'k1', title: '标题', summary: '摘要', body: '很长的正文',
+    url: 'https://example.com/1', publishedAt: 1, fetchedAt: 1, sequence: 1 }];
+  await new RssStore(home).save(state);
+  const manager = new RssManager({ home, getConfig: () => ({ refreshMinutes: 0 }) });
+  try {
+    const full = await manager.handle('snapshot', {}) as { articles: { body: string }[] };
+    assert.equal(full.articles[0]!.body, '很长的正文');
+    const light = await manager.handle('snapshot', { light: true }) as { articles: { body: string; title: string }[] };
+    assert.equal(light.articles[0]!.body, '');
+    assert.equal(light.articles[0]!.title, '标题');
+  } finally { await manager.dispose(); await rm(home, { recursive: true, force: true }); }
 });

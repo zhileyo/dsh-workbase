@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import type { Command } from '../shared/commands.js';
 import type { BackupPreferences, BackupStatus } from '../shared/backup.js';
 import { DirectoryInput } from './DirectoryInput.js';
@@ -6,24 +6,11 @@ import type { RestoreStatus } from '../shared/restore.js';
 import { RestoreExecutionStatus, RestoreSettings } from './RestoreSettings.js';
 import { Picker } from './ui.js';
 import { errorText, languageTag, statusText } from './i18n.js';
+import { coverageItemLabel, coverageLabel } from './backup-labels.js';
+import { useStatusPolling } from './panel-utils.js';
+// 覆盖项中文标签已抽到 backup-labels.ts 与 RestoreSettings 共用；测试仍从本文件导入 coverageLabel。
+export { coverageLabel };
 
-const labels: Record<string, string> = {
-  workbase: '工作台状态', workspace: '项目与会话关联', sessions: '会话事件', 'sessions-history': '会话历史文件',
-  'workbench-legacy': '旧工作台数据', 'archive-favorites': '归档收藏', 'archive-settings': '归档设置',
-  'projection-cache': '会话缓存', 'projection-cache-legacy': '旧会话缓存', 'context-overview': '上下文概览',
-  'image-objects': '图片对象', 'file-objects': '文件对象', 'file-reference-links': '附件路径',
-  'attachment-request-cache': '附件请求缓存', 'attachment-references': '附件引用校验',
-  profiles: '运行配置与插件', 'market-profile-state': '插件市场状态', 'market-build-markers': '插件构建记录',
-  'agent-presets': 'Agent 预设', credentials: '凭据', 'legacy-settings': '旧配置',
-  'remote-devices': '远端设备', 'skills-manager': '技能管理', 'dsh-user-skills': '用户技能',
-  'shared-agent-skills': '公共技能', 'project-skills': '项目技能',
-  'bili-config': 'Billion 配置', 'bili-data': 'Billion 数据', 'bili-sessions': 'Billion 会话库',
-  'bili-ca': 'Billion 证书', 'bili-state': 'Billion 状态', 'bili-cache': 'Billion 缓存',
-  'tui-state': '终端状态', 'pet-config-assets': '宠物设置与资源', 'pet-legacy': '旧宠物数据',
-  'desktop-client': '桌面客户端草稿', 'pet-client': '宠物客户端状态', 'task-board': '任务看板',
-  'skin-state': '皮肤状态', 'skin-resources': '皮肤资源', 'voice-models': '语音模型', 'recycle-bin-legacy': '旧回收记录',
-};
-const coverageLabel = { verified: '已校验', observation: '观察副本', absent: '未发现', unsupported: '未覆盖', error: '导出失败' };
 export function BackupSettings({ tab = 'backup', value, onChange, call, pickDirectory, disabled, onPickingChange, onRestoreBusyChange, onRestored }: {
   tab?: 'backup' | 'restore' | 'status';
   value: BackupPreferences; onChange(value: BackupPreferences): void;
@@ -36,19 +23,19 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
   const [error, setError] = useState('');
   const errorId = useId();
   const [starting, setStarting] = useState(false);
-  useEffect(() => {
-    if (!call) return;
-    let stopped = false, timer: ReturnType<typeof setTimeout>;
-    const refresh = async () => {
-      try {
-        const result = await call({ op: 'backup-status' }) as BackupStatus;
-        if (!stopped) { setStatus(result); setError(''); }
-      } catch (e) { if (!stopped) setError(e instanceof Error ? e.message : '无法读取备份状态'); }
-      if (!stopped) timer = setTimeout(() => { void refresh(); }, 2000);
-    };
-    void refresh();
-    return () => { stopped = true; clearTimeout(timer); };
-  }, [call]);
+  useStatusPolling(!!call && tab !== 'restore', async stopped => {
+    // 恢复分类下由 RestoreSettings 自己轮询，两条常驻轮询不该同时跑。
+    try {
+      const result = await call!({ op: 'backup-status' }) as BackupStatus;
+      const active = ['waiting', 'exporting', 'encrypting', 'verifying'].includes(result.phase);
+      if (!stopped()) { setStatus(result); setError(''); }
+      // 空闲期没有进度可追，长间隔待命即可；进行中才需要短间隔。
+      return active ? 2000 : 15000;
+    } catch (e) {
+      if (!stopped()) setError(e instanceof Error ? e.message : '无法读取备份状态');
+      return 15000;
+    }
+  }, [call, tab]);
   const running = status && ['waiting', 'exporting', 'encrypting', 'verifying'].includes(status.phase);
   const start = async () => {
     if (!call || starting) return;
@@ -86,7 +73,7 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
     <div className="settings-subpanel" role="tabpanel" id="wb-settings-backup-panel-restore" aria-labelledby="wb-settings-backup-tab-restore" hidden={tab !== 'restore'}>
     <RestoreSettings call={call} disabled={disabled || starting || !!running} pickDirectory={pickDirectory}
       onPickingChange={onPickingChange} onBusyChange={onRestoreBusyChange} onRestored={onRestored}
-      showStatus={false} onStatusChange={setRestoreStatus}/>
+      showStatus={false} onStatusChange={setRestoreStatus} paused={tab !== 'restore'}/>
     </div>
     <div className="settings-subpanel" role="tabpanel" id="wb-settings-backup-panel-status" aria-labelledby="wb-settings-backup-tab-status" hidden={tab !== 'status'}>
     <h3>备份状态</h3>
@@ -99,7 +86,7 @@ export function BackupSettings({ tab = 'backup', value, onChange, call, pickDire
     </div>}
     {!!status?.coverage.length && <details><summary>查看覆盖明细（{status.coverage.length} 项）</summary>
       {status.coverage.map(item => <div key={item.id} className="setting-row wb-setting-row"><div>
-        <strong>{labels[item.id] ?? (item.id.startsWith('project-skills-') ? `项目技能 ${Number(item.id.slice(15)) + 1}` : item.id)} · {coverageLabel[item.status]}</strong>
+        <strong>{coverageItemLabel(item.id)} · {coverageLabel[item.status]}</strong>
         <small>{errorText(item.message)}</small></div></div>)}</details>}
     <h3>恢复状态</h3>
     {call ? <RestoreExecutionStatus status={restoreStatus}/> : <p className="settings-inline-note">当前环境无法读取恢复状态。</p>}

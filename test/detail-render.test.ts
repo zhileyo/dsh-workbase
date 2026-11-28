@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Detail, type DetailProps } from '../src/client/Detail.js';
+import { setLanguage } from '../src/client/i18n.js';
 import { UiMemory, type ClientPort } from '../src/client/api.js';
 import { initialState, emptyMark, type Snapshot, type Project, type Todo } from '../src/shared/model.js';
 
@@ -86,6 +87,19 @@ test('完成时间缺失时已完成待办回退到更新时间倒序', t => {
   const html = render(snapshot, project);
   const order = [...html.matchAll(/id="wb-todo-([^"]+)"/g)].map(match => match[1]);
   assert.deepEqual(order, ['t-x', 't-y']);
+});
+
+test('优先级徽标按枚举键取文案，英文界面下显示 High priority', t => {
+  serverWarnings(t);
+  const { snapshot, project } = fixture([{ ...todo('t-high', '高优待办', 1, 2), priority: 'high' }]);
+  setLanguage('en');
+  try {
+    const html = render(snapshot, project);
+    assert.match(html, /High priority/);
+    assert.doesNotMatch(html, /高优先级/);
+  } finally {
+    setLanguage('zh');
+  }
 });
 
 test('归档项目待办整体只读：勾选与新增禁用，标题仅可查看', t => {

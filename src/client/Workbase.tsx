@@ -21,6 +21,27 @@ import { RssPanel } from './RssPanel.js';
 import { OverviewNavigation, type OverviewTab } from './OverviewNavigation.js';
 import type { ExtensionTab } from './ExtensionSettings.js';
 import { MigrationPanel } from './MigrationPanel.js';
+import { captureScrollPositions, restoreFocus, restoreScrollPositions, type ScrollPosition } from './focus-restore.js';
+
+/** 关闭守卫：子面板（设置、扩展管理）把自己的守卫注册进来，关闭前由父级统一询问。 */
+function useCloseGuard() {
+  const guard = useRef<(() => Promise<boolean>) | null>(null);
+  const register = useCallback((next: (() => Promise<boolean>) | null) => { guard.current = next; }, []);
+  /** 没有注册守卫就是「可以关闭」；注册了就只认守卫的结论。 */
+  const confirm = () => guard.current?.() ?? Promise.resolve(true);
+  return { register, confirm };
+}
+/** 概览里会被内容切换重建的滚动容器。 */
+const MANAGER_SCROLLERS = '.settings-content,.integration-records,.integration-groups';
+/** 设置恢复成功后的统一回执：概览内嵌与独立弹窗共用同一句。 */
+const RESTORED_NOTICE = '工作台状态已恢复，原数据已保留回滚副本';
+/** 设置面板与宿主接线无关的挂载属性：调用通道、目录选择与 Markdown 渲染两处一致。 */
+const settingsHostProps = (api: ClientPort) => ({ call: api.call, pickDirectory: api.pickDirectory, renderMarkdown: api.renderMarkdown, embedded: true });
+/** 各类弹窗的标题：只在表里出现一次，不在 JSX 里按 kind 反复三元。 */
+const DIALOG_TITLES = {
+  add: '添加项目', archive: '归档会话', 'delete-session': '永久删除会话？', 'remove-project': '移除项目？',
+  'rename-session': '重命名会话', rename: '重命名项目', settings: '工作台设置',
+} satisfies Record<Exclude<DialogState['kind'], 'read-session'>, string>;
 
 type DialogState = { kind: 'rename'; project: Project }
   | { kind: 'archive'; session: HostSession } | { kind: 'rename-session'; session: HostSession; projectId: string }
@@ -60,26 +81,24 @@ export function WorkbaseOverview({ kind, api, snapshot, busy, diagnosis, onRepor
   const managerRoot = useRef<HTMLDivElement>(null);
   const settingsRoot = useRef<HTMLDivElement>(null);
   const origin = useRef<HTMLElement | null>(null);
-  const positions = useRef<{ node: HTMLElement; top: number; left: number }[]>([]);
+  const positions = useRef<ScrollPosition[]>([]);
+  const guard = useCloseGuard();
   const openSettings = (target: ExtensionTab) => {
     origin.current = document.activeElement as HTMLElement;
-    positions.current = [...managerRoot.current?.querySelectorAll<HTMLElement>('.settings-content,.integration-records,.integration-groups') ?? []]
-      .map(node => ({ node, top: node.scrollTop, left: node.scrollLeft }));
+    positions.current = captureScrollPositions(managerRoot.current?.querySelectorAll<HTMLElement>(MANAGER_SCROLLERS) ?? []);
     setExtension(target);
   };
   useLayoutEffect(() => {
     if (extension) settingsRoot.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true });
     else {
-      for (const { node, top, left } of positions.current) { node.scrollTop = top; node.scrollLeft = left; }
+      restoreScrollPositions(positions.current);
       positions.current = [];
-      origin.current?.focus({ preventScroll: true });
+      restoreFocus(origin.current);
       origin.current = null;
     }
   }, [extension]);
-  const closeGuard = useRef<(() => Promise<boolean>) | null>(null);
-  const registerCloseGuard = useCallback((guard: (() => Promise<boolean>) | null) => { closeGuard.current = guard; }, []);
   const returnToManager = () => {
-    void (closeGuard.current?.() ?? Promise.resolve(true)).then(ok => {
+    void guard.confirm().then(ok => {
       if (!ok) return;
       settings?.resetPreview();
       setExtension(null);
@@ -98,9 +117,8 @@ export function WorkbaseOverview({ kind, api, snapshot, busy, diagnosis, onRepor
     {kind !== 'skills' && kind !== 'mcp' && kind !== 'rss' && <StatsOverview {...props} stat={kind} snapshot={snapshot} busy={busy}
       diagnosis={diagnosis ?? snapshot.diagnostics ?? fallbackDiagnosis(snapshot)} onReport={onReport} refresh={refresh} navigate={navigate}/>}
     </div>
-    {extension && settings && <div ref={settingsRoot} style={{ display: 'contents' }}><Settings {...settings} snapshot={snapshot} busy={busy} call={api.call} pickDirectory={api.pickDirectory}
-      renderMarkdown={api.renderMarkdown} initialExtension={extension} onClose={returnToManager} registerCloseGuard={registerCloseGuard}
-      embedded onModalState={setSettingsState}/></div>}
+    {extension && settings && <div ref={settingsRoot} style={{ display: 'contents' }}><Settings {...settings} {...settingsHostProps(api)} snapshot={snapshot} busy={busy} initialExtension={extension} onClose={returnToManager} registerCloseGuard={guard.register}
+      onModalState={setSettingsState}/></div>}
   </Modal>;
 }
 export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory }) {
@@ -210,13 +228,43 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     } : null);
     return () => api.projectSidebar?.select(null);
   }, [api, selected?.projectId, selected?.workspaceId, selected?.path, selected?.available]);
-  const settingsCloseGuard = useRef<(() => Promise<boolean>) | null>(null);
-  const registerSettingsCloseGuard = useCallback((guard: (() => Promise<boolean>) | null) => { settingsCloseGuard.current = guard; }, []);
+  const guard = useCloseGuard();
   const close = () => {
     const finish = () => { setDialog(null); setThemePreview(null); };
-    if (dialog?.kind === 'settings' && settingsCloseGuard.current)
-      void settingsCloseGuard.current().then(ok => { if (ok) finish(); });
+    // 设置弹窗可能因未保存的编辑拦下关闭，守卫结果说了算；其余弹窗直接关。
+    if (dialog?.kind === 'settings') void guard.confirm().then(ok => { if (ok) finish(); });
     else finish();
+  };
+  // 弹窗标题查表、主体按 kind 分支：同一 kind 不再在 JSX 里被判四次。
+  const dialogTitle = (state: DialogState, settingsTitle?: string) => state.kind === 'settings'
+    ? settingsTitle ?? DIALOG_TITLES.settings
+    : state.kind === 'read-session' ? DIALOG_TITLES.settings /* read-session 不经过 Modal 外壳，标题只用于查表完整性 */
+    : DIALOG_TITLES[state.kind];
+  const dialogBody = (state: DialogState, view: Snapshot) => {
+    switch (state.kind) {
+      case 'add': return <AddProject api={api} root={view.preferences.root} busy={busy} save={async (path, name) => {
+        let result: { duplicate: boolean; initialization?: ProjectInitializationResult } | undefined;
+        const ok = await run(async () => {
+          result = await api.call({ op: 'add-project', path, ...(name ? { name } : {}) }) as typeof result;
+          return !result?.duplicate;
+        }, '');
+        if (ok && mounted.current && result && !result.duplicate) notify(result.initialization
+          ? `项目已添加，补齐 ${result.initialization.created.length} 项，保留 ${result.initialization.preserved.length} 项`
+          : '项目已添加', 'success');
+        return ok;
+      }} onClose={close} describedBy={error ? dialogErrorId : undefined}/>;
+      case 'settings': return <Settings snapshot={view} busy={busy} pluginUpdateBusy={pluginUpdateBusy} preview={setThemePreview} save={mutate} onClose={close} dark={dark} {...settingsHostProps(api)} registerCloseGuard={guard.register} onModalState={setSettingsModal}
+        describedBy={error ? dialogErrorId : undefined} onRestored={() => { close(); void load().catch(() => {}); notify(RESTORED_NOTICE, 'success'); }}/>;
+      case 'delete-session': return <><p className="dialog-description">永久删除「{state.session.title}」及其子 Agent 会话、转录与附件缓存。此操作无法撤销，独立的 fork 会话会保留。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || state.session.running} onClick={() => void mutate({ op: 'delete-session', projectId: state.projectId, sessionId: state.session.sessionId }).then(ok => { if (ok) close(); })}>永久删除</button></footer></>;
+      case 'remove-project': return <><p className="dialog-description">移除「{state.project.title}」的 Harness 注册。保留本地目录、待办与历史关联；重新添加同一目录可恢复。运行中会话必须先停止。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || state.project.sessions.some(s => s.running)} onClick={() => void mutate({ op: 'remove-project', projectId: state.project.projectId }).then(ok => { if (ok) close(); })}>确认移除</button></footer></>;
+      case 'rename-session': return <RenameForm key={state.session.sessionId} label="会话名称" initial={state.session.title} busy={busy} describedBy={error ? dialogErrorId : undefined}
+        save={title => mutate({ op: 'rename-session', projectId: state.projectId, sessionId: state.session.sessionId, title })} onClose={close}/>;
+      case 'rename': return <RenameForm key={state.project.projectId} label="项目名称" initial={state.project.title} busy={busy} describedBy={error ? dialogErrorId : undefined} path={state.project.path}
+        save={title => mutate({ op: 'rename', projectId: state.project.projectId, title })} onClose={close}/>;
+      case 'archive': return <><p className="wb-fulltext">归档「{state.session.title}」？会话保留，可以随时恢复。运行中的会话不会自动停止。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-primary" disabled={busy} onClick={() => void run(() => api.archiveSession(state.session.sessionId, true), '会话已归档，可随时恢复').then(ok => { if (ok) close(); })}>确认归档</button></footer></>;
+      // 会话预览有独立弹窗（下面的 SessionPreviewDialog），不经过 Modal 外壳。
+      case 'read-session': return null;
+    }
   };
   // 只缓存服务端确认的主题，不缓存设置预览或明暗状态。
   const chosenTheme = themePreview ?? snapshot?.preferences.theme ?? memory.theme ?? 'violet';
@@ -263,7 +311,7 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     {snapshot && overview && <WorkbaseOverview kind={overview} api={api} snapshot={snapshot} busy={busy} diagnosis={diagnosis}
       onReport={report => setFreshDiagnosis({ snapshot, report })} refresh={load} navigate={navigate}
       settings={{ preview: setThemePreview, resetPreview: () => setThemePreview(null), save: mutate, pluginUpdateBusy, dark,
-        onRestored: () => { setOverview(null); setThemePreview(null); void load().catch(() => {}); notify('工作台状态已恢复，原数据已保留回滚副本', 'success'); } }}
+        onRestored: () => { setOverview(null); setThemePreview(null); void load().catch(() => {}); notify(RESTORED_NOTICE, 'success'); } }}
       memory={memory} navigation={overviewNavigation} notify={notify} onClose={() => setOverview(null)}/>}
     {todoDialog && snapshot && (() => {
       const project = snapshot.projects.find(p => p.projectId === todoDialog.projectId);
@@ -272,32 +320,12 @@ export function Workbase({ api, memory }: { api: ClientPort; memory: UiMemory })
     })()}
     {dialog && snapshot && (dialog.kind === 'read-session' ?
       <SessionPreviewDialog api={api} project={dialog.project} session={dialog.session} onClose={close}/>
-      : <Modal drawer={dialog.kind === 'settings'} title={dialog.kind === 'delete-session' ? '永久删除会话？' : dialog.kind === 'add' ? '添加项目' : dialog.kind === 'settings' ? settingsModal.presentation?.title ?? '工作台设置' : dialog.kind === 'remove-project' ? '移除项目？' : dialog.kind === 'rename-session' ? '重命名会话' : dialog.kind === 'rename' ? '重命名项目' : '归档会话'}
+      : <Modal drawer={dialog.kind === 'settings'} title={dialogTitle(dialog, settingsModal.presentation?.title)}
         leading={dialog.kind === 'settings' ? settingsModal.presentation?.leading : undefined}
         className={dialog.kind === 'settings' ? settingsModal.presentation?.className : undefined}
         busy={busy} onClose={dialog.kind === 'settings' ? settingsModal.presentation?.onClose ?? close : close}>
       {error && <p id={dialogErrorId} className="wb-warning" role="alert">{errorText(error)}</p>}
-      {dialog.kind === 'add' ? <AddProject api={api} root={snapshot.preferences.root} busy={busy} save={async (path, name) => {
-        let result: { duplicate: boolean; initialization?: ProjectInitializationResult } | undefined;
-        const ok = await run(async () => {
-          result = await api.call({ op: 'add-project', path, ...(name ? { name } : {}) }) as typeof result;
-          return !result?.duplicate;
-        }, '');
-        if (ok && mounted.current && result && !result.duplicate) notify(result.initialization
-          ? `项目已添加，补齐 ${result.initialization.created.length} 项，保留 ${result.initialization.preserved.length} 项`
-          : '项目已添加', 'success');
-        return ok;
-      }} onClose={close} describedBy={error ? dialogErrorId : undefined}/>
-        : dialog.kind === 'settings' ? <Settings snapshot={snapshot} busy={busy} pluginUpdateBusy={pluginUpdateBusy} preview={setThemePreview} save={mutate} call={api.call} onClose={close} dark={dark} pickDirectory={api.pickDirectory} renderMarkdown={api.renderMarkdown} registerCloseGuard={registerSettingsCloseGuard} embedded onModalState={setSettingsModal}
-          describedBy={error ? dialogErrorId : undefined} onRestored={() => { close(); void load().catch(() => {}); notify('工作台状态已恢复，原数据已保留回滚副本', 'success'); }}/>
-        : dialog.kind === 'delete-session' ? <><p className="dialog-description">永久删除「{dialog.session.title}」及其子 Agent 会话、转录与附件缓存。此操作无法撤销，独立的 fork 会话会保留。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || dialog.session.running} onClick={() => void mutate({ op: 'delete-session', projectId: dialog.projectId, sessionId: dialog.session.sessionId }).then(ok => { if (ok) close(); })}>永久删除</button></footer></>
-        : dialog.kind === 'remove-project' ? <><p className="dialog-description">移除「{dialog.project.title}」的 Harness 注册。保留本地目录、待办与历史关联；重新添加同一目录可恢复。运行中会话必须先停止。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-danger" disabled={busy || dialog.project.sessions.some(s => s.running)} onClick={() => void mutate({ op: 'remove-project', projectId: dialog.project.projectId }).then(ok => { if (ok) close(); })}>确认移除</button></footer></>
-        : dialog.kind === 'rename-session' ? <RenameForm key={dialog.session.sessionId} label="会话名称" initial={dialog.session.title} busy={busy} describedBy={error ? dialogErrorId : undefined}
-          save={title => mutate({ op: 'rename-session', projectId: dialog.projectId, sessionId: dialog.session.sessionId, title })} onClose={close}/>
-        : dialog.kind === 'rename' ? <RenameForm key={dialog.project.projectId} label="项目名称" initial={dialog.project.title} busy={busy} describedBy={error ? dialogErrorId : undefined} path={dialog.project.path}
-          save={title => mutate({ op: 'rename', projectId: dialog.project.projectId, title })} onClose={close}/>
-        : dialog.kind === 'archive' ? <><p className="wb-fulltext">归档「{dialog.session.title}」？会话保留，可以随时恢复。运行中的会话不会自动停止。</p><footer><button type="button" disabled={busy} onClick={close}>取消</button><button type="button" className="wb-primary" disabled={busy} onClick={() => void run(() => api.archiveSession(dialog.session.sessionId, true), '会话已归档，可随时恢复').then(ok => { if (ok) close(); })}>确认归档</button></footer></>
-        : null}
+      {dialogBody(dialog, snapshot)}
     </Modal>)}
   </div>;
 }

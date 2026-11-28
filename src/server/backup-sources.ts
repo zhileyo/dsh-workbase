@@ -43,6 +43,14 @@ export async function exportSessions(persistence: OnlineSessionPersistence, dire
       const output = await open(path.join(directory, file), 'wx', 0o600);
       try {
         await output.writeFile(`${JSON.stringify({ meta: logical, inheritedEventCount: reader.inheritedEventCount, eventCount: count })}\n`);
+        // 一次写一个事件会让导出退化成几百次小 write；攒成批再落盘，内容与逐条写完全一致。
+        const pending: string[] = [];
+        const flush = async () => {
+          if (pending.length === 0) return;
+          const chunk = pending.join('');
+          pending.length = 0;
+          await output.writeFile(chunk);
+        };
         for (let offset = 0; offset < count;) {
           signal.throwIfAborted();
           const size = Math.min(512, count - offset), slice = await reader.read(offset, size, { signal });
@@ -50,9 +58,11 @@ export async function exportSessions(persistence: OnlineSessionPersistence, dire
           for (const event of slice.events) {
             if (typeof event !== 'object' || event === null || (event as { seq?: unknown }).seq !== offset++)
               throw new Error('会话事件序号不连续');
-            await output.writeFile(`${JSON.stringify(event)}\n`);
+            pending.push(`${JSON.stringify(event)}\n`);
+            if (pending.length >= 512) await flush();
           }
         }
+        await flush();
       } finally { await output.close(); }
       index.push({ id: logical.id, file, eventCount: count, revision: row.revision,
         parentSession: logical.parentSession, inheritedEventCount: reader.inheritedEventCount });
@@ -65,10 +75,18 @@ export async function exportSessions(persistence: OnlineSessionPersistence, dire
 
 /** 盘点的 39 类均有结果；机器路径仅运行时解析，不把盘点报告中的本机路径打进包。 */
 export function createBackupSources(ctx: Context, home: string, host: HostPort) {
+  // 宿主能力读取抛错与「宿主确实没提供」必须分开：前者是故障，不能报成「缺能力」。
+  const getFailures = new Map<string, string>();
   const get = <T>(name: string): T | undefined => {
     try { return (ctx as unknown as { get(name: string): T | undefined }).get(name); }
-    catch { return undefined; }
+    catch (error) {
+      getFailures.set(name, error instanceof Error ? error.message : String(error));
+      return undefined;
+    }
   };
+  const missingCapability = (name: string, reason: string) => getFailures.has(name)
+    ? `宿主能力读取失败（${name}）：${getFailures.get(name)}`
+    : reason;
   const userHome = homedir(), env = process.env;
   const xdg = (key: string, fallback: string) => path.resolve(env[key]?.trim() || path.join(userHome, fallback));
   const biliConfig = path.join(xdg('XDG_CONFIG_HOME', '.config'), 'billion-context');
@@ -76,11 +94,13 @@ export function createBackupSources(ctx: Context, home: string, host: HostPort) 
   const dsh = (id: string, relative: string): BackupSource => ({ id, path: path.join(home, relative) });
   return async (): Promise<BackupSource[]> => {
     const persistence = get<OnlineSessionPersistence>('sessionPersistence');
+    // 会话目录只登记一个范围：有官方导出时走 API，缺失时降级为同一目录的文件级运行中读取副本。
+    const sessionApiExport = !!persistence && typeof persistence.flush === 'function' && typeof persistence.open === 'function';
     const sources: BackupSource[] = [
       { id: 'sessions', path: path.join(home, 'sessions'),
-        ...(persistence && typeof persistence.flush === 'function' && typeof persistence.open === 'function'
-          ? { export: (dest: string, signal: AbortSignal) => exportSessions(persistence, dest, signal) }
-          : { unsupported: '宿主缺少 flush／只读会话导出能力' }) },
+        ...(sessionApiExport
+          ? { export: (dest: string, signal: AbortSignal) => exportSessions(persistence!, dest, signal) }
+          : { unsupported: missingCapability('sessionPersistence', '宿主缺少 flush／只读会话导出能力') }) },
       { id: 'workspace', path: path.join(home, 'storages/workspace.json'), export: async dest => {
         const projects = await host.workspaces();
         await jsonFile(path.join(dest, 'workspace.json'), { projects,
@@ -99,7 +119,11 @@ export function createBackupSources(ctx: Context, home: string, host: HostPort) 
       dsh('attachment-request-cache', 'cache/attachments/request-images'),
       dsh('profiles', 'profiles'),
       ...personalFiles.map(file => dsh(`personal-${file.slice(0, -3).toLowerCase()}`, file)),
-      dsh('market-profile-state', 'profiles'),
+      // market 状态随 profiles 一并归档，避免重复扫描安装负载；策略在构造时就写全，不按 id 回查改写。
+      { id: 'market-profile-state', path: path.join(home, 'profiles'), guarantee: 'observation', export: async dest => {
+        await jsonFile(path.join(dest, 'included.json'), { includedIn: 'profiles', excluded: ['node_modules', '运行锁'] });
+        return '包含在 profiles 的运行中读取副本中；安装环境依赖和运行锁排除，恢复后需重新安装依赖';
+      } },
       dsh('market-build-markers', 'dsh-market/printed-build-keys.json'),
       dsh('agent-presets', '.agent-presets'),
       dsh('credentials', '.credentials.yaml'),
@@ -123,14 +147,10 @@ export function createBackupSources(ctx: Context, home: string, host: HostPort) 
       dsh('task-board', 'task-board'), dsh('skin-state', 'skin-center-active.json'),
       dsh('skin-resources', 'skin-center'), dsh('voice-models', 'speech-to-text/sensevoice'),
       dsh('recycle-bin-legacy', 'trash'),
-      dsh('sessions-history', 'sessions'), dsh('projection-cache-legacy', 'storages/session_projcache.json'),
+      // API 导出不可用时才保留同一目录的文件级运行中读取副本，避免会话日志在同一份归档里出现两遍。
+      ...(!sessionApiExport ? [dsh('sessions-history', 'sessions')] : []),
+      dsh('projection-cache-legacy', 'storages/session_projcache.json'),
     ];
-    // market 状态随 profiles 一并归档，避免重复扫描安装负载。
-    sources.find(s => s.id === 'market-profile-state')!.export = async dest => {
-      await jsonFile(path.join(dest, 'included.json'), { includedIn: 'profiles', excluded: ['node_modules', '运行锁'] });
-      return '包含在 profiles 文件观察副本中；安装环境依赖和运行锁排除，恢复后需重新安装依赖';
-    };
-    sources.find(s => s.id === 'market-profile-state')!.guarantee = 'observation';
     if (env.BILI_CONFIG_FILE?.trim()) sources.push({ id: 'bili-config-override', path: path.resolve(env.BILI_CONFIG_FILE) });
     const projects = await host.workspaces();
     projects.forEach((project, index) => sources.push({ id: `project-skills-${index}`, path: path.join(project.path, '.dsh/skills') }));

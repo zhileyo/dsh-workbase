@@ -3,7 +3,7 @@ import type { GitBranches, LaunchCatalog, Snapshot } from '../shared/model.js';
 import type { ClientPort, ComposerBridge, UiMemory } from './api.js';
 import { Icon, Menu, Picker } from './ui.js';
 import { BranchBar } from './BranchBar.js';
-import { launchMessage, submitNativeMessage } from './launch.js';
+import { abandonPending, launchMessage, submitNativeMessage } from './launch.js';
 import { errorText, presetText } from './i18n.js';
 
 /** 优先读 items 以保留目录身份；同批 files 仅作回退，避免重复添加。 */
@@ -132,8 +132,13 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
   }, [api]);
   const worktreeOn = worktree && forge && !!branches?.git;
   const branchWaiting = !pending && worktree && forge && (!branches || branches.git && !branches.branches.includes(branch));
+  // 发送可用性的唯一判定：send 的前置校验与发送按钮的 disabled 读同一份谓词，
+  // 新增忙碌来源或改动 pending 语义只改这里；send 自己再叠加锁定标记，按钮再叠加 busy。
+  const projectReady = project !== undefined && project.available && !project.archived;
+  const canSend = !branchWaiting && !voiceActive && !nativeBusy && !nativeModel.busy && projectReady
+    && (!!pending || (!!draft.trim() || !!attachments) && modelReady && !!preset);
   const send = async () => {
-    if (locked.current || branchWaiting || voiceActive || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))) return;
+    if (locked.current || !canSend) return;
     if (worktreeOn && !branch) { setError('新建工作树需要先选择基准分支。'); return; }
     locked.current = true; setBusy(true); setError('');
     try {
@@ -227,11 +232,12 @@ export function Composer({ snapshot, api, memory }: { snapshot: Snapshot; api: C
         options={catalog?.models.map(m => ({ value: JSON.stringify([m.provider, m.id]), label: m.name, description: m.providerName })) ?? [{ value: '', label: '读取模型…' }]}/>}
       {api.renderComposerMenu && <div className="wb-composer-activity" ref={setActivityTarget}/>}
       <button id="composer-send" className="wb-send wb-primary primary" type="button" title={pending ? '重试首条消息' : '发送 · ⌘ Enter'} aria-label={pending ? '重试首条消息' : '发送首条消息'}
-        disabled={branchWaiting || voiceActive || busy || nativeBusy || nativeModel.busy || !project?.available || project.archived || (!pending && ((!draft.trim() && !attachments) || !modelReady || !preset))} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
+        disabled={busy || !canSend} onClick={() => void send()}>{busy || nativeBusy ? '…' : <Icon name="up"/>}</button>
       </div>
     </div>
     {!project?.available && projectId && <p className="wb-warning">所选项目目录不可用，请选择可用项目。</p>}
     {catalog?.failures.map(f => <p className="wb-help" key={f.name}>{f.name}：{errorText(f.message)}</p>)}
+    {pending && <p className="wb-help" role="status">首条消息尚未送达；重试会复用原会话与原消息。<button type="button" onClick={() => { abandonPending(memory); setError(''); }}>放弃并重新开始</button></p>}
     {error && <p id={errorId} role="alert" className="wb-warning">{errorText(error)}{(!catalog || branchWaiting) && <button type="button" onClick={() => setAttempt(n => n + 1)}>重新读取</button>}</p>}
     </div>
     <BranchBar forge={forge} branches={branches} worktree={worktree} branch={branch} busy={busy || nativeBusy} pending={!!pending}

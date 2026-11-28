@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, readFile, writeFile, rename, rm, lstat, open } from 'node:fs/promises';
-import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { generateIdentity, identityToRecipient } from 'age-encryption';
+import { backupActivePhases, backupPhases } from '../shared/backup.js';
 import type { BackupPort, BackupPreferences, BackupStatus, BackupManifest } from '../shared/backup.js';
-import { copyObserved, safeDestination, jsonFile, canonical, type BackupSource, type BackupLink } from './backup-files.js';
+import { copyObserved, safeDestination, jsonFile, canonical, sourceStrategy, sourceCoverageStatus,
+  type BackupSource, type BackupLink } from './backup-files.js';
 import { encryptArchive, inventory, verifyArchive, archiveFilename, publishArchive } from './backup-archive.js';
 import { pruneBackups } from './backup-retention.js';
+import { writeIdentityOnce, readIdentityKey } from './restore-archive.js';
 
 export interface BackupOptions {
   home: string;
@@ -18,7 +19,7 @@ export interface BackupOptions {
   retryMs?: number;
 }
 const initial = (): BackupStatus => ({ phase: 'idle', message: '尚未执行备份', coverage: [] });
-const active = (phase: BackupStatus['phase']) => ['waiting', 'exporting', 'encrypting', 'verifying'].includes(phase);
+const active = (phase: BackupStatus['phase']) => backupActivePhases.has(phase);
 
 /** 任务与 RPC/React 生命周期解耦；dispose 只中断任务，不在宿主退出时发起新备份。 */
 export class BackupManager implements BackupPort {
@@ -38,7 +39,7 @@ export class BackupManager implements BackupPort {
       try {
         const data = JSON.parse(await readFile(path.join(this.control, 'last-result.json'), 'utf8')) as BackupStatus;
         if (!data || !Array.isArray(data.coverage) || typeof data.message !== 'string'
-          || !['idle','waiting','exporting','encrypting','verifying','completed','failed','interrupted'].includes(data.phase)) return;
+          || !backupPhases.includes(data.phase)) return;
         this.value = active(data.phase) ? { ...data, phase: 'interrupted', message: '上次任务随宿主退出中断，未发布的临时产物不能用于恢复' } : data;
       } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
     })();
@@ -97,18 +98,13 @@ export class BackupManager implements BackupPort {
   }
   private async identity() {
     const file = path.join(this.control, 'identity.txt');
-    try {
-      await writeFile(file, `${await generateIdentity()}\n`, { flag: 'wx', mode: 0o600 });
-    } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e; }
-    const fd = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const info = await fd.stat();
+    await writeIdentityOnce(file);
+    // 备份侧准入与恢复侧（readIdentity）不同：无大小上限、文案独立；机制共用，条件保留在各自路径。
+    const key = await readIdentityKey(file, info => {
       if (!info.isFile() || (process.platform !== 'win32' && (info.mode & 0o077) !== 0)) throw new Error('备份密钥权限必须为 0600');
-      const key = (await fd.readFile('utf8')).trim();
-      await identityToRecipient(key);
-      this.value.keyPath = file;
-      return key;
-    } finally { await fd.close(); }
+    });
+    this.value.keyPath = file;
+    return key;
   }
   private async run() {
     let temp: string | undefined;
@@ -125,7 +121,7 @@ export class BackupManager implements BackupPort {
       const key = await this.identity();
       this.value.phase = 'exporting'; this.value.message = '正在导出数据'; await this.persist();
       await jsonFile(path.join(stage, 'locations.json'), sources.map(source => ({
-        id: source.id, sourcePath: source.path, strategy: source.unsupported ? 'unsupported' : source.export ? 'api' : 'observation',
+        id: source.id, sourcePath: source.path, strategy: sourceStrategy(source),
       })));
       await jsonFile(path.join(stage, 'workbase.json'), await this.options.state());
       this.value.coverage.push({ id: 'workbase', status: 'verified', message: '正式存储 API 的结构化副本；不同数据源不共享全局快照',
@@ -134,7 +130,9 @@ export class BackupManager implements BackupPort {
       for (const source of sources) {
         signal.throwIfAborted();
         const startedAt = Date.now();
-        const record = { id: source.id, startedAt, completedAt: startedAt, status: 'unsupported' as const, message: '' };
+        // 状态由与 locations.json 共用的同一份推导得出，不在分支里各写各的结论。
+        const record = { id: source.id, startedAt, completedAt: startedAt,
+          status: sourceCoverageStatus(source), message: '' };
         this.value.message = `正在导出 ${source.id}`;
         if (!/^[a-z0-9][a-z0-9-]*$/.test(source.id)) throw new Error('无效的备份范围标识');
         try {
@@ -142,7 +140,7 @@ export class BackupManager implements BackupPort {
           if (source.unsupported) this.value.coverage.push({ ...record, message: source.unsupported });
           else if (source.export) {
             await mkdir(target, { recursive: true, mode: 0o700 });
-            this.value.coverage.push({ ...record, status: source.guarantee ?? 'verified', message: await source.export(target, signal) });
+            this.value.coverage.push({ ...record, message: await source.export(target, signal) });
           } else if (source.path) {
             try { await lstat(source.path); }
             catch (e) {
@@ -153,8 +151,8 @@ export class BackupManager implements BackupPort {
               continue;
             }
             const copied = await copyObserved(source.path, target, signal, links, `files/${source.id}`);
-            this.value.coverage.push({ ...record, status: 'observation',
-              message: `文件观察副本；${copied.sqlite} 个 SQLite 在线快照；${copied.skipped} 项运行锁、依赖目录或旁路文件未归档；链接仅记录、不跟随` });
+            this.value.coverage.push({ ...record,
+              message: `运行中读取，与磁盘写入并发时不保证一致；${copied.sqlite} 个 SQLite 在线快照；${copied.skipped} 项运行锁、依赖目录或旁路文件未归档；链接仅记录、不跟随` });
           } else this.value.coverage.push({ ...record, message: '未提供在线导出能力' });
         } catch (e) {
           signal.throwIfAborted();

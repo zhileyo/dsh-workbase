@@ -7,6 +7,16 @@ import { MAX_SKILL_UPLOAD, parseSkillUpload, skillContentSchema, type SkillRecor
   type SkillContent, type SkillMarketItem, type SkillSource, type SkillsSnapshot } from '../shared/skills.js';
 import { ScopePicker } from './ScopePicker.js';
 
+/** 保留具名包装：测试按组件名定位技能的范围选择器，直用 ScopePicker 会让定位退化成逐字段猜。 */
+function SkillScopePicker({ projects, values, onChange, disabled }: {
+  projects: Project[]; values: string[]; onChange(values: string[]): void; disabled?: boolean;
+}) {
+  return <ScopePicker projects={projects} values={values} onChange={onChange} disabled={disabled ?? false} describedBy="skills-form-error"/>;
+}
+import { apiScopedMap, downloadBlob, usePanelAction } from './panel-utils.js';
+import { nextTabIndex } from './roving.js';
+import { toScope, toScopeValues } from './scope-values.js';
+
 const tabs = [['global', '全局技能'], ['project', '项目技能'], ['sources', '技能来源'], ['market', '技能市场']] as const;
 type Tab = typeof tabs[number][0];
 type Draft = { name: string; description: string; body: string; scope: 'global' | 'project'; projectIds: string[]; sourceId: string };
@@ -22,8 +32,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
   api: ClientPort; projects: Project[]; onClose(): void; memory?: UiMemory; navigation?: ReactNode; notify?: Notify; embedded?: boolean; onModalState?(state: ModalState): void;
   onSettings?(): void;
 }) {
-  const installations = marketInstallations.get(api) ?? new Map<string, string>();
-  marketInstallations.set(api, installations);
+  const installations = apiScopedMap(marketInstallations, api);
   const remembered = memory?.extensions.skills;
   const [tab, setTab] = useState<Tab>(tabs.some(([key]) => key === remembered?.tab) ? remembered!.tab as Tab : 'global');
   const [group, setGroup] = useState(remembered?.group ?? '');
@@ -156,28 +165,15 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
     if (records.current) records.current.scrollTop = savedScroll.current;
   }, [tab]);
   useEffect(() => { remember(); }, [tab, group, search, memory]);
-  const run = async (job: () => Promise<void>, field = false) => {
-    if (lock.current) return;
-    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    lock.current = true; setBusy(true); (field ? setFormError : setError)('');
-    try { await job(); }
-    catch (err) {
-      if (mounted.current) {
-        if (notify) notify(errorText(err), 'info');
-        else (field ? setFormError : setError)(errorText(err));
-      }
-    }
-    finally {
-      lock.current = false;
-      if (mounted.current) {
-        setBusy(false);
-        requestAnimationFrame(() => {
-          if (mounted.current && active?.isConnected && document.activeElement === document.body)
-            active.focus({ preventScroll: true });
-        });
-      }
-    }
-  };
+  // 动作包装器与 MCP 面板共用一份骨架（panel-utils）：锁、busy、失败回报与焦点恢复都在那里。
+  const panelAction = usePanelAction({ lock, setBusy, alive: mounted });
+  const run = (job: () => Promise<void>, field = false) => panelAction(job, {
+    start: () => (field ? setFormError : setError)(''),
+    report: error => {
+      if (notify) notify(errorText(error), 'info');
+      else (field ? setFormError : setError)(errorText(error));
+    },
+  });
   const switchTab = (next: Tab) => {
     remember(); const value = pageMemory.current.get(next);
     savedScroll.current = value?.scroll ?? 0; setGroup(value?.group ?? ''); setSearch(value?.search ?? ''); setTab(next);
@@ -230,7 +226,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
   const defaultPending = draft.scope === 'global' && !draft.sourceId
     && (detail?.kind === 'market' || detail?.kind === 'add' && addTab === 'create')
     && sourceDefault?.api !== api;
-  const scopeValues = draft.scope === 'global' ? ['global'] : draft.projectIds;
+  const scopeValues = toScopeValues(draft);
   const skillProjects = projects.filter(project => snapshot?.skills.some(row => row.scope === 'project'
     && row.sourceId === `project-agents-${project.projectId}` && !row.deletedAt && row.body.trim()));
   const groups = tab === 'global' ? [{ id: '', name: '全部来源' }, ...(snapshot?.sources.filter(source => source.scope !== 'project' && source.enabled) ?? []).map(source => ({ id: source.id, name: sourceName(source) }))]
@@ -328,8 +324,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
   const upload = () => void run(async () => {
     const result = await extensionCall<{ receipts: SkillReceipt[]; skipped: string[]; error?: string; snapshot: SkillsSnapshot }>(api, 'skills', 'import.confirm', {
       ...(previewMode === 'file' ? { text: uploadText } : previewMode === 'directory' ? { fromSourceId: uploadSource } : { token: importToken }),
-      names: selected, scope: uploadScope.includes('global') ? 'global' : 'project',
-      projectIds: uploadScope.filter(id => id !== 'global'),
+      names: selected, ...toScope(uploadScope),
     });
     setSnapshot(result.snapshot);
     const completed = new Set(result.receipts.map(receipt => receipt.skill.name));
@@ -342,9 +337,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
   const download = () => void run(async () => {
     if (!detail?.row) return;
     const text = await extensionCall<string>(api, 'skills', 'export', { id: detail.row.id });
-    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
-    try { const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${detail.row.name}.md`; anchor.click(); }
-    finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    downloadBlob(new Blob([text], { type: 'text/markdown;charset=utf-8' }), `${detail.row.name}.md`);
     notify?.('技能导出已发起', 'success');
   }, true);
   const marketFailures = snapshot?.marketSources.filter(source => source.enabled && source.issue) ?? [];
@@ -390,8 +383,8 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
           名称不可包含路径分隔符、控制字符或系统保留名称。</p>}</Field>
       <Field label="简短说明"><input aria-label="简短说明" required maxLength={2000} value={draft.description} disabled={formBusy}
         aria-describedby="skills-form-error" onChange={event => updateDraft({ ...draft, description: event.target.value })}/></Field>
-      <Field label="应用范围"><SkillScopePicker projects={projects} values={scopeValues} disabled={formBusy} onChange={values =>
-        updateDraft({ ...draft, scope: values.includes('global') ? 'global' : 'project', projectIds: values.filter(id => id !== 'global'), sourceId: '' })}/></Field>
+      <Field label="应用范围"><SkillScopePicker projects={projects} values={scopeValues} disabled={formBusy}
+        onChange={values => updateDraft({ ...draft, ...toScope(values), sourceId: '' })}/></Field>
       <Field label="安装位置"><Picker label="安装位置" variant="i-source" value={draft.scope === 'project' ? 'project' : draft.sourceId || defaultSource}
         disabled={formBusy || defaultPending} describedBy="skills-form-error" options={draft.scope === 'project' ? [{ value: 'project', label: '已登记项目的 .dsh/skills' }]
           : (snapshot?.sources.filter(source => source.scope !== 'project') ?? []).map(source => ({
@@ -416,7 +409,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
           <button type="button" key={key} id={`skills-tab-${key}`} role="tab" aria-selected={tab === key} aria-controls="skills-page" tabIndex={tab === key ? 0 : -1}
             onClick={() => switchTab(key)} onKeyDown={event => {
               if (event.nativeEvent.isComposing || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-              event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? 3 : (index + (event.key === 'ArrowRight' ? 1 : 3)) % 4;
+              event.preventDefault(); const next = nextTabIndex(event.key, index, tabs.length);
               switchTab(tabs[next]![0]); (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
             }}>{label}</button>)}</div>
         <div className="integration-workspace" data-grouped={grouped} id="skills-page" role="tabpanel" aria-labelledby={`skills-tab-${tab}`}>
@@ -431,7 +424,9 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
             {tab === 'market' && <IconButton name="settings" label="市场来源" outlined disabled={busy} onClick={() => { setFormError(''); setDetail({ kind: 'market-source', editing: false }); }}/>}
             {directoryAction}
           </div>}
-          {snapshot?.issue && <p className="integration-status-line" role="status"><Icon name="info"/>{translatedError(snapshot.issue)}</p>}
+          {snapshot?.issue && <p className="integration-status-line" role="status"><Icon name="info"/>{translatedError(snapshot.issue)}
+            {snapshot.recoverable && <button type="button" disabled={busy} onClick={() => void refresh('recover')
+              .catch(reason => { if (mounted.current) setError(translatedError(reason)); })}>{t('重新核对')}</button>}</p>}
           {error && <p className="integration-form-error" role="alert">{translatedError(error)}</p>}
           {tab === 'market' && marketFailures.length > 0 && <p className="integration-form-error" role="status"
             title={marketFailures.map(source => `${source.name}：${translatedError(source.issue!)}`).join('\n')}>
@@ -478,7 +473,7 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
           {(['create', 'upload'] as const).map((key, index) => <button type="button" key={key} role="tab" id={`skills-add-${key}`} aria-controls="skills-add-pane"
             tabIndex={key === addTab ? 0 : -1} aria-selected={key === addTab} disabled={busy} onClick={() => chooseAddTab(key)} onKeyDown={event => {
               if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
-              event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - index;
+              event.preventDefault(); const next = nextTabIndex(event.key, index, 2);
               chooseAddTab(next ? 'upload' : 'create'); (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
             }}>{key === 'create' ? '创建技能' : '上传技能'}</button>)}
         </nav>}
@@ -554,9 +549,4 @@ export function SkillsPanel({ api, projects, onClose, memory, navigation, notify
 }
 function toDraft(row: SkillRecord): Draft {
   return { name: row.name, description: row.description, body: row.body, scope: row.scope, projectIds: row.projectIds, sourceId: row.sourceId };
-}
-function SkillScopePicker({ projects, values, onChange, disabled }: {
-  projects: Project[]; values: string[]; onChange(values: string[]): void; disabled: boolean;
-}) {
-  return <ScopePicker projects={projects} values={values} onChange={onChange} disabled={disabled} describedBy="skills-form-error"/>;
 }
